@@ -69,6 +69,21 @@ model = MyModel(parameters)
 results = model.run()
 ```
 
+## ⚡ Advanced: Vectorized Updates
+
+For maximum performance, access the underlying `Population` manager to perform SIMD-vectorized state updates, bypassing Python loop overhead:
+
+```python
+def step(self):
+    # Create a batch update context
+    with self.population.create_batch_context() as batch:
+        # Queue updates logic (executed in Rust/Polars)
+        batch.add_update(target_ids, 'wealth', 1)
+        batch.add_update(source_ids, 'wealth', -1)
+    
+    # State is applied atomically here
+```
+
 ## 🔬 Optimization
 
 AMBER includes powerful optimization capabilities for parameter tuning:

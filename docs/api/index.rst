@@ -11,6 +11,7 @@ Core Components
 
    model
    agent
+   population
    environments
    sequences
 
@@ -33,6 +34,7 @@ Quick Reference
 * :class:`amber.Agent` - Individual agent with behaviors and properties
 * :class:`amber.BaseAgent` - Abstract base class for custom agents
 * :class:`amber.BaseModel` - Abstract base class for custom models
+* :class:`amber.Population` - SoA memory manager for high-performance state handling
 
 **Environments:**
 
