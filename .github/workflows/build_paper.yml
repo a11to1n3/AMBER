@@ -1,0 +1,30 @@
+name: Build LaTeX Paper
+on:
+  push:
+    paths:
+      - 'paper.tex'
+      - 'paper.bib'
+  pull_request:
+    paths:
+      - 'paper.tex'
+      - 'paper.bib'
+  workflow_dispatch:
+
+jobs:
+  build_latex:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Compile LaTeX document
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: paper.tex
+          args: "-pdf -file-line-error -halt-on-error -interaction=nonstopmode"
+      
+      - name: Upload PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-pdf
+          path: paper.pdf

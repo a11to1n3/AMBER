@@ -1,0 +1,23 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        if_not_found: success
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        if_not_found: success
+
+comment:
+  require_changes: false
+  require_base: false
+  require_head: true
+
+ignore:
+  - "tests/"
+  - "examples/"
+  - "setup.py"
+  - "src/amber.egg-info/" 

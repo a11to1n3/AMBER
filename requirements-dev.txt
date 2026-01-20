@@ -1,0 +1,26 @@
+# Include base requirements
+-r requirements.txt
+
+# Testing dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+coverage>=7.0.0
+
+# Documentation dependencies
+sphinx>=4.0.0
+sphinx-rtd-theme>=1.0.0
+myst-parser>=0.18.0
+nbsphinx>=0.8.0
+nbconvert>=6.0.0
+jupyter>=1.0.0
+
+# Development dependencies  
+black>=22.0.0
+flake8>=5.0.0
+mypy>=1.0.0
+
+# Advanced optimization (optional)
+smac>=2.0.0
+ConfigSpace>=0.7.1
+scikit-learn>=1.0.0 
