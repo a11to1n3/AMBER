@@ -16,6 +16,12 @@ class Model(BaseModel):
         Args:
             parameters: Dictionary of model parameters
         """
+        # Initialize Population Manager first because super().__init__ triggers agents_df setter
+        # We infer the schema from initial requirements or defaults
+        self.population = Population(schema={
+            'wealth': pl.Int64
+        })
+        
         super().__init__(parameters)
         self.t = 0  # Current time step
         self._start_time = None
@@ -23,12 +29,6 @@ class Model(BaseModel):
         
         # Control progress reporting
         self._show_progress = parameters.get('show_progress', True)
-        
-        # Initialize Population Manager
-        # We infer the schema from initial requirements or defaults
-        self.population = Population(schema={
-            'wealth': pl.Int64
-        })
         
         # Compatibility property for legacy code that accesses agents_df
         # This is a read-only view in practice
@@ -66,6 +66,12 @@ class Model(BaseModel):
         self.t += 1
         self._current_step_data = {'t': self.t}
         
+    def record_model(self, key: str, value: Any):
+        """Record a model-level variable for the current step."""
+        if not hasattr(self, '_current_step_data'):
+            self._current_step_data = {'t': self.t}
+        self._current_step_data[key] = value
+
     def _finalize_step_data(self):
         if hasattr(self, '_current_step_data'):
             self._model_data.append(self._current_step_data.copy())
@@ -120,7 +126,19 @@ class Model(BaseModel):
         print(f"📈 Rate: {max_steps/total_time:.1f} steps/s")
 
     def _collect_results(self, start_time, max_steps):
-        model_df = pl.DataFrame(self._model_data) if self._model_data else pl.DataFrame({'t': []})
+        if self._model_data:
+            # Column-oriented construction to avoid Polars concat ShapeErrors with sparse data
+            all_keys = sorted(list(set().union(*(d.keys() for d in self._model_data))))
+            data_dict = {k: [] for k in all_keys}
+            
+            for d in self._model_data:
+                for k in all_keys:
+                    data_dict[k].append(d.get(k, None))
+            
+            model_df = pl.DataFrame(data_dict)
+        else:
+            model_df = pl.DataFrame({'t': []})
+            
         return {
             'info': {'steps': self.t, 'run_time': time.time() - start_time},
             'agents': self.population.data,
