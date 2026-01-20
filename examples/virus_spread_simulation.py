@@ -10,7 +10,7 @@ This notebook demonstrates a **modern interactive epidemiological model** using 
 - **📊 Real-time Analytics**: Live tracking of infection curves
 - **🎛️ Interactive Controls**: Adjust transmission rates, recovery times, and movement
 - **🎨 Dynamic Visualization**: Color-coded agents and epidemic curves
-- **⚡ High Performance**: Optimized for large populations
+- **⚡ High Performance**: Designed for large populations
 
 Experience realistic epidemic modeling with modern interactive tools!
 """

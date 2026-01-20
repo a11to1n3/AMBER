@@ -3,13 +3,13 @@
 [![CI](https://github.com/USERNAME/AMBER/actions/workflows/ci.yml/badge.svg)](https://github.com/USERNAME/AMBER/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/USERNAME/AMBER/branch/main/graph/badge.svg)](https://codecov.io/gh/USERNAME/AMBER)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3_Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
-AMBER is a Python framework for agent-based modeling that uses Polars for efficient data handling and analysis. ItAMBER provides a clean, robust API for creating parallel, optimized simulations in Python.
+AMBER is a Python framework for agent-based modeling that uses Polars for efficient data handling and analysis. AMBER provides a clean, robust API for creating parallel, high-performance simulations in Python.
 
 ## 🚀 Performance
 
-AMBER includes an **Optimized Mode** that uses KD-Trees, Numba, and vectorized operations to achieve state-of-the-art performance in Python.
+AMBER achieves high performance through its columnar memory layout (SoA), KD-Trees, and SIMD-vectorized operations.
 
 **Benchmark vs Other Frameworks (5,000 Agents, 100 Steps)**
 
@@ -123,4 +123,4 @@ We welcome contributions! Please see our contributing guidelines for more inform
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.

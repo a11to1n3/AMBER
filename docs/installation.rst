@@ -87,7 +87,7 @@ Common Issues
 **Performance Issues**: For large simulations, consider:
 
 * Using the latest version of Polars
-* Installing numpy with optimized BLAS libraries
+* Installing numpy with accelerated BLAS libraries
 * Running on systems with sufficient RAM
 
 **Jupyter Setup**: For interactive development with Jupyter:

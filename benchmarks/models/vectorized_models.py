@@ -1,5 +1,5 @@
 """
-Optimized AMBER Models for Benchmarking
+Vectorized AMBER Models for Benchmarking
 
 These models use the performance utilities (KD-Tree, vectorized ops)
 to demonstrate the maximum speed achievable with AMBER.
@@ -27,12 +27,12 @@ if HAS_NUMBA:
 
 
 # =============================================================================
-# Optimized Wealth Transfer Model (Vectorized)
+# Vectorized Wealth Transfer Model
 # =============================================================================
 
-class OptimizedWealthTransfer(am.Model):
+class VectorizedWealthTransfer(am.Model):
     """
-    Optimized Wealth Transfer using vectorized numpy operations.
+    Vectorized Wealth Transfer using numpy operations.
     """
     
     def setup(self):
@@ -92,12 +92,12 @@ class OptimizedWealthTransfer(am.Model):
 
 
 # =============================================================================
-# Optimized SIR Model (KD-Tree + Vectorized)
+# Vectorized SIR Model (KD-Tree + Vectorized)
 # =============================================================================
 
-class OptimizedSIRModel(am.Model):
+class VectorizedSIRModel(am.Model):
     """
-    Optimized SIR Model using KD-Tree for O(log n) neighbor queries.
+    Vectorized SIR Model using KD-Tree for O(log n) neighbor queries.
     """
     
     STATUS_S = 0
@@ -198,12 +198,12 @@ class OptimizedSIRModel(am.Model):
 
 
 # =============================================================================
-# Optimized Random Walk (Fully Vectorized)
+# Vectorized Random Walk (Fully Vectorized)
 # =============================================================================
 
-class OptimizedRandomWalk(am.Model):
+class VectorizedRandomWalk(am.Model):
     """
-    Optimized Random Walk using fully vectorized numpy operations.
+    Vectorized Random Walk using fully vectorized numpy operations.
     """
     
     def setup(self):
@@ -246,30 +246,30 @@ class OptimizedRandomWalk(am.Model):
 
 
 # Model registry
-OPTIMIZED_MODELS = {
-    'wealth_transfer': OptimizedWealthTransfer,
-    'sir_epidemic': OptimizedSIRModel,
-    'random_walk': OptimizedRandomWalk,
+VECTORIZED_MODELS = {
+    'wealth_transfer': VectorizedWealthTransfer,
+    'sir_epidemic': VectorizedSIRModel,
+    'random_walk': VectorizedRandomWalk,
 }
 
 
 if __name__ == '__main__':
     import time
     
-    print("Testing Optimized Models")
+    print("Testing Vectorized Models")
     print("=" * 50)
     
     # Test Wealth Transfer
-    print("\n1. Optimized Wealth Transfer")
-    model = OptimizedWealthTransfer({'n': 1000, 'steps': 100, 'initial_wealth': 1})
+    print("\n1. Vectorized Wealth Transfer")
+    model = VectorizedWealthTransfer({'n': 1000, 'steps': 100, 'initial_wealth': 1})
     start = time.perf_counter()
     model.run()
     elapsed = time.perf_counter() - start
     print(f"   1000 agents, 100 steps: {elapsed:.3f}s")
     
     # Test SIR
-    print("\n2. Optimized SIR Epidemic")
-    model = OptimizedSIRModel({
+    print("\n2. Vectorized SIR Epidemic")
+    model = VectorizedSIRModel({
         'n': 1000, 'steps': 100, 'initial_infected': 10,
         'world_size': 100, 'infection_radius': 5.0
     })
@@ -280,8 +280,8 @@ if __name__ == '__main__':
     print(f"   Using KD-Tree: {HAS_SCIPY}")
     
     # Test Random Walk
-    print("\n3. Optimized Random Walk")
-    model = OptimizedRandomWalk({'n': 10000, 'steps': 100, 'speed': 1.0})
+    print("\n3. Vectorized Random Walk")
+    model = VectorizedRandomWalk({'n': 10000, 'steps': 100, 'speed': 1.0})
     start = time.perf_counter()
     model.run()
     elapsed = time.perf_counter() - start

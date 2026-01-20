@@ -90,7 +90,7 @@ class SegregationModel(am.Model):
         # Pre-calculate all empty spots for efficient agent placement
         self.empty_spots = [(x, y) for x in range(s) for y in range(s)]
         
-        # Create persistent agent objects with optimized placement
+        # Create persistent agent objects with vectorized placement
         self.agent_objects = {}
         for i in range(n):
             agent = Person(self, i)
@@ -125,7 +125,7 @@ class SegregationModel(am.Model):
         })
 
     def get_empty_spots(self):
-        """Get list of empty spots on the grid (optimized)."""
+        """Get list of empty spots on the grid (efficient)."""
         # Use the maintained list for efficiency
         return self.empty_spots
     
