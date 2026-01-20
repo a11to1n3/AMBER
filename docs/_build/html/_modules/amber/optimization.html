@@ -1,0 +1,815 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>amber.optimization &mdash; AMBER 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            AMBER
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quick Start Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/index.html">Examples</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">AMBER</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">amber.optimization</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for amber.optimization</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac</span><span class="w"> </span><span class="kn">import</span> <span class="n">HyperparameterOptimizationFacade</span><span class="p">,</span> <span class="n">Scenario</span><span class="p">,</span> <span class="n">MultiFidelityFacade</span><span class="p">,</span> <span class="n">RandomFacade</span><span class="p">,</span> <span class="n">AlgorithmConfigurationFacade</span>
+<span class="c1"># Correct imports for SMAC models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.model.random_forest</span><span class="w"> </span><span class="kn">import</span> <span class="n">RandomForest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.model.gaussian_process</span><span class="w"> </span><span class="kn">import</span> <span class="n">GaussianProcess</span>
+<span class="c1"># Acquisition functions - correct import path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.acquisition.function</span><span class="w"> </span><span class="kn">import</span> <span class="n">EI</span><span class="p">,</span> <span class="n">LCB</span><span class="p">,</span> <span class="n">PI</span><span class="p">,</span> <span class="n">EIPS</span><span class="p">,</span> <span class="n">TS</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.acquisition.maximizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">LocalAndSortedRandomSearch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.initial_design</span><span class="w"> </span><span class="kn">import</span> <span class="n">LatinHypercubeInitialDesign</span><span class="p">,</span> <span class="n">RandomInitialDesign</span><span class="p">,</span> <span class="n">SobolInitialDesign</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.runhistory</span><span class="w"> </span><span class="kn">import</span> <span class="n">RunHistory</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.utils.logging</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_logger</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.intensifier</span><span class="w"> </span><span class="kn">import</span> <span class="n">SuccessiveHalving</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.multi_objective</span><span class="w"> </span><span class="kn">import</span> <span class="n">AbstractMultiObjectiveAlgorithm</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.multi_objective.aggregation_strategy</span><span class="w"> </span><span class="kn">import</span> <span class="n">MeanAggregationStrategy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.utils.pareto_front</span><span class="w"> </span><span class="kn">import</span> <span class="n">calculate_pareto_front</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">smac.utils.multi_objective</span><span class="w"> </span><span class="kn">import</span> <span class="n">normalize_costs</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">Model</span>
+
+
+<span class="c1"># Simple ParameterSpace for basic optimization functions</span>
+<div class="viewcode-block" id="ParameterSpace">
+<a class="viewcode-back" href="../../api/optimization.html#amber.ParameterSpace">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ParameterSpace</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Define the parameter space for optimization.&quot;&quot;&quot;</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parameters</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize parameter space.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            parameters: Dictionary mapping parameter names to values or ranges</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span> <span class="o">=</span> <span class="n">parameters</span>
+        
+<div class="viewcode-block" id="ParameterSpace.sample">
+<a class="viewcode-back" href="../../api/optimization.html#amber.ParameterSpace.sample">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample a random parameter combination.</span>
+<span class="sd">        </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            Dictionary with parameter values</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.experiment</span><span class="w"> </span><span class="kn">import</span> <span class="n">IntRange</span>
+        
+        <span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">IntRange</span><span class="p">):</span>  <span class="c1"># IntRange objects</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">value</span><span class="o">.</span><span class="n">end</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>  <span class="c1"># Fixed value</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+        
+<div class="viewcode-block" id="ParameterSpace.grid_sample">
+<a class="viewcode-back" href="../../api/optimization.html#amber.ParameterSpace.grid_sample">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">grid_sample</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate all parameter combinations in a grid.</span>
+<span class="sd">        </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            List of parameter dictionaries</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.experiment</span><span class="w"> </span><span class="kn">import</span> <span class="n">IntRange</span>
+        
+        <span class="n">param_lists</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="n">param_lists</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">IntRange</span><span class="p">):</span>  <span class="c1"># IntRange objects</span>
+                <span class="n">param_lists</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">value</span><span class="o">.</span><span class="n">end</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>  <span class="c1"># Fixed value</span>
+                <span class="n">param_lists</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">value</span><span class="p">]</span>
+        
+        <span class="c1"># Generate all combinations</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">param_lists</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">combinations</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="o">*</span><span class="p">[</span><span class="n">param_lists</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">]))</span>
+        
+        <span class="k">return</span> <span class="p">[</span><span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">names</span><span class="p">,</span> <span class="n">combo</span><span class="p">))</span> <span class="k">for</span> <span class="n">combo</span> <span class="ow">in</span> <span class="n">combinations</span><span class="p">]</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="objective_function">
+<a class="viewcode-back" href="../../api/optimization.html#amber.objective_function">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">objective_function</span><span class="p">(</span><span class="n">model_class</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Model</span><span class="p">],</span> <span class="n">parameters</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> 
+                      <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">iterations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="n">minimize</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Evaluate objective function for a model with given parameters.</span>
+<span class="sd">    </span>
+<span class="sd">    Args:</span>
+<span class="sd">        model_class: Model class to instantiate</span>
+<span class="sd">        parameters: Parameters to pass to model</span>
+<span class="sd">        metric: Name of metric to optimize</span>
+<span class="sd">        iterations: Number of iterations to average over</span>
+<span class="sd">        minimize: Whether to minimize (True) or maximize (False)</span>
+<span class="sd">        </span>
+<span class="sd">    Returns:</span>
+<span class="sd">        Objective value</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="mf">0.0</span>
+    
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">iterations</span><span class="p">):</span>
+        <span class="c1"># Disable progress reporting for optimization</span>
+        <span class="n">model_params</span> <span class="o">=</span> <span class="n">parameters</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">model_params</span><span class="p">[</span><span class="s1">&#39;show_progress&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">model_class</span><span class="p">(</span><span class="n">model_params</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+        
+        <span class="c1"># Get the metric value from model data</span>
+        <span class="n">model_data</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="s1">&#39;model&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">metric</span> <span class="ow">in</span> <span class="n">model_data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="c1"># Get the last recorded value of the metric</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="n">model_data</span><span class="p">[</span><span class="n">metric</span><span class="p">]</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">values</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">values</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="mi">0</span>
+            
+        <span class="n">total</span> <span class="o">+=</span> <span class="n">value</span>
+    
+    <span class="n">average</span> <span class="o">=</span> <span class="n">total</span> <span class="o">/</span> <span class="n">iterations</span>
+    <span class="k">return</span> <span class="n">average</span></div>
+
+
+
+<div class="viewcode-block" id="grid_search">
+<a class="viewcode-back" href="../../api/optimization.html#amber.grid_search">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">grid_search</span><span class="p">(</span><span class="n">model_class</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Model</span><span class="p">],</span> <span class="n">parameter_space</span><span class="p">:</span> <span class="n">ParameterSpace</span><span class="p">,</span> 
+                <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">iterations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="n">minimize</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Perform grid search optimization.</span>
+<span class="sd">    </span>
+<span class="sd">    Args:</span>
+<span class="sd">        model_class: Model class to optimize</span>
+<span class="sd">        parameter_space: Parameter space to search</span>
+<span class="sd">        metric: Metric to optimize</span>
+<span class="sd">        iterations: Number of iterations per parameter combination</span>
+<span class="sd">        minimize: Whether to minimize the metric</span>
+<span class="sd">        </span>
+<span class="sd">    Returns:</span>
+<span class="sd">        List of results sorted by objective value (best first)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="k">for</span> <span class="n">params</span> <span class="ow">in</span> <span class="n">parameter_space</span><span class="o">.</span><span class="n">grid_sample</span><span class="p">():</span>
+        <span class="n">obj_value</span> <span class="o">=</span> <span class="n">objective_function</span><span class="p">(</span><span class="n">model_class</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span> <span class="n">minimize</span><span class="p">)</span>
+        <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+            <span class="s1">&#39;parameters&#39;</span><span class="p">:</span> <span class="n">params</span><span class="p">,</span>
+            <span class="s1">&#39;objective&#39;</span><span class="p">:</span> <span class="n">obj_value</span>
+        <span class="p">})</span>
+    
+    <span class="c1"># Sort by objective value (descending for maximization, ascending for minimization)</span>
+    <span class="n">results</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="s1">&#39;objective&#39;</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="ow">not</span> <span class="n">minimize</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">results</span></div>
+
+
+
+<div class="viewcode-block" id="random_search">
+<a class="viewcode-back" href="../../api/optimization.html#amber.random_search">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">random_search</span><span class="p">(</span><span class="n">model_class</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Model</span><span class="p">],</span> <span class="n">parameter_space</span><span class="p">:</span> <span class="n">ParameterSpace</span><span class="p">,</span> 
+                  <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">n_samples</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span> <span class="n">iterations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> 
+                  <span class="n">minimize</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Perform random search optimization.</span>
+<span class="sd">    </span>
+<span class="sd">    Args:</span>
+<span class="sd">        model_class: Model class to optimize</span>
+<span class="sd">        parameter_space: Parameter space to search</span>
+<span class="sd">        metric: Metric to optimize</span>
+<span class="sd">        n_samples: Number of random samples to evaluate</span>
+<span class="sd">        iterations: Number of iterations per parameter combination</span>
+<span class="sd">        minimize: Whether to minimize the metric</span>
+<span class="sd">        seed: Random seed for reproducibility</span>
+<span class="sd">        </span>
+<span class="sd">    Returns:</span>
+<span class="sd">        List of results sorted by objective value (best first)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">seed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    
+    <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_samples</span><span class="p">):</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="n">parameter_space</span><span class="o">.</span><span class="n">sample</span><span class="p">()</span>
+        <span class="n">obj_value</span> <span class="o">=</span> <span class="n">objective_function</span><span class="p">(</span><span class="n">model_class</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span> <span class="n">minimize</span><span class="p">)</span>
+        <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+            <span class="s1">&#39;parameters&#39;</span><span class="p">:</span> <span class="n">params</span><span class="p">,</span>
+            <span class="s1">&#39;objective&#39;</span><span class="p">:</span> <span class="n">obj_value</span>
+        <span class="p">})</span>
+    
+    <span class="c1"># Sort by objective value</span>
+    <span class="n">results</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="s1">&#39;objective&#39;</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="ow">not</span> <span class="n">minimize</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">results</span></div>
+
+
+
+<div class="viewcode-block" id="bayesian_optimization">
+<a class="viewcode-back" href="../../api/optimization.html#amber.bayesian_optimization">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">bayesian_optimization</span><span class="p">(</span><span class="n">model_class</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Model</span><span class="p">],</span> <span class="n">parameter_space</span><span class="p">:</span> <span class="n">ParameterSpace</span><span class="p">,</span> 
+                         <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">n_calls</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span> <span class="n">iterations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> 
+                         <span class="n">minimize</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">random_state</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Perform Bayesian optimization using simple heuristics.</span>
+<span class="sd">    </span>
+<span class="sd">    Note: This is a simplified implementation for testing purposes.</span>
+<span class="sd">    For production use, consider using the SMACOptimizer class.</span>
+<span class="sd">    </span>
+<span class="sd">    Args:</span>
+<span class="sd">        model_class: Model class to optimize</span>
+<span class="sd">        parameter_space: Parameter space to search</span>
+<span class="sd">        metric: Metric to optimize</span>
+<span class="sd">        n_calls: Number of function evaluations</span>
+<span class="sd">        iterations: Number of iterations per parameter combination</span>
+<span class="sd">        minimize: Whether to minimize the metric</span>
+<span class="sd">        random_state: Random state for reproducibility</span>
+<span class="sd">        </span>
+<span class="sd">    Returns:</span>
+<span class="sd">        List of results sorted by objective value (best first)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">random_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">random_state</span><span class="p">)</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">random_state</span><span class="p">)</span>
+    
+    <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="c1"># Start with random samples (simplified acquisition)</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_calls</span><span class="p">):</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="n">parameter_space</span><span class="o">.</span><span class="n">sample</span><span class="p">()</span>
+        <span class="n">obj_value</span> <span class="o">=</span> <span class="n">objective_function</span><span class="p">(</span><span class="n">model_class</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span> <span class="n">minimize</span><span class="p">)</span>
+        <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+            <span class="s1">&#39;parameters&#39;</span><span class="p">:</span> <span class="n">params</span><span class="p">,</span>
+            <span class="s1">&#39;objective&#39;</span><span class="p">:</span> <span class="n">obj_value</span>
+        <span class="p">})</span>
+    
+    <span class="c1"># Sort by objective value</span>
+    <span class="n">results</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="s1">&#39;objective&#39;</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="ow">not</span> <span class="n">minimize</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">results</span></div>
+
+
+
+<span class="c1"># Advanced SMAC-based ParameterSpace for complex optimization</span>
+<div class="viewcode-block" id="SMACParameterSpace">
+<a class="viewcode-back" href="../../api/optimization.html#amber.SMACParameterSpace">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SMACParameterSpace</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Define the parameter space for SMAC optimization.&quot;&quot;&quot;</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize parameter space.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fidelity_parameters</span> <span class="o">=</span> <span class="p">{}</span>
+        
+<div class="viewcode-block" id="SMACParameterSpace.add_parameter">
+<a class="viewcode-back" href="../../api/optimization.html#amber.SMACParameterSpace.add_parameter">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_parameter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">param_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> 
+                     <span class="n">bounds</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                     <span class="n">choices</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                     <span class="n">default</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                     <span class="n">is_fidelity</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a parameter to the space.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            name: Parameter name</span>
+<span class="sd">            param_type: Type of parameter (&#39;float&#39;, &#39;int&#39;, &#39;categorical&#39;)</span>
+<span class="sd">            bounds: Tuple of (min, max) for numeric parameters</span>
+<span class="sd">            choices: List of possible values for categorical parameters</span>
+<span class="sd">            default: Default value</span>
+<span class="sd">            is_fidelity: Whether this is a fidelity parameter</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">param_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;float&#39;</span><span class="p">,</span> <span class="s1">&#39;int&#39;</span><span class="p">,</span> <span class="s1">&#39;categorical&#39;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;param_type must be &#39;float&#39;, &#39;int&#39;, or &#39;categorical&#39;&quot;</span><span class="p">)</span>
+            
+        <span class="k">if</span> <span class="n">param_type</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;float&#39;</span><span class="p">,</span> <span class="s1">&#39;int&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">bounds</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;bounds must be provided for </span><span class="si">{</span><span class="n">param_type</span><span class="si">}</span><span class="s2"> parameters&quot;</span><span class="p">)</span>
+            
+        <span class="k">if</span> <span class="n">param_type</span> <span class="o">==</span> <span class="s1">&#39;categorical&#39;</span> <span class="ow">and</span> <span class="n">choices</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;choices must be provided for categorical parameters&quot;</span><span class="p">)</span>
+            
+        <span class="n">param_dict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="n">param_type</span><span class="p">,</span>
+            <span class="s1">&#39;bounds&#39;</span><span class="p">:</span> <span class="n">bounds</span><span class="p">,</span>
+            <span class="s1">&#39;choices&#39;</span><span class="p">:</span> <span class="n">choices</span><span class="p">,</span>
+            <span class="s1">&#39;default&#39;</span><span class="p">:</span> <span class="n">default</span>
+        <span class="p">}</span>
+        
+        <span class="k">if</span> <span class="n">is_fidelity</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fidelity_parameters</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">param_dict</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">param_dict</span></div>
+
+            
+<div class="viewcode-block" id="SMACParameterSpace.get_configspace">
+<a class="viewcode-back" href="../../api/optimization.html#amber.SMACParameterSpace.get_configspace">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_configspace</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the SMAC configuration space.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">ConfigSpace</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConfigurationSpace</span><span class="p">,</span> <span class="n">UniformFloatHyperparameter</span><span class="p">,</span> \
+            <span class="n">UniformIntegerHyperparameter</span><span class="p">,</span> <span class="n">CategoricalHyperparameter</span>
+            
+        <span class="n">cs</span> <span class="o">=</span> <span class="n">ConfigurationSpace</span><span class="p">()</span>
+        
+        <span class="c1"># Add regular parameters</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">param</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">param</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;float&#39;</span><span class="p">:</span>
+                <span class="n">hp</span> <span class="o">=</span> <span class="n">UniformFloatHyperparameter</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">lower</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;bounds&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="n">upper</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;bounds&#39;</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="n">default_value</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;default&#39;</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">param</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;int&#39;</span><span class="p">:</span>
+                <span class="n">hp</span> <span class="o">=</span> <span class="n">UniformIntegerHyperparameter</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">lower</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;bounds&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="n">upper</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;bounds&#39;</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="n">default_value</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;default&#39;</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>  <span class="c1"># categorical</span>
+                <span class="n">hp</span> <span class="o">=</span> <span class="n">CategoricalHyperparameter</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">choices</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;choices&#39;</span><span class="p">],</span>
+                    <span class="n">default_value</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;default&#39;</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="n">cs</span><span class="o">.</span><span class="n">add_hyperparameter</span><span class="p">(</span><span class="n">hp</span><span class="p">)</span>
+            
+        <span class="c1"># Add fidelity parameters</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">param</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fidelity_parameters</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">param</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;float&#39;</span><span class="p">:</span>
+                <span class="n">hp</span> <span class="o">=</span> <span class="n">UniformFloatHyperparameter</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">lower</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;bounds&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="n">upper</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;bounds&#39;</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="n">default_value</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;default&#39;</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">param</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;int&#39;</span><span class="p">:</span>
+                <span class="n">hp</span> <span class="o">=</span> <span class="n">UniformIntegerHyperparameter</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">lower</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;bounds&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="n">upper</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;bounds&#39;</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="n">default_value</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;default&#39;</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>  <span class="c1"># categorical</span>
+                <span class="n">hp</span> <span class="o">=</span> <span class="n">CategoricalHyperparameter</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">choices</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;choices&#39;</span><span class="p">],</span>
+                    <span class="n">default_value</span><span class="o">=</span><span class="n">param</span><span class="p">[</span><span class="s1">&#39;default&#39;</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="n">cs</span><span class="o">.</span><span class="n">add_hyperparameter</span><span class="p">(</span><span class="n">hp</span><span class="p">)</span>
+            
+        <span class="k">return</span> <span class="n">cs</span></div>
+</div>
+
+
+<div class="viewcode-block" id="SMACOptimizer">
+<a class="viewcode-back" href="../../api/optimization.html#amber.SMACOptimizer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SMACOptimizer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Optimize model parameters using SMAC with various strategies.&quot;&quot;&quot;</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_type</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Model</span><span class="p">],</span> 
+                 <span class="n">param_space</span><span class="p">:</span> <span class="n">SMACParameterSpace</span><span class="p">,</span>
+                 <span class="n">objective</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Model</span><span class="p">],</span> <span class="nb">float</span><span class="p">],</span>
+                 <span class="n">n_trials</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">,</span>
+                 <span class="n">n_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+                 <span class="n">seed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;bayesian&#39;</span><span class="p">,</span>
+                 <span class="n">acquisition_function</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;ei&#39;</span><span class="p">,</span>
+                 <span class="n">initial_design</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;latin_hypercube&#39;</span><span class="p">,</span>
+                 <span class="n">surrogate_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;random_forest&#39;</span><span class="p">,</span>
+                 <span class="n">use_multi_fidelity</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+                 <span class="n">use_random_search</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize the optimizer.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            model_type: Class of model to optimize</span>
+<span class="sd">            param_space: Parameter space definition</span>
+<span class="sd">            objective: Function that takes a model and returns a score to minimize</span>
+<span class="sd">            n_trials: Number of optimization trials</span>
+<span class="sd">            n_workers: Number of parallel workers</span>
+<span class="sd">            seed: Random seed</span>
+<span class="sd">            strategy: Optimization strategy (&#39;bayesian&#39;, &#39;random&#39;, &#39;algorithm_configuration&#39;)</span>
+<span class="sd">            acquisition_function: Acquisition function (&#39;ei&#39;, &#39;lcb&#39;, &#39;pi&#39;, &#39;eips&#39;, &#39;log_ei&#39;)</span>
+<span class="sd">            initial_design: Initial design strategy (&#39;latin_hypercube&#39;, &#39;random&#39;, &#39;sobol&#39;)</span>
+<span class="sd">            surrogate_model: Surrogate model type (&#39;random_forest&#39;, &#39;gaussian_process&#39;, &#39;random_forest_with_instances&#39;)</span>
+<span class="sd">            use_multi_fidelity: Whether to use multi-fidelity optimization</span>
+<span class="sd">            use_random_search: Whether to use random search</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model_type</span> <span class="o">=</span> <span class="n">model_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">param_space</span> <span class="o">=</span> <span class="n">param_space</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">objective</span> <span class="o">=</span> <span class="n">objective</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_trials</span> <span class="o">=</span> <span class="n">n_trials</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_workers</span> <span class="o">=</span> <span class="n">n_workers</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">seed</span> <span class="o">=</span> <span class="n">seed</span>
+        
+        <span class="c1"># Initialize SMAC components</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">configspace</span> <span class="o">=</span> <span class="n">param_space</span><span class="o">.</span><span class="n">get_configspace</span><span class="p">()</span>
+        
+        <span class="c1"># Select initial design</span>
+        <span class="k">if</span> <span class="n">initial_design</span> <span class="o">==</span> <span class="s1">&#39;latin_hypercube&#39;</span><span class="p">:</span>
+            <span class="n">initial_design</span> <span class="o">=</span> <span class="n">LatinHypercubeInitialDesign</span>
+        <span class="k">elif</span> <span class="n">initial_design</span> <span class="o">==</span> <span class="s1">&#39;random&#39;</span><span class="p">:</span>
+            <span class="n">initial_design</span> <span class="o">=</span> <span class="n">RandomInitialDesign</span>
+        <span class="k">elif</span> <span class="n">initial_design</span> <span class="o">==</span> <span class="s1">&#39;sobol&#39;</span><span class="p">:</span>
+            <span class="n">initial_design</span> <span class="o">=</span> <span class="n">SobolInitialDesign</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown initial design: </span><span class="si">{</span><span class="n">initial_design</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            
+        <span class="c1"># Select acquisition function</span>
+        <span class="k">if</span> <span class="n">acquisition_function</span> <span class="o">==</span> <span class="s1">&#39;ei&#39;</span><span class="p">:</span>
+            <span class="n">acq_func</span> <span class="o">=</span> <span class="n">EI</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">acquisition_function</span> <span class="o">==</span> <span class="s1">&#39;lcb&#39;</span><span class="p">:</span>
+            <span class="n">acq_func</span> <span class="o">=</span> <span class="n">LCB</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">acquisition_function</span> <span class="o">==</span> <span class="s1">&#39;pi&#39;</span><span class="p">:</span>
+            <span class="n">acq_func</span> <span class="o">=</span> <span class="n">PI</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">acquisition_function</span> <span class="o">==</span> <span class="s1">&#39;eips&#39;</span><span class="p">:</span>
+            <span class="n">acq_func</span> <span class="o">=</span> <span class="n">EIPS</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">acquisition_function</span> <span class="o">==</span> <span class="s1">&#39;log_ei&#39;</span><span class="p">:</span>
+            <span class="n">acq_func</span> <span class="o">=</span> <span class="n">TS</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown acquisition function: </span><span class="si">{</span><span class="n">acquisition_function</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            
+        <span class="c1"># Select surrogate model</span>
+        <span class="k">if</span> <span class="n">surrogate_model</span> <span class="o">==</span> <span class="s1">&#39;random_forest&#39;</span><span class="p">:</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">RandomForest</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">surrogate_model</span> <span class="o">==</span> <span class="s1">&#39;gaussian_process&#39;</span><span class="p">:</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">GaussianProcess</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown model type: </span><span class="si">{</span><span class="n">surrogate_model</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            
+        <span class="c1"># Create scenario</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scenario</span> <span class="o">=</span> <span class="n">Scenario</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">configspace</span><span class="p">,</span>
+            <span class="n">n_trials</span><span class="o">=</span><span class="n">n_trials</span><span class="p">,</span>
+            <span class="n">n_workers</span><span class="o">=</span><span class="n">n_workers</span><span class="p">,</span>
+            <span class="n">seed</span><span class="o">=</span><span class="n">seed</span>
+        <span class="p">)</span>
+        
+        <span class="c1"># Initialize appropriate SMAC facade</span>
+        <span class="k">if</span> <span class="n">use_multi_fidelity</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">param_space</span><span class="o">.</span><span class="n">fidelity_parameters</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No fidelity parameters defined for multi-fidelity optimization&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">smac</span> <span class="o">=</span> <span class="n">MultiFidelityFacade</span><span class="p">(</span>
+                <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                <span class="n">target_function</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_evaluate_config</span><span class="p">,</span>
+                <span class="n">acquisition_function</span><span class="o">=</span><span class="n">acq_func</span><span class="p">,</span>
+                <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+                <span class="n">initial_design</span><span class="o">=</span><span class="n">initial_design</span><span class="p">(</span>
+                    <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                    <span class="n">n_configs</span><span class="o">=</span><span class="nb">min</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="n">n_trials</span><span class="p">)</span>
+                <span class="p">),</span>
+                <span class="n">intensifier</span><span class="o">=</span><span class="n">SuccessiveHalving</span><span class="p">(</span>
+                    <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                    <span class="n">incumbent_selection</span><span class="o">=</span><span class="s2">&quot;highest_budget&quot;</span><span class="p">,</span>
+                    <span class="n">max_incumbents</span><span class="o">=</span><span class="mi">1</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">use_random_search</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">smac</span> <span class="o">=</span> <span class="n">RandomFacade</span><span class="p">(</span>
+                <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                <span class="n">target_function</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_evaluate_config</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">strategy</span> <span class="o">==</span> <span class="s1">&#39;algorithm_configuration&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">smac</span> <span class="o">=</span> <span class="n">AlgorithmConfigurationFacade</span><span class="p">(</span>
+                <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                <span class="n">target_function</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_evaluate_config</span><span class="p">,</span>
+                <span class="n">acquisition_function</span><span class="o">=</span><span class="n">acq_func</span><span class="p">,</span>
+                <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+                <span class="n">initial_design</span><span class="o">=</span><span class="n">initial_design</span><span class="p">(</span>
+                    <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                    <span class="n">n_configs</span><span class="o">=</span><span class="nb">min</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="n">n_trials</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># bayesian</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">smac</span> <span class="o">=</span> <span class="n">HyperparameterOptimizationFacade</span><span class="p">(</span>
+                <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                <span class="n">target_function</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_evaluate_config</span><span class="p">,</span>
+                <span class="n">acquisition_function</span><span class="o">=</span><span class="n">acq_func</span><span class="p">,</span>
+                <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+                <span class="n">initial_design</span><span class="o">=</span><span class="n">initial_design</span><span class="p">(</span>
+                    <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                    <span class="n">n_configs</span><span class="o">=</span><span class="nb">min</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="n">n_trials</span><span class="p">)</span>
+                <span class="p">),</span>
+                <span class="n">acquisition_maximizer</span><span class="o">=</span><span class="n">LocalAndSortedRandomSearch</span><span class="p">(</span>
+                    <span class="n">configspace</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configspace</span><span class="p">,</span>
+                    <span class="n">acquisition_function</span><span class="o">=</span><span class="n">acq_func</span><span class="p">,</span>
+                    <span class="n">challengers</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+                    <span class="n">local_search_iterations</span><span class="o">=</span><span class="mi">10</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            
+    <span class="k">def</span><span class="w"> </span><span class="nf">_evaluate_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Evaluate a parameter configuration.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            config: Parameter configuration</span>
+<span class="sd">            </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            Objective value</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Create and run model with configuration</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_type</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+        
+        <span class="c1"># Calculate objective value</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">objective</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+        
+<div class="viewcode-block" id="SMACOptimizer.optimize">
+<a class="viewcode-back" href="../../api/optimization.html#amber.SMACOptimizer.optimize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run the optimization.</span>
+<span class="sd">        </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            Dictionary containing best configuration and results</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Run optimization</span>
+        <span class="n">incumbent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">smac</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span>
+        
+        <span class="c1"># Get optimization history</span>
+        <span class="n">history</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">smac</span><span class="o">.</span><span class="n">runhistory</span>
+        
+        <span class="c1"># Convert history to DataFrame</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">config_id</span><span class="p">,</span> <span class="n">run_value</span> <span class="ow">in</span> <span class="n">history</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">config</span> <span class="o">=</span> <span class="n">history</span><span class="o">.</span><span class="n">ids_config</span><span class="p">[</span><span class="n">config_id</span><span class="p">]</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="o">**</span><span class="n">config</span><span class="o">.</span><span class="n">get_dictionary</span><span class="p">(),</span>
+                <span class="s1">&#39;cost&#39;</span><span class="p">:</span> <span class="n">run_value</span><span class="o">.</span><span class="n">cost</span><span class="p">,</span>
+                <span class="s1">&#39;time&#39;</span><span class="p">:</span> <span class="n">run_value</span><span class="o">.</span><span class="n">time</span>
+            <span class="p">})</span>
+            
+        <span class="n">history_df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s1">&#39;best_config&#39;</span><span class="p">:</span> <span class="n">incumbent</span><span class="o">.</span><span class="n">get_dictionary</span><span class="p">(),</span>
+            <span class="s1">&#39;best_cost&#39;</span><span class="p">:</span> <span class="n">history</span><span class="o">.</span><span class="n">get_cost</span><span class="p">(</span><span class="n">incumbent</span><span class="p">),</span>
+            <span class="s1">&#39;history&#39;</span><span class="p">:</span> <span class="n">history_df</span>
+        <span class="p">}</span></div>
+</div>
+
+
+<div class="viewcode-block" id="MultiObjectiveSMAC">
+<a class="viewcode-back" href="../../api/optimization.html#amber.MultiObjectiveSMAC">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MultiObjectiveSMAC</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Multi-objective parameter optimization using SMAC.&quot;&quot;&quot;</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_type</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Model</span><span class="p">],</span>
+                 <span class="n">param_space</span><span class="p">:</span> <span class="n">SMACParameterSpace</span><span class="p">,</span>
+                 <span class="n">objectives</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Model</span><span class="p">],</span> <span class="nb">float</span><span class="p">]],</span>
+                 <span class="n">n_trials</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">,</span>
+                 <span class="n">n_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+                 <span class="n">seed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;pareto&#39;</span><span class="p">,</span>
+                 <span class="n">use_multi_fidelity</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize the multi-objective optimizer.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            model_type: Class of model to optimize</span>
+<span class="sd">            param_space: Parameter space definition</span>
+<span class="sd">            objectives: Dictionary of objective functions</span>
+<span class="sd">            n_trials: Number of optimization trials</span>
+<span class="sd">            n_workers: Number of parallel workers</span>
+<span class="sd">            seed: Random seed</span>
+<span class="sd">            strategy: Multi-objective strategy (&#39;pareto&#39;, &#39;aggregation&#39;)</span>
+<span class="sd">            use_multi_fidelity: Whether to use multi-fidelity optimization</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model_type</span> <span class="o">=</span> <span class="n">model_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">param_space</span> <span class="o">=</span> <span class="n">param_space</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">objectives</span> <span class="o">=</span> <span class="n">objectives</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_trials</span> <span class="o">=</span> <span class="n">n_trials</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_workers</span> <span class="o">=</span> <span class="n">n_workers</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">seed</span> <span class="o">=</span> <span class="n">seed</span>
+        
+        <span class="c1"># Initialize SMAC components</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">configspace</span> <span class="o">=</span> <span class="n">param_space</span><span class="o">.</span><span class="n">get_configspace</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scenario</span> <span class="o">=</span> <span class="n">Scenario</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">configspace</span><span class="p">,</span>
+            <span class="n">n_trials</span><span class="o">=</span><span class="n">n_trials</span><span class="p">,</span>
+            <span class="n">n_workers</span><span class="o">=</span><span class="n">n_workers</span><span class="p">,</span>
+            <span class="n">seed</span><span class="o">=</span><span class="n">seed</span>
+        <span class="p">)</span>
+        
+        <span class="c1"># Initialize multi-objective algorithm</span>
+        <span class="k">if</span> <span class="n">strategy</span> <span class="o">==</span> <span class="s1">&#39;aggregation&#39;</span><span class="p">:</span>
+            <span class="n">mo_algorithm</span> <span class="o">=</span> <span class="n">MeanAggregationStrategy</span><span class="p">(</span>
+                <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                <span class="n">objectives</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">objectives</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># pareto</span>
+            <span class="n">mo_algorithm</span> <span class="o">=</span> <span class="n">AbstractMultiObjectiveAlgorithm</span><span class="p">(</span>
+                <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                <span class="n">objectives</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">objectives</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+            <span class="p">)</span>
+            
+        <span class="c1"># Initialize SMAC facade for each objective</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">smacs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">objective</span> <span class="ow">in</span> <span class="n">objectives</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">use_multi_fidelity</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">param_space</span><span class="o">.</span><span class="n">fidelity_parameters</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No fidelity parameters defined for multi-fidelity optimization&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">smacs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">MultiFidelityFacade</span><span class="p">(</span>
+                    <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                    <span class="n">target_function</span><span class="o">=</span><span class="k">lambda</span> <span class="n">config</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_evaluate_objective</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">objective</span><span class="p">),</span>
+                    <span class="n">multi_objective_algorithm</span><span class="o">=</span><span class="n">mo_algorithm</span><span class="p">,</span>
+                    <span class="n">intensifier</span><span class="o">=</span><span class="n">SuccessiveHalving</span><span class="p">(</span>
+                        <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                        <span class="n">incumbent_selection</span><span class="o">=</span><span class="s2">&quot;highest_budget&quot;</span><span class="p">,</span>
+                        <span class="n">max_incumbents</span><span class="o">=</span><span class="mi">1</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">smacs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">HyperparameterOptimizationFacade</span><span class="p">(</span>
+                    <span class="n">scenario</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">scenario</span><span class="p">,</span>
+                    <span class="n">target_function</span><span class="o">=</span><span class="k">lambda</span> <span class="n">config</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_evaluate_objective</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">objective</span><span class="p">),</span>
+                    <span class="n">multi_objective_algorithm</span><span class="o">=</span><span class="n">mo_algorithm</span>
+                <span class="p">)</span>
+                
+    <span class="k">def</span><span class="w"> </span><span class="nf">_evaluate_objective</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> 
+                          <span class="n">objective</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Model</span><span class="p">],</span> <span class="nb">float</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Evaluate a parameter configuration for a specific objective.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            config: Parameter configuration</span>
+<span class="sd">            objective: Objective function</span>
+<span class="sd">            </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            Objective value</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_type</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">objective</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+        
+<div class="viewcode-block" id="MultiObjectiveSMAC.optimize">
+<a class="viewcode-back" href="../../api/optimization.html#amber.MultiObjectiveSMAC.optimize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run the multi-objective optimization.</span>
+<span class="sd">        </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            Dictionary containing Pareto-optimal configurations and results</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Run optimization for each objective</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">smac</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">smacs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">incumbent</span> <span class="o">=</span> <span class="n">smac</span><span class="o">.</span><span class="n">optimize</span><span class="p">()</span>
+            <span class="n">results</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s1">&#39;best_config&#39;</span><span class="p">:</span> <span class="n">incumbent</span><span class="o">.</span><span class="n">get_dictionary</span><span class="p">(),</span>
+                <span class="s1">&#39;best_cost&#39;</span><span class="p">:</span> <span class="n">smac</span><span class="o">.</span><span class="n">runhistory</span><span class="o">.</span><span class="n">get_cost</span><span class="p">(</span><span class="n">incumbent</span><span class="p">)</span>
+            <span class="p">}</span>
+            
+        <span class="c1"># Get full optimization history</span>
+        <span class="n">history</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">smac</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">smacs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">config_id</span><span class="p">,</span> <span class="n">run_value</span> <span class="ow">in</span> <span class="n">smac</span><span class="o">.</span><span class="n">runhistory</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">config</span> <span class="o">=</span> <span class="n">smac</span><span class="o">.</span><span class="n">runhistory</span><span class="o">.</span><span class="n">ids_config</span><span class="p">[</span><span class="n">config_id</span><span class="p">]</span>
+                <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="o">**</span><span class="n">config</span><span class="o">.</span><span class="n">get_dictionary</span><span class="p">(),</span>
+                    <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">_cost&#39;</span><span class="p">:</span> <span class="n">run_value</span><span class="o">.</span><span class="n">cost</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">_time&#39;</span><span class="p">:</span> <span class="n">run_value</span><span class="o">.</span><span class="n">time</span>
+                <span class="p">})</span>
+            <span class="n">history</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            
+        <span class="c1"># Find Pareto-optimal configurations</span>
+        <span class="n">pareto_front</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_pareto_front</span><span class="p">(</span><span class="n">history</span><span class="p">)</span>
+        
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s1">&#39;single_objective_results&#39;</span><span class="p">:</span> <span class="n">results</span><span class="p">,</span>
+            <span class="s1">&#39;pareto_front&#39;</span><span class="p">:</span> <span class="n">pareto_front</span><span class="p">,</span>
+            <span class="s1">&#39;history&#39;</span><span class="p">:</span> <span class="n">history</span>
+        <span class="p">}</span></div>
+
+        
+    <span class="k">def</span><span class="w"> </span><span class="nf">_find_pareto_front</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">history</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Find Pareto-optimal configurations.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            history: Dictionary of optimization histories</span>
+<span class="sd">            </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            DataFrame containing Pareto-optimal configurations</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Combine all histories</span>
+        <span class="n">combined</span> <span class="o">=</span> <span class="n">history</span><span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="n">history</span><span class="o">.</span><span class="n">keys</span><span class="p">())[</span><span class="mi">0</span><span class="p">]]</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">df</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">history</span><span class="o">.</span><span class="n">items</span><span class="p">())[</span><span class="mi">1</span><span class="p">:]:</span>
+            <span class="n">combined</span> <span class="o">=</span> <span class="n">combined</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                <span class="n">df</span><span class="o">.</span><span class="n">select</span><span class="p">([</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">_cost&#39;</span><span class="p">]),</span>
+                <span class="n">on</span><span class="o">=</span><span class="s1">&#39;id&#39;</span>
+            <span class="p">)</span>
+            
+        <span class="c1"># Normalize costs</span>
+        <span class="n">costs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">row</span><span class="p">[</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">_cost&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objectives</span><span class="o">.</span><span class="n">keys</span><span class="p">()]</span>
+                         <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">combined</span><span class="o">.</span><span class="n">iter_rows</span><span class="p">(</span><span class="n">named</span><span class="o">=</span><span class="kc">True</span><span class="p">)])</span>
+        <span class="n">normalized_costs</span> <span class="o">=</span> <span class="n">normalize_costs</span><span class="p">(</span><span class="n">costs</span><span class="p">)</span>
+        
+        <span class="c1"># Find Pareto-optimal points</span>
+        <span class="n">pareto_mask</span> <span class="o">=</span> <span class="n">calculate_pareto_front</span><span class="p">(</span><span class="n">normalized_costs</span><span class="p">)</span>
+        
+        <span class="k">return</span> <span class="n">combined</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">pareto_mask</span><span class="p">))</span> </div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, AMBER Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,6 @@
+﻿amber
+=====
+
+.. currentmodule:: amber
+
+.. automodule:: amber

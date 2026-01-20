@@ -1,0 +1,10 @@
+agentpy>=0.1.5
+mesa>=2.0.0
+polars>=0.20.0
+pandas>=2.0.0
+tabulate>=0.9.0
+numpy>=1.20.0
+matplotlib>=3.5.0
+Melodie>=1.0.0
+scipy>=1.10.0
+numba>=0.57.0

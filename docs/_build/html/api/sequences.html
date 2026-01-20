@@ -1,0 +1,586 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sequences &mdash; AMBER 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Optimization" href="optimization.html" />
+    <link rel="prev" title="Environments" href="environments.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            AMBER
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples/index.html">Examples</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="index.html#core-components">Core Components</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="model.html">Model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="agent.html">Agent</a></li>
+<li class="toctree-l3"><a class="reference internal" href="environments.html">Environments</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Sequences</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#amber.sequences.AgentList"><code class="docutils literal notranslate"><span class="pre">AgentList</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#agentlist">AgentList</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#utilities">Utilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#quick-reference">Quick Reference</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Changelog</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">AMBER</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">Sequences</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/sequences.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-amber.sequences">
+<span id="sequences"></span><h1>Sequences<a class="headerlink" href="#module-amber.sequences" title="Link to this heading"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="amber.sequences.AgentList">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">amber.sequences.</span></span><span class="sig-name descname"><span class="pre">AgentList</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="model.html#amber.model.Model" title="amber.model.Model"><span class="pre">Model</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">agents_or_n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Type" title="(in Python v3.13)"><span class="pre">Type</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Container for managing collections of agents using Polars DataFrames.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.__contains__">
+<span class="sig-name descname"><span class="pre">__contains__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__contains__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.__contains__" title="Link to this definition"></a></dt>
+<dd><p>Check if agent is in the list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.__getitem__">
+<span class="sig-name descname"><span class="pre">__getitem__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__getitem__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.__getitem__" title="Link to this definition"></a></dt>
+<dd><p>Get agent by index.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.__iter__">
+<span class="sig-name descname"><span class="pre">__iter__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__iter__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.__iter__" title="Link to this definition"></a></dt>
+<dd><p>Iterate over agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.__len__">
+<span class="sig-name descname"><span class="pre">__len__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__len__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.__len__" title="Link to this definition"></a></dt>
+<dd><p>Get number of agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.__repr__">
+<span class="sig-name descname"><span class="pre">__repr__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__repr__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.__repr__" title="Link to this definition"></a></dt>
+<dd><p>String representation.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.__setitem__">
+<span class="sig-name descname"><span class="pre">__setitem__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__setitem__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.__setitem__" title="Link to this definition"></a></dt>
+<dd><p>Set agent by index.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.agent_ids">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">agent_ids</span></span><a class="headerlink" href="#amber.sequences.AgentList.agent_ids" title="Link to this definition"></a></dt>
+<dd><p>Get list of agent IDs.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.append">
+<span class="sig-name descname"><span class="pre">append</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.append"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.append" title="Link to this definition"></a></dt>
+<dd><p>Add an agent to the end of the list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.apply">
+<span class="sig-name descname"><span class="pre">apply</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.13)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Series</span></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.apply"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.apply" title="Link to this definition"></a></dt>
+<dd><p>Apply a function to all agents.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>func</strong> – Function to apply to each agent</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Series containing function results</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.call">
+<span class="sig-name descname"><span class="pre">call</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.call"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.call" title="Link to this definition"></a></dt>
+<dd><p>Call a method on all agents in the list.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>method_name</strong> – Name of the method to call</p></li>
+<li><p><strong>*args</strong> – Positional arguments to pass to the method</p></li>
+<li><p><strong>**kwargs</strong> – Keyword arguments to pass to the method</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.clear">
+<span class="sig-name descname"><span class="pre">clear</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.clear"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.clear" title="Link to this definition"></a></dt>
+<dd><p>Remove all agents from the list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.copy">
+<span class="sig-name descname"><span class="pre">copy</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.copy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.copy" title="Link to this definition"></a></dt>
+<dd><p>Create a shallow copy of the agent list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.count">
+<span class="sig-name descname"><span class="pre">count</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.count"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.count" title="Link to this definition"></a></dt>
+<dd><p>Count occurrences of an agent.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.extend">
+<span class="sig-name descname"><span class="pre">extend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agents</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.extend"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.extend" title="Link to this definition"></a></dt>
+<dd><p>Add multiple agents to the end of the list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.get_data">
+<span class="sig-name descname"><span class="pre">get_data</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.get_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.get_data" title="Link to this definition"></a></dt>
+<dd><p>Get all agents’ data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>DataFrame containing all agents’ data</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.group_by">
+<span class="sig-name descname"><span class="pre">group_by</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">by</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#amber.sequences.AgentList" title="amber.sequences.AgentList"><span class="pre">AgentList</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.group_by"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.group_by" title="Link to this definition"></a></dt>
+<dd><p>Group agents by a specific column.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>by</strong> – Name of the column to group by</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dictionary mapping group values to AgentLists</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.index">
+<span class="sig-name descname"><span class="pre">index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.index" title="Link to this definition"></a></dt>
+<dd><p>Find the index of an agent.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.insert">
+<span class="sig-name descname"><span class="pre">insert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.insert"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.insert" title="Link to this definition"></a></dt>
+<dd><p>Insert an agent at the given index.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.pop">
+<span class="sig-name descname"><span class="pre">pop</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">-1</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.pop"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.pop" title="Link to this definition"></a></dt>
+<dd><p>Remove and return an agent at the given index.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.record">
+<span class="sig-name descname"><span class="pre">record</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.record"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.record" title="Link to this definition"></a></dt>
+<dd><p>Record a variable for all agents in the list.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> – Name of the variable</p></li>
+<li><p><strong>value</strong> – Value to record</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.remove">
+<span class="sig-name descname"><span class="pre">remove</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.remove"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.remove" title="Link to this definition"></a></dt>
+<dd><p>Remove an agent from the list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.reverse">
+<span class="sig-name descname"><span class="pre">reverse</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.reverse"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.reverse" title="Link to this definition"></a></dt>
+<dd><p>Reverse the order of agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.select">
+<span class="sig-name descname"><span class="pre">select</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">condition</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Expr</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#amber.sequences.AgentList" title="amber.sequences.AgentList"><span class="pre">AgentList</span></a></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.select"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.select" title="Link to this definition"></a></dt>
+<dd><p>Select agents based on a Polars expression.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>condition</strong> – Polars expression to filter agents</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>New AgentList containing only the selected agents</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.sort">
+<span class="sig-name descname"><span class="pre">sort</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reverse</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.sort"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.sort" title="Link to this definition"></a></dt>
+<dd><p>Sort the agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.sequences.AgentList.update_data">
+<span class="sig-name descname"><span class="pre">update_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.update_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.sequences.AgentList.update_data" title="Link to this definition"></a></dt>
+<dd><p>Update data for all agents.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> – Dictionary of column names and values to update</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The sequences module provides specialized data structures for managing collections of agents.</p>
+<section id="agentlist">
+<h2>AgentList<a class="headerlink" href="#agentlist" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="amber.AgentList">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">amber.</span></span><span class="sig-name descname"><span class="pre">AgentList</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="model.html#amber.model.Model" title="amber.model.Model"><span class="pre">Model</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">agents_or_n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Type" title="(in Python v3.13)"><span class="pre">Type</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Container for managing collections of agents using Polars DataFrames.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.__contains__">
+<span class="sig-name descname"><span class="pre">__contains__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__contains__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.__contains__" title="Link to this definition"></a></dt>
+<dd><p>Check if agent is in the list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.__getitem__">
+<span class="sig-name descname"><span class="pre">__getitem__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__getitem__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.__getitem__" title="Link to this definition"></a></dt>
+<dd><p>Get agent by index.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.__iter__">
+<span class="sig-name descname"><span class="pre">__iter__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__iter__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.__iter__" title="Link to this definition"></a></dt>
+<dd><p>Iterate over agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.__len__">
+<span class="sig-name descname"><span class="pre">__len__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__len__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.__len__" title="Link to this definition"></a></dt>
+<dd><p>Get number of agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.__repr__">
+<span class="sig-name descname"><span class="pre">__repr__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__repr__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.__repr__" title="Link to this definition"></a></dt>
+<dd><p>String representation.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.__setitem__">
+<span class="sig-name descname"><span class="pre">__setitem__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.__setitem__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.__setitem__" title="Link to this definition"></a></dt>
+<dd><p>Set agent by index.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.AgentList.agent_ids">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">agent_ids</span></span><a class="headerlink" href="#amber.AgentList.agent_ids" title="Link to this definition"></a></dt>
+<dd><p>Get list of agent IDs.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.append">
+<span class="sig-name descname"><span class="pre">append</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.append"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.append" title="Link to this definition"></a></dt>
+<dd><p>Add an agent to the end of the list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.apply">
+<span class="sig-name descname"><span class="pre">apply</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.13)"><span class="pre">Callable</span></a><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Series</span></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.apply"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.apply" title="Link to this definition"></a></dt>
+<dd><p>Apply a function to all agents.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>func</strong> – Function to apply to each agent</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Series containing function results</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.call">
+<span class="sig-name descname"><span class="pre">call</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.call"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.call" title="Link to this definition"></a></dt>
+<dd><p>Call a method on all agents in the list.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>method_name</strong> – Name of the method to call</p></li>
+<li><p><strong>*args</strong> – Positional arguments to pass to the method</p></li>
+<li><p><strong>**kwargs</strong> – Keyword arguments to pass to the method</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.clear">
+<span class="sig-name descname"><span class="pre">clear</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.clear"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.clear" title="Link to this definition"></a></dt>
+<dd><p>Remove all agents from the list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.copy">
+<span class="sig-name descname"><span class="pre">copy</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.copy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.copy" title="Link to this definition"></a></dt>
+<dd><p>Create a shallow copy of the agent list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.count">
+<span class="sig-name descname"><span class="pre">count</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.count"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.count" title="Link to this definition"></a></dt>
+<dd><p>Count occurrences of an agent.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.extend">
+<span class="sig-name descname"><span class="pre">extend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agents</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.extend"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.extend" title="Link to this definition"></a></dt>
+<dd><p>Add multiple agents to the end of the list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.get_data">
+<span class="sig-name descname"><span class="pre">get_data</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.get_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.get_data" title="Link to this definition"></a></dt>
+<dd><p>Get all agents’ data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>DataFrame containing all agents’ data</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.group_by">
+<span class="sig-name descname"><span class="pre">group_by</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">by</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#amber.sequences.AgentList" title="amber.sequences.AgentList"><span class="pre">AgentList</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.group_by"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.group_by" title="Link to this definition"></a></dt>
+<dd><p>Group agents by a specific column.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>by</strong> – Name of the column to group by</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dictionary mapping group values to AgentLists</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.index">
+<span class="sig-name descname"><span class="pre">index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.index" title="Link to this definition"></a></dt>
+<dd><p>Find the index of an agent.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.insert">
+<span class="sig-name descname"><span class="pre">insert</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.insert"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.insert" title="Link to this definition"></a></dt>
+<dd><p>Insert an agent at the given index.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.pop">
+<span class="sig-name descname"><span class="pre">pop</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">-1</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.pop"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.pop" title="Link to this definition"></a></dt>
+<dd><p>Remove and return an agent at the given index.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.record">
+<span class="sig-name descname"><span class="pre">record</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.record"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.record" title="Link to this definition"></a></dt>
+<dd><p>Record a variable for all agents in the list.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> – Name of the variable</p></li>
+<li><p><strong>value</strong> – Value to record</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.remove">
+<span class="sig-name descname"><span class="pre">remove</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="agent.html#amber.agent.Agent" title="amber.agent.Agent"><span class="pre">Agent</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.remove"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.remove" title="Link to this definition"></a></dt>
+<dd><p>Remove an agent from the list.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.reverse">
+<span class="sig-name descname"><span class="pre">reverse</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.reverse"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.reverse" title="Link to this definition"></a></dt>
+<dd><p>Reverse the order of agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.select">
+<span class="sig-name descname"><span class="pre">select</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">condition</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Expr</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#amber.sequences.AgentList" title="amber.sequences.AgentList"><span class="pre">AgentList</span></a></span></span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.select"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.select" title="Link to this definition"></a></dt>
+<dd><p>Select agents based on a Polars expression.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>condition</strong> – Polars expression to filter agents</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>New AgentList containing only the selected agents</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.sort">
+<span class="sig-name descname"><span class="pre">sort</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reverse</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.sort"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.sort" title="Link to this definition"></a></dt>
+<dd><p>Sort the agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.AgentList.update_data">
+<span class="sig-name descname"><span class="pre">update_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/sequences.html#AgentList.update_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.AgentList.update_data" title="Link to this definition"></a></dt>
+<dd><p>Update data for all agents.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> – Dictionary of column names and values to update</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<p>The AgentList class provides a list-like interface for managing collections of agents with additional functionality.</p>
+<p><strong>Usage:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create AgentList with agents</span>
+<span class="n">agents</span> <span class="o">=</span> <span class="p">[</span><span class="n">am</span><span class="o">.</span><span class="n">Agent</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">)]</span>
+<span class="n">agent_list</span> <span class="o">=</span> <span class="n">am</span><span class="o">.</span><span class="n">AgentList</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">agents</span><span class="p">)</span>
+
+<span class="c1"># Or create with count and type</span>
+<span class="n">agent_list</span> <span class="o">=</span> <span class="n">am</span><span class="o">.</span><span class="n">AgentList</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="n">am</span><span class="o">.</span><span class="n">Agent</span><span class="p">)</span>
+
+<span class="c1"># Use like a regular list</span>
+<span class="n">agent_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_agent</span><span class="p">)</span>
+<span class="n">agent_list</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">old_agent</span><span class="p">)</span>
+
+<span class="c1"># Access agents</span>
+<span class="n">first_agent</span> <span class="o">=</span> <span class="n">agent_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="n">agent_list</span><span class="p">:</span>
+    <span class="c1"># Do something with agent</span>
+    <span class="k">pass</span>
+</pre></div>
+</div>
+<p><strong>Features:</strong></p>
+<ul class="simple">
+<li><p>List-like interface (append, remove, insert, etc.)</p></li>
+<li><p>Iteration support</p></li>
+<li><p>Indexing and slicing</p></li>
+<li><p>Length and containment checks</p></li>
+<li><p>Agent type validation</p></li>
+<li><p>Integration with AMBER models</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="environments.html" class="btn btn-neutral float-left" title="Environments" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="optimization.html" class="btn btn-neutral float-right" title="Optimization" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, AMBER Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

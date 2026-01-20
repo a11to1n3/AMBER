@@ -1,0 +1,610 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Environments &mdash; AMBER 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Sequences" href="sequences.html" />
+    <link rel="prev" title="Agent" href="agent.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            AMBER
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples/index.html">Examples</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="index.html#core-components">Core Components</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="model.html">Model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="agent.html">Agent</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Environments</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#amber.environments.Environment"><code class="docutils literal notranslate"><span class="pre">Environment</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#amber.environments.GridEnvironment"><code class="docutils literal notranslate"><span class="pre">GridEnvironment</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#amber.environments.NetworkEnvironment"><code class="docutils literal notranslate"><span class="pre">NetworkEnvironment</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#amber.environments.Position"><code class="docutils literal notranslate"><span class="pre">Position</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#amber.environments.SpaceEnvironment"><code class="docutils literal notranslate"><span class="pre">SpaceEnvironment</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#grid-environment">Grid Environment</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#space-environment">Space Environment</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#network-environment">Network Environment</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="sequences.html">Sequences</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#utilities">Utilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#quick-reference">Quick Reference</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Changelog</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">AMBER</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">API Reference</a></li>
+      <li class="breadcrumb-item active">Environments</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/environments.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-amber.environments">
+<span id="environments"></span><h1>Environments<a class="headerlink" href="#module-amber.environments" title="Link to this heading"></a></h1>
+<p>Environment implementations for AMBER framework.
+Supports different types of spatial and network topologies.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="amber.environments.Environment">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">amber.environments.</span></span><span class="sig-name descname"><span class="pre">Environment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#Environment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.Environment" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/abc.html#abc.ABC" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ABC</span></code></a></p>
+<p>Base class for all environments.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.Environment.get_distance">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_distance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent1_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent2_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#Environment.get_distance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.Environment.get_distance" title="Link to this definition"></a></dt>
+<dd><p>Calculate distance between two agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.Environment.get_neighbors">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_neighbors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/amber/environments.html#Environment.get_neighbors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.Environment.get_neighbors" title="Link to this definition"></a></dt>
+<dd><p>Get neighboring agents for a given agent.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.Environment.move_agent">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">move_agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_position</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#amber.environments.Position" title="amber.environments.Position"><span class="pre">Position</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#Environment.move_agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.Environment.move_agent" title="Link to this definition"></a></dt>
+<dd><p>Move an agent to a new position.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="amber.environments.GridEnvironment">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">amber.environments.</span></span><span class="sig-name descname"><span class="pre">GridEnvironment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.13)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">torus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.GridEnvironment" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#amber.environments.Environment" title="amber.environments.Environment"><code class="xref py py-class docutils literal notranslate"><span class="pre">Environment</span></code></a></p>
+<p>N-dimensional grid environment with discrete positions.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.GridEnvironment.empty_positions">
+<span class="sig-name descname"><span class="pre">empty_positions</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.empty_positions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.GridEnvironment.empty_positions" title="Link to this definition"></a></dt>
+<dd><p>Get all empty positions in the grid.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.GridEnvironment.get_distance">
+<span class="sig-name descname"><span class="pre">get_distance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pos1_or_agent1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pos2_or_agent2</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.get_distance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.GridEnvironment.get_distance" title="Link to this definition"></a></dt>
+<dd><p>Calculate Manhattan distance between two positions or agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.GridEnvironment.get_neighbors">
+<span class="sig-name descname"><span class="pre">get_neighbors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">position_or_agent_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_diagonal</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">distance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.get_neighbors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.GridEnvironment.get_neighbors" title="Link to this definition"></a></dt>
+<dd><p>Get neighboring positions or agents.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>position_or_agent_id</strong> – Either a position tuple or agent ID</p></li>
+<li><p><strong>include_diagonal</strong> – Whether to include diagonal neighbors</p></li>
+<li><p><strong>distance</strong> – Maximum distance for neighbors</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.environments.GridEnvironment.height">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">height</span></span><a class="headerlink" href="#amber.environments.GridEnvironment.height" title="Link to this definition"></a></dt>
+<dd><p>Get grid height (second dimension if it exists).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.GridEnvironment.is_valid_position">
+<span class="sig-name descname"><span class="pre">is_valid_position</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.is_valid_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.GridEnvironment.is_valid_position" title="Link to this definition"></a></dt>
+<dd><p>Check if a position is valid in the grid.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.GridEnvironment.move_agent">
+<span class="sig-name descname"><span class="pre">move_agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_position</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#amber.environments.Position" title="amber.environments.Position"><span class="pre">Position</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.move_agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.GridEnvironment.move_agent" title="Link to this definition"></a></dt>
+<dd><p>Move an agent to a new grid position.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.environments.GridEnvironment.positions">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">positions</span></span><a class="headerlink" href="#amber.environments.GridEnvironment.positions" title="Link to this definition"></a></dt>
+<dd><p>Get all possible positions in the grid.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.GridEnvironment.random_position">
+<span class="sig-name descname"><span class="pre">random_position</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.random_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.GridEnvironment.random_position" title="Link to this definition"></a></dt>
+<dd><p>Get a random position in the grid.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.environments.GridEnvironment.width">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">width</span></span><a class="headerlink" href="#amber.environments.GridEnvironment.width" title="Link to this definition"></a></dt>
+<dd><p>Get grid width (first dimension).</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">amber.environments.</span></span><span class="sig-name descname"><span class="pre">NetworkEnvironment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">graph</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://networkx.org/documentation/stable/reference/classes/graph.html#networkx.Graph" title="(in NetworkX v3.5)"><span class="pre">Graph</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#amber.environments.Environment" title="amber.environments.Environment"><code class="xref py py-class docutils literal notranslate"><span class="pre">Environment</span></code></a></p>
+<p>Graph-based network environment.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.add_edge">
+<span class="sig-name descname"><span class="pre">add_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node1_or_agent1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node2_or_agent2</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">attr</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.add_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment.add_edge" title="Link to this definition"></a></dt>
+<dd><p>Add an edge between two nodes or agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.add_node">
+<span class="sig-name descname"><span class="pre">add_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_id</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">attr</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.add_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment.add_node" title="Link to this definition"></a></dt>
+<dd><p>Add a node to the network.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.edges">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">edges</span></span><a class="headerlink" href="#amber.environments.NetworkEnvironment.edges" title="Link to this definition"></a></dt>
+<dd><p>Get all edges in the network.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.get_clustering">
+<span class="sig-name descname"><span class="pre">get_clustering</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_or_agent_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.get_clustering"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment.get_clustering" title="Link to this definition"></a></dt>
+<dd><p>Get clustering coefficient for a node, agent, or the entire network.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.get_degree">
+<span class="sig-name descname"><span class="pre">get_degree</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_or_agent_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.get_degree"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment.get_degree" title="Link to this definition"></a></dt>
+<dd><p>Get the degree of a node or agent.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.get_distance">
+<span class="sig-name descname"><span class="pre">get_distance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node1_or_agent1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node2_or_agent2</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.get_distance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment.get_distance" title="Link to this definition"></a></dt>
+<dd><p>Calculate shortest path distance between two nodes or agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.get_neighbors">
+<span class="sig-name descname"><span class="pre">get_neighbors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_or_agent_id</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.get_neighbors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment.get_neighbors" title="Link to this definition"></a></dt>
+<dd><p>Get neighboring nodes or agents in the network.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.move_agent">
+<span class="sig-name descname"><span class="pre">move_agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_position</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#amber.environments.Position" title="amber.environments.Position"><span class="pre">Position</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.move_agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment.move_agent" title="Link to this definition"></a></dt>
+<dd><p>Move an agent to a new node in the network.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.nodes">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">nodes</span></span><a class="headerlink" href="#amber.environments.NetworkEnvironment.nodes" title="Link to this definition"></a></dt>
+<dd><p>Get all nodes in the network.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.random_node">
+<span class="sig-name descname"><span class="pre">random_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.random_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment.random_node" title="Link to this definition"></a></dt>
+<dd><p>Get a random node from the network.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.remove_edge">
+<span class="sig-name descname"><span class="pre">remove_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node1_or_agent1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node2_or_agent2</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.remove_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment.remove_edge" title="Link to this definition"></a></dt>
+<dd><p>Remove an edge between two nodes or agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.NetworkEnvironment.remove_node">
+<span class="sig-name descname"><span class="pre">remove_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.remove_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.NetworkEnvironment.remove_node" title="Link to this definition"></a></dt>
+<dd><p>Remove a node from the network.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="amber.environments.Position">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">amber.environments.</span></span><span class="sig-name descname"><span class="pre">Position</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">coordinates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.13)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">topology_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#Position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.Position" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Represents a position in any topology.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="amber.environments.Position.coordinates">
+<span class="sig-name descname"><span class="pre">coordinates</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.13)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#amber.environments.Position.coordinates" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="amber.environments.Position.topology_type">
+<span class="sig-name descname"><span class="pre">topology_type</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><span class="pre">str</span></a></em><a class="headerlink" href="#amber.environments.Position.topology_type" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="amber.environments.SpaceEnvironment">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">amber.environments.</span></span><span class="sig-name descname"><span class="pre">SpaceEnvironment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.13)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">torus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.SpaceEnvironment" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#amber.environments.Environment" title="amber.environments.Environment"><code class="xref py py-class docutils literal notranslate"><span class="pre">Environment</span></code></a></p>
+<p>N-dimensional continuous space environment.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.SpaceEnvironment.get_distance">
+<span class="sig-name descname"><span class="pre">get_distance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pos1_or_agent1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pos2_or_agent2</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment.get_distance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.SpaceEnvironment.get_distance" title="Link to this definition"></a></dt>
+<dd><p>Calculate Euclidean distance between two positions or agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.SpaceEnvironment.get_neighbors">
+<span class="sig-name descname"><span class="pre">get_neighbors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pos_or_agent_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment.get_neighbors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.SpaceEnvironment.get_neighbors" title="Link to this definition"></a></dt>
+<dd><p>Get neighboring agents within radius.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.SpaceEnvironment.is_valid_position">
+<span class="sig-name descname"><span class="pre">is_valid_position</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment.is_valid_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.SpaceEnvironment.is_valid_position" title="Link to this definition"></a></dt>
+<dd><p>Check if a position is within bounds.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.SpaceEnvironment.move_agent">
+<span class="sig-name descname"><span class="pre">move_agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_position</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#amber.environments.Position" title="amber.environments.Position"><span class="pre">Position</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment.move_agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.SpaceEnvironment.move_agent" title="Link to this definition"></a></dt>
+<dd><p>Move an agent to a new continuous position.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.environments.SpaceEnvironment.random_position">
+<span class="sig-name descname"><span class="pre">random_position</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment.random_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.environments.SpaceEnvironment.random_position" title="Link to this definition"></a></dt>
+<dd><p>Get a random position within bounds.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p>AMBER provides several built-in environment types for different spatial and network topologies.</p>
+<section id="grid-environment">
+<h2>Grid Environment<a class="headerlink" href="#grid-environment" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="amber.GridEnvironment">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">amber.</span></span><span class="sig-name descname"><span class="pre">GridEnvironment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.13)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">torus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.GridEnvironment" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#amber.environments.Environment" title="amber.environments.Environment"><code class="xref py py-class docutils literal notranslate"><span class="pre">Environment</span></code></a></p>
+<p>N-dimensional grid environment with discrete positions.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.GridEnvironment.empty_positions">
+<span class="sig-name descname"><span class="pre">empty_positions</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.empty_positions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.GridEnvironment.empty_positions" title="Link to this definition"></a></dt>
+<dd><p>Get all empty positions in the grid.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.GridEnvironment.get_distance">
+<span class="sig-name descname"><span class="pre">get_distance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pos1_or_agent1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pos2_or_agent2</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.get_distance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.GridEnvironment.get_distance" title="Link to this definition"></a></dt>
+<dd><p>Calculate Manhattan distance between two positions or agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.GridEnvironment.get_neighbors">
+<span class="sig-name descname"><span class="pre">get_neighbors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">position_or_agent_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_diagonal</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">distance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.get_neighbors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.GridEnvironment.get_neighbors" title="Link to this definition"></a></dt>
+<dd><p>Get neighboring positions or agents.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>position_or_agent_id</strong> – Either a position tuple or agent ID</p></li>
+<li><p><strong>include_diagonal</strong> – Whether to include diagonal neighbors</p></li>
+<li><p><strong>distance</strong> – Maximum distance for neighbors</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.GridEnvironment.height">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">height</span></span><a class="headerlink" href="#amber.GridEnvironment.height" title="Link to this definition"></a></dt>
+<dd><p>Get grid height (second dimension if it exists).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.GridEnvironment.is_valid_position">
+<span class="sig-name descname"><span class="pre">is_valid_position</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.is_valid_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.GridEnvironment.is_valid_position" title="Link to this definition"></a></dt>
+<dd><p>Check if a position is valid in the grid.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.GridEnvironment.move_agent">
+<span class="sig-name descname"><span class="pre">move_agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_position</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#amber.environments.Position" title="amber.environments.Position"><span class="pre">Position</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.move_agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.GridEnvironment.move_agent" title="Link to this definition"></a></dt>
+<dd><p>Move an agent to a new grid position.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.GridEnvironment.positions">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">positions</span></span><a class="headerlink" href="#amber.GridEnvironment.positions" title="Link to this definition"></a></dt>
+<dd><p>Get all possible positions in the grid.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.GridEnvironment.random_position">
+<span class="sig-name descname"><span class="pre">random_position</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#GridEnvironment.random_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.GridEnvironment.random_position" title="Link to this definition"></a></dt>
+<dd><p>Get a random position in the grid.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.GridEnvironment.width">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">width</span></span><a class="headerlink" href="#amber.GridEnvironment.width" title="Link to this definition"></a></dt>
+<dd><p>Get grid width (first dimension).</p>
+</dd></dl>
+
+</dd></dl>
+
+<p>The GridEnvironment provides a 2D grid-based space where agents can be positioned and move around.</p>
+<p><strong>Usage:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a 10x10 grid</span>
+<span class="n">grid</span> <span class="o">=</span> <span class="n">am</span><span class="o">.</span><span class="n">GridEnvironment</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">))</span>
+
+<span class="c1"># Place an agent</span>
+<span class="n">position</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">random_position</span><span class="p">()</span>
+<span class="n">agent</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="n">position</span>
+
+<span class="c1"># Get neighbors</span>
+<span class="n">neighbors</span> <span class="o">=</span> <span class="n">grid</span><span class="o">.</span><span class="n">get_neighbors</span><span class="p">(</span><span class="n">position</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="space-environment">
+<h2>Space Environment<a class="headerlink" href="#space-environment" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="amber.SpaceEnvironment">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">amber.</span></span><span class="sig-name descname"><span class="pre">SpaceEnvironment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Tuple" title="(in Python v3.13)"><span class="pre">Tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">torus</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.SpaceEnvironment" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#amber.environments.Environment" title="amber.environments.Environment"><code class="xref py py-class docutils literal notranslate"><span class="pre">Environment</span></code></a></p>
+<p>N-dimensional continuous space environment.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.SpaceEnvironment.get_distance">
+<span class="sig-name descname"><span class="pre">get_distance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pos1_or_agent1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pos2_or_agent2</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment.get_distance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.SpaceEnvironment.get_distance" title="Link to this definition"></a></dt>
+<dd><p>Calculate Euclidean distance between two positions or agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.SpaceEnvironment.get_neighbors">
+<span class="sig-name descname"><span class="pre">get_neighbors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pos_or_agent_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment.get_neighbors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.SpaceEnvironment.get_neighbors" title="Link to this definition"></a></dt>
+<dd><p>Get neighboring agents within radius.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.SpaceEnvironment.is_valid_position">
+<span class="sig-name descname"><span class="pre">is_valid_position</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">position</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment.is_valid_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.SpaceEnvironment.is_valid_position" title="Link to this definition"></a></dt>
+<dd><p>Check if a position is within bounds.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.SpaceEnvironment.move_agent">
+<span class="sig-name descname"><span class="pre">move_agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_position</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#amber.environments.Position" title="amber.environments.Position"><span class="pre">Position</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment.move_agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.SpaceEnvironment.move_agent" title="Link to this definition"></a></dt>
+<dd><p>Move an agent to a new continuous position.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.SpaceEnvironment.random_position">
+<span class="sig-name descname"><span class="pre">random_position</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#SpaceEnvironment.random_position"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.SpaceEnvironment.random_position" title="Link to this definition"></a></dt>
+<dd><p>Get a random position within bounds.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p>The SpaceEnvironment provides continuous 2D space with configurable boundaries.</p>
+<p><strong>Usage:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create continuous space</span>
+<span class="n">space</span> <span class="o">=</span> <span class="n">am</span><span class="o">.</span><span class="n">SpaceEnvironment</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">bounds</span><span class="o">=</span><span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">)])</span>
+
+<span class="c1"># Place an agent</span>
+<span class="n">position</span> <span class="o">=</span> <span class="p">(</span><span class="mf">25.5</span><span class="p">,</span> <span class="mf">37.2</span><span class="p">)</span>
+<span class="n">agent</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="n">position</span>
+
+<span class="c1"># Get neighbors within radius</span>
+<span class="n">neighbors</span> <span class="o">=</span> <span class="n">space</span><span class="o">.</span><span class="n">get_neighbors</span><span class="p">(</span><span class="n">position</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="network-environment">
+<h2>Network Environment<a class="headerlink" href="#network-environment" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">amber.</span></span><span class="sig-name descname"><span class="pre">NetworkEnvironment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">graph</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://networkx.org/documentation/stable/reference/classes/graph.html#networkx.Graph" title="(in NetworkX v3.5)"><span class="pre">Graph</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#amber.environments.Environment" title="amber.environments.Environment"><code class="xref py py-class docutils literal notranslate"><span class="pre">Environment</span></code></a></p>
+<p>Graph-based network environment.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.add_edge">
+<span class="sig-name descname"><span class="pre">add_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node1_or_agent1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node2_or_agent2</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">attr</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.add_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment.add_edge" title="Link to this definition"></a></dt>
+<dd><p>Add an edge between two nodes or agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.add_node">
+<span class="sig-name descname"><span class="pre">add_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_id</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">attr</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.add_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment.add_node" title="Link to this definition"></a></dt>
+<dd><p>Add a node to the network.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.edges">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">edges</span></span><a class="headerlink" href="#amber.NetworkEnvironment.edges" title="Link to this definition"></a></dt>
+<dd><p>Get all edges in the network.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.get_clustering">
+<span class="sig-name descname"><span class="pre">get_clustering</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_or_agent_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.get_clustering"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment.get_clustering" title="Link to this definition"></a></dt>
+<dd><p>Get clustering coefficient for a node, agent, or the entire network.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.get_degree">
+<span class="sig-name descname"><span class="pre">get_degree</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_or_agent_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.get_degree"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment.get_degree" title="Link to this definition"></a></dt>
+<dd><p>Get the degree of a node or agent.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.get_distance">
+<span class="sig-name descname"><span class="pre">get_distance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node1_or_agent1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node2_or_agent2</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><span class="pre">float</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.get_distance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment.get_distance" title="Link to this definition"></a></dt>
+<dd><p>Calculate shortest path distance between two nodes or agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.get_neighbors">
+<span class="sig-name descname"><span class="pre">get_neighbors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_or_agent_id</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.13)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.get_neighbors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment.get_neighbors" title="Link to this definition"></a></dt>
+<dd><p>Get neighboring nodes or agents in the network.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.move_agent">
+<span class="sig-name descname"><span class="pre">move_agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_position</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#amber.environments.Position" title="amber.environments.Position"><span class="pre">Position</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.move_agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment.move_agent" title="Link to this definition"></a></dt>
+<dd><p>Move an agent to a new node in the network.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.nodes">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">nodes</span></span><a class="headerlink" href="#amber.NetworkEnvironment.nodes" title="Link to this definition"></a></dt>
+<dd><p>Get all nodes in the network.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.random_node">
+<span class="sig-name descname"><span class="pre">random_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.random_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment.random_node" title="Link to this definition"></a></dt>
+<dd><p>Get a random node from the network.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.remove_edge">
+<span class="sig-name descname"><span class="pre">remove_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node1_or_agent1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node2_or_agent2</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.remove_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment.remove_edge" title="Link to this definition"></a></dt>
+<dd><p>Remove an edge between two nodes or agents.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="amber.NetworkEnvironment.remove_node">
+<span class="sig-name descname"><span class="pre">remove_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/amber/environments.html#NetworkEnvironment.remove_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#amber.NetworkEnvironment.remove_node" title="Link to this definition"></a></dt>
+<dd><p>Remove a node from the network.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p>The NetworkEnvironment provides graph-based topology for agent interactions.</p>
+<p><strong>Usage:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">networkx</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nx</span>
+
+<span class="c1"># Create network from NetworkX graph</span>
+<span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">erdos_renyi_graph</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">)</span>
+<span class="n">network</span> <span class="o">=</span> <span class="n">am</span><span class="o">.</span><span class="n">NetworkEnvironment</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">G</span><span class="p">)</span>
+
+<span class="c1"># Place agent on node</span>
+<span class="n">agent</span><span class="o">.</span><span class="n">node</span> <span class="o">=</span> <span class="mi">42</span>
+
+<span class="c1"># Get connected neighbors</span>
+<span class="n">neighbors</span> <span class="o">=</span> <span class="n">network</span><span class="o">.</span><span class="n">get_neighbors</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="agent.html" class="btn btn-neutral float-left" title="Agent" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="sequences.html" class="btn btn-neutral float-right" title="Sequences" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, AMBER Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

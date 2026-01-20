@@ -1,0 +1,242 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Reference &mdash; AMBER 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Model" href="model.html" />
+    <link rel="prev" title="Examples" href="../examples/index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            AMBER
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples/index.html">Examples</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#core-components">Core Components</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="model.html">Model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="agent.html">Agent</a></li>
+<li class="toctree-l3"><a class="reference internal" href="environments.html">Environments</a></li>
+<li class="toctree-l3"><a class="reference internal" href="sequences.html">Sequences</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#utilities">Utilities</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="optimization.html">Optimization</a></li>
+<li class="toctree-l3"><a class="reference internal" href="experiment.html">Experiment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="base.html">Base Classes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#quick-reference">Quick Reference</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Changelog</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">AMBER</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">API Reference</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/index.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="api-reference">
+<h1>API Reference<a class="headerlink" href="#api-reference" title="Link to this heading"></a></h1>
+<p>This section provides detailed documentation for all AMBER classes, functions, and modules.</p>
+<section id="core-components">
+<h2>Core Components<a class="headerlink" href="#core-components" title="Link to this heading"></a></h2>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="model.html">Model</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="model.html#amber.model.Model"><code class="docutils literal notranslate"><span class="pre">Model</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="model.html#basic-usage">Basic Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="model.html#key-methods">Key Methods</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="agent.html">Agent</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="agent.html#amber.agent.Agent"><code class="docutils literal notranslate"><span class="pre">Agent</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="agent.html#basic-usage">Basic Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="agent.html#custom-agent-classes">Custom Agent Classes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="agent.html#agent-properties">Agent Properties</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="environments.html">Environments</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="environments.html#amber.environments.Environment"><code class="docutils literal notranslate"><span class="pre">Environment</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="environments.html#amber.environments.GridEnvironment"><code class="docutils literal notranslate"><span class="pre">GridEnvironment</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="environments.html#amber.environments.NetworkEnvironment"><code class="docutils literal notranslate"><span class="pre">NetworkEnvironment</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="environments.html#amber.environments.Position"><code class="docutils literal notranslate"><span class="pre">Position</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="environments.html#amber.environments.SpaceEnvironment"><code class="docutils literal notranslate"><span class="pre">SpaceEnvironment</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="environments.html#grid-environment">Grid Environment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="environments.html#space-environment">Space Environment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="environments.html#network-environment">Network Environment</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="sequences.html">Sequences</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="sequences.html#amber.sequences.AgentList"><code class="docutils literal notranslate"><span class="pre">AgentList</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="sequences.html#agentlist">AgentList</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+<section id="utilities">
+<h2>Utilities<a class="headerlink" href="#utilities" title="Link to this heading"></a></h2>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="optimization.html">Optimization</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#amber.optimization.MultiObjectiveSMAC"><code class="docutils literal notranslate"><span class="pre">MultiObjectiveSMAC</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#amber.optimization.ParameterSpace"><code class="docutils literal notranslate"><span class="pre">ParameterSpace</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#amber.optimization.SMACOptimizer"><code class="docutils literal notranslate"><span class="pre">SMACOptimizer</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#amber.optimization.SMACParameterSpace"><code class="docutils literal notranslate"><span class="pre">SMACParameterSpace</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#amber.optimization.bayesian_optimization"><code class="docutils literal notranslate"><span class="pre">bayesian_optimization()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#amber.optimization.grid_search"><code class="docutils literal notranslate"><span class="pre">grid_search()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#amber.optimization.objective_function"><code class="docutils literal notranslate"><span class="pre">objective_function()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#amber.optimization.random_search"><code class="docutils literal notranslate"><span class="pre">random_search()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#parameter-space">Parameter Space</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optimization.html#optimization-functions">Optimization Functions</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="experiment.html">Experiment</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="experiment.html#amber.experiment.Experiment"><code class="docutils literal notranslate"><span class="pre">Experiment</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="experiment.html#amber.experiment.IntRange"><code class="docutils literal notranslate"><span class="pre">IntRange</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="experiment.html#amber.experiment.Sample"><code class="docutils literal notranslate"><span class="pre">Sample</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="experiment.html#experiment-class">Experiment Class</a></li>
+<li class="toctree-l2"><a class="reference internal" href="experiment.html#sample-class">Sample Class</a></li>
+<li class="toctree-l2"><a class="reference internal" href="experiment.html#intrange-class">IntRange Class</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="base.html">Base Classes</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="base.html#amber.base.BaseAgent"><code class="docutils literal notranslate"><span class="pre">BaseAgent</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="base.html#amber.base.BaseModel"><code class="docutils literal notranslate"><span class="pre">BaseModel</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="base.html#basemodel">BaseModel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="base.html#baseagent">BaseAgent</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+<section id="quick-reference">
+<h2>Quick Reference<a class="headerlink" href="#quick-reference" title="Link to this heading"></a></h2>
+<p><strong>Core Classes:</strong></p>
+<ul class="simple">
+<li><p><a class="reference internal" href="_autosummary/amber.html#amber.Model" title="amber.Model"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.Model</span></code></a> - Base class for all agent-based models</p></li>
+<li><p><a class="reference internal" href="_autosummary/amber.html#amber.Agent" title="amber.Agent"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.Agent</span></code></a> - Individual agent with behaviors and properties</p></li>
+<li><p><a class="reference internal" href="base.html#amber.BaseAgent" title="amber.BaseAgent"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.BaseAgent</span></code></a> - Abstract base class for custom agents</p></li>
+<li><p><a class="reference internal" href="base.html#amber.BaseModel" title="amber.BaseModel"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.BaseModel</span></code></a> - Abstract base class for custom models</p></li>
+</ul>
+<p><strong>Environments:</strong></p>
+<ul class="simple">
+<li><p><a class="reference internal" href="environments.html#amber.GridEnvironment" title="amber.GridEnvironment"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.GridEnvironment</span></code></a> - 2D grid-based spatial environment</p></li>
+<li><p><a class="reference internal" href="environments.html#amber.SpaceEnvironment" title="amber.SpaceEnvironment"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.SpaceEnvironment</span></code></a> - Continuous 2D space environment</p></li>
+<li><p><a class="reference internal" href="environments.html#amber.NetworkEnvironment" title="amber.NetworkEnvironment"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.NetworkEnvironment</span></code></a> - Graph/network-based environment</p></li>
+</ul>
+<p><strong>Data Structures:</strong></p>
+<ul class="simple">
+<li><p><a class="reference internal" href="sequences.html#amber.AgentList" title="amber.AgentList"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.AgentList</span></code></a> - List-like container for agents with additional functionality</p></li>
+</ul>
+<p><strong>Optimization:</strong></p>
+<ul class="simple">
+<li><p><a class="reference internal" href="optimization.html#amber.grid_search" title="amber.grid_search"><code class="xref py py-func docutils literal notranslate"><span class="pre">amber.grid_search()</span></code></a> - Exhaustive parameter space search</p></li>
+<li><p><a class="reference internal" href="optimization.html#amber.random_search" title="amber.random_search"><code class="xref py py-func docutils literal notranslate"><span class="pre">amber.random_search()</span></code></a> - Random parameter sampling</p></li>
+<li><p><a class="reference internal" href="optimization.html#amber.bayesian_optimization" title="amber.bayesian_optimization"><code class="xref py py-func docutils literal notranslate"><span class="pre">amber.bayesian_optimization()</span></code></a> - Bayesian optimization of model parameters</p></li>
+</ul>
+<p><strong>Experiments:</strong></p>
+<ul class="simple">
+<li><p><a class="reference internal" href="experiment.html#amber.Experiment" title="amber.Experiment"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.Experiment</span></code></a> - Framework for running multiple model configurations</p></li>
+<li><p><a class="reference internal" href="experiment.html#amber.Sample" title="amber.Sample"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.Sample</span></code></a> - Parameter sampling for experiments</p></li>
+<li><p><a class="reference internal" href="experiment.html#amber.IntRange" title="amber.IntRange"><code class="xref py py-class docutils literal notranslate"><span class="pre">amber.IntRange</span></code></a> - Integer range specification for parameters</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../examples/index.html" class="btn btn-neutral float-left" title="Examples" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="model.html" class="btn btn-neutral float-right" title="Model" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, AMBER Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

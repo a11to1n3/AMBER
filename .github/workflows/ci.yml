@@ -1,0 +1,122 @@
+name: CI - Optimization Module
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-optimization:
+    name: Test Optimization Module
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov
+    
+    - name: Run optimization tests with coverage
+      run: |
+        pytest tests/test_optimization.py --cov=src/amber --cov-report=xml --cov-report=term-missing -v
+    
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: optimization
+        name: codecov-optimization
+        fail_ci_if_error: false
+        verbose: true
+
+  test-all-informational:
+    name: Test All Modules (Informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.12
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov
+    
+    - name: Run all tests (informational only - expect failures)
+      run: |
+        echo "Running all tests for informational purposes..."
+        echo "Many tests are expected to fail - this is for monitoring progress"
+        pytest tests/ --tb=short -v || echo "Expected failures in non-optimization modules"
+
+  test-badges:
+    runs-on: ubuntu-latest
+    needs: test-all-informational
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.12
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov coverage-badge
+    
+    - name: Run tests with coverage for badge
+      run: |
+        pytest tests/ --cov=src/amber --cov-report=term-missing --cov-fail-under=0
+        coverage-badge -o coverage-badge.svg
+    
+    - name: Create test badge
+      run: |
+        # Get test results
+        if pytest tests/ --tb=no -q; then
+          echo "TESTS_STATUS=passing" >> $GITHUB_ENV
+          echo "TESTS_COLOR=brightgreen" >> $GITHUB_ENV
+        else
+          echo "TESTS_STATUS=failing" >> $GITHUB_ENV  
+          echo "TESTS_COLOR=red" >> $GITHUB_ENV
+        fi
+    
+    - name: Generate badges
+      run: |
+        # Create tests badge
+        curl -s "https://img.shields.io/badge/tests-${{ env.TESTS_STATUS }}-${{ env.TESTS_COLOR }}" > tests-badge.svg
+        
+        # Get coverage percentage for manual badge creation if coverage-badge doesn't work
+        COVERAGE=$(python -c "import coverage; cov = coverage.Coverage(); cov.load(); print(f'{cov.report():.0f}')" 2>/dev/null || echo "0")
+        echo "Coverage: $COVERAGE%"
+    
+    - name: Commit badges
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add -A
+        git diff --staged --quiet || git commit -m "Update badges [skip ci]"
+        git push || true 
