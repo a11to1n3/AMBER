@@ -23,7 +23,7 @@ Features
 --------
 
 * **Intuitive API**: Simple and clean interface for building agent-based models
-* **High Performance**: Optimized data structures using Polars for fast simulations
+* **High Performance**: Efficient data structures using Polars for fast simulations
 * **Flexible Environments**: Support for grid, continuous space, and network topologies
 * **Rich Analytics**: Built-in data collection and analysis tools
 * **Scalable**: Handles models from small prototypes to large-scale simulations
