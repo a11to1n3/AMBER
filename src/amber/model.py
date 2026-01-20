@@ -18,9 +18,7 @@ class Model(BaseModel):
         """
         # Initialize Population Manager first because super().__init__ triggers agents_df setter
         # We infer the schema from initial requirements or defaults
-        self.population = Population(schema={
-            'wealth': pl.Int64
-        })
+        self.population = Population(schema={})
         
         super().__init__(parameters)
         self.t = 0  # Current time step
@@ -148,6 +146,11 @@ class Model(BaseModel):
     # --- Agent Management Delegates ---
     def add_agent(self, agent):
         self.population.add_agent(agent.id, self.t)
+        
+    def update_agent_data(self, agent_id: int, data: Dict[str, Any]):
+        """Update data for a single agent."""
+        for key, value in data.items():
+            self.population.set_agent_value(agent_id, key, value)
         
     def batch_update_agents(self, agent_ids: list, data: dict):
         """Batch update multiple agents at once for better performance.
