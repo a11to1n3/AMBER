@@ -288,8 +288,9 @@ def _run_single_simulation(params: Dict[str, Any], model_class: Type) -> Dict[st
     results = model.run()
     return {
         "params": params,
-        "model_data": results.get("model_data"),
-        "agents_data": results.get("agents_data"),
+        "model": results.get("model"),
+        "agents": results.get("agents"),
+        "info": results.get("info"),
     }
 
 
