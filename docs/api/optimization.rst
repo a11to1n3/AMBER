@@ -1,7 +1,7 @@
 Optimization
 ============
 
-.. automodule:: amber.optimization
+.. automodule:: ambr.optimization
    :members:
    :undoc-members:
    :show-inheritance:
@@ -11,7 +11,7 @@ The optimization module provides tools for parameter tuning and model optimizati
 Parameter Space
 ---------------
 
-.. autoclass:: amber.ParameterSpace
+.. autoclass:: ambr.ParameterSpace
    :members:
    :undoc-members:
 
@@ -33,7 +33,7 @@ Optimization Functions
 Grid Search
 ~~~~~~~~~~~
 
-.. autofunction:: amber.grid_search
+.. autofunction:: ambr.grid_search
 
 Exhaustive search over all parameter combinations:
 
@@ -50,7 +50,7 @@ Exhaustive search over all parameter combinations:
 Random Search
 ~~~~~~~~~~~~~
 
-.. autofunction:: amber.random_search
+.. autofunction:: ambr.random_search
 
 Random sampling from parameter space:
 
@@ -68,7 +68,7 @@ Random sampling from parameter space:
 Bayesian Optimization
 ~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: amber.bayesian_optimization
+.. autofunction:: ambr.bayesian_optimization
 
 Intelligent parameter search using Bayesian optimization:
 

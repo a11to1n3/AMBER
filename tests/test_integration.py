@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 import networkx as nx
 from unittest.mock import patch
-import amber as am
+import ambr as am
 
 
 class TestFullSimulationWorkflows:

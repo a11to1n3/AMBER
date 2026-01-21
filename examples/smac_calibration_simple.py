@@ -16,7 +16,7 @@ Requirements:
     pip install smac ConfigSpace
 """
 
-import amber as am
+import ambr as am
 import numpy as np
 import matplotlib.pyplot as plt
 

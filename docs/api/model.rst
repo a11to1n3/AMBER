@@ -1,7 +1,7 @@
 Model
 =====
 
-.. automodule:: amber.model
+.. automodule:: ambr.model
    :members:
    :undoc-members:
    :show-inheritance:
@@ -18,7 +18,7 @@ Basic Usage
 
 .. code-block:: python
 
-   import amber as am
+   import ambr as am
    
    class MyModel(am.Model):
        def setup(self):

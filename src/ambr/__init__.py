@@ -13,7 +13,7 @@ Key features:
 - High-performance data handling with Polars
 
 Example:
-    >>> import amber as am
+    >>> import ambr as am
     >>> 
     >>> class SimpleModel(am.Model):
     ...     def setup(self):
@@ -57,9 +57,9 @@ from .performance import (
 )
 
 __version__ = '0.1.0'
-__author__ = 'AMBER Team'
-__email__ = 'amber@example.com'
-__url__ = 'https://github.com/example/amber'
+__author__ = 'a11to1n3'
+__email__ = 'citation.needed@example.com'
+__url__ = 'https://github.com/a11to1n3/AMBER'
 
 __all__ = [
     'Agent',

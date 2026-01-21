@@ -49,7 +49,7 @@ setup(
     description="Agent-Based Modeling Environment for Research",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/amber-team/amber",
+    url="https://github.com/a11to1n3/AMBER",
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",

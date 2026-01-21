@@ -1,9 +1,9 @@
 """
-Tests for amber.__init__ module.
+Tests for ambr.__init__ module.
 """
 
 import pytest
-import amber as am
+import ambr as am
 
 
 class TestPackageInitialization:

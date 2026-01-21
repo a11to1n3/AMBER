@@ -20,7 +20,7 @@ The boids model was invented by Craig Reynolds, who describes it as follows:
 
 
 # Import required libraries
-import amber as am
+import ambr as am
 import numpy as np
 import matplotlib.pyplot as plt
 import polars as pl

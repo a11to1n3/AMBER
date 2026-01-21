@@ -111,7 +111,7 @@ The test suite aims for high coverage across all modules:
 ```python
 import pytest
 from unittest.mock import Mock, patch
-import amber as am
+import ambr as am
 
 class TestMyComponent:
     """Test cases for MyComponent class."""

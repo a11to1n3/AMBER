@@ -1,13 +1,13 @@
 """
-Tests for amber.performance module.
+Tests for ambr.performance module.
 """
 
 import pytest
 import numpy as np
 import time
 from unittest.mock import Mock, patch
-import amber as am
-from amber.performance import (
+import ambr as am
+from ambr.performance import (
     SpatialIndex,
     ParallelRunner,
     fast_distance_matrix,

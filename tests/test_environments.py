@@ -1,13 +1,13 @@
 """
-Tests for amber.environments module.
+Tests for ambr.environments module.
 """
 
 import pytest
 import numpy as np
 import networkx as nx
 from unittest.mock import Mock, patch
-import amber as am
-from amber.environments import GridEnvironment, SpaceEnvironment, NetworkEnvironment, Position
+import ambr as am
+from ambr.environments import GridEnvironment, SpaceEnvironment, NetworkEnvironment, Position
 import polars as pl
 
 

@@ -19,7 +19,7 @@ Experience realistic epidemic modeling with modern interactive tools!
 
 
 # Required imports for virus spread simulation
-import amber as am
+import ambr as am
 import polars as pl
 import numpy as np
 import plotly.graph_objects as go

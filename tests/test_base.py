@@ -1,11 +1,11 @@
 """
-Tests for amber.base module.
+Tests for ambr.base module.
 """
 
 import pytest
 from unittest.mock import Mock, patch
-import amber as am
-from amber.base import BaseModel
+import ambr as am
+from ambr.base import BaseModel
 
 
 class TestBaseModel:

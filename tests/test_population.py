@@ -6,7 +6,7 @@ import sys
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from amber.population import Population
+from ambr.population import Population
 
 class TestPopulation(unittest.TestCase):
     def test_add_agent(self):

@@ -1,5 +1,5 @@
 """
-Tests for amber.model module.
+Tests for ambr.model module.
 """
 
 import pytest
@@ -8,8 +8,8 @@ import numpy as np
 from unittest.mock import Mock, patch, MagicMock
 import time
 from datetime import datetime
-import amber as am
-from amber.model import Model
+import ambr as am
+from ambr.model import Model
 
 
 class TestModel:

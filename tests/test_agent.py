@@ -1,11 +1,11 @@
 """
-Tests for amber.agent module.
+Tests for ambr.agent module.
 """
 
 import pytest
 from unittest.mock import Mock, MagicMock
-import amber as am
-from amber.agent import Agent
+import ambr as am
+from ambr.agent import Agent
 
 
 class TestAgent:

@@ -33,7 +33,7 @@ jobs:
     
     - name: Run tests with coverage
       run: |
-        pytest tests/ --cov=src/amber --cov-report=xml --cov-report=term-missing -v --tb=short
+        pytest tests/ --cov=src/ambr --cov-report=xml --cov-report=term-missing -v --tb=short
     
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
@@ -42,7 +42,7 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
         file: ./coverage.xml
         flags: unittests
-        name: codecov-amber
+        name: codecov-ambr
         fail_ci_if_error: false
         verbose: true
 
@@ -67,7 +67,7 @@ jobs:
     
     - name: Run tests with coverage for badge
       run: |
-        pytest tests/ --cov=src/amber --cov-report=term-missing --cov-fail-under=0
+        pytest tests/ --cov=src/ambr --cov-report=term-missing --cov-fail-under=0
         coverage-badge -o coverage-badge.svg
     
     - name: Create test badge

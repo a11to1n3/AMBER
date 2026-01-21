@@ -1,7 +1,7 @@
 Environments
 ============
 
-.. automodule:: amber.environments
+.. automodule:: ambr.environments
    :members:
    :undoc-members:
    :show-inheritance:
@@ -11,7 +11,7 @@ AMBER provides several built-in environment types for different spatial and netw
 Grid Environment
 ----------------
 
-.. autoclass:: amber.GridEnvironment
+.. autoclass:: ambr.GridEnvironment
    :members:
    :undoc-members:
 
@@ -34,7 +34,7 @@ The GridEnvironment provides a 2D grid-based space where agents can be positione
 Space Environment
 -----------------
 
-.. autoclass:: amber.SpaceEnvironment
+.. autoclass:: ambr.SpaceEnvironment
    :members:
    :undoc-members:
 
@@ -57,7 +57,7 @@ The SpaceEnvironment provides continuous 2D space with configurable boundaries.
 Network Environment
 -------------------
 
-.. autoclass:: amber.NetworkEnvironment
+.. autoclass:: ambr.NetworkEnvironment
    :members:
    :undoc-members:
 
