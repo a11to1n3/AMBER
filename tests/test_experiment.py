@@ -252,6 +252,11 @@ class TestExperiment:
                     mock_agent = Mock()
                     mock_agent.id = i
                     self.add_agent(mock_agent)
+                
+                # key fix: ensure wealth column exists
+                self.population.data = self.population.data.with_columns(
+                    pl.lit(0).alias('wealth')
+                )
             
             def step(self):
                 # Update agent data

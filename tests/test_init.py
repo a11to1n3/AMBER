@@ -145,7 +145,12 @@ class TestPackageInitialization:
             'GridEnvironment', 'SpaceEnvironment', 'NetworkEnvironment',
             'ParameterSpace', 'objective_function', 'grid_search', 
             'random_search', 'bayesian_optimization',
-            'SMACOptimizer', 'MultiObjectiveSMAC', 'SMACParameterSpace'
+            'SMACOptimizer', 'MultiObjectiveSMAC', 'SMACParameterSpace',
+            # New exports
+            'Population', 'BatchUpdateContext', 'SpatialIndex', 'ParallelRunner',
+            'check_performance_deps', 'vectorized_move', 'vectorized_wealth_transfer',
+            'vectorized_random_velocities', 'HAS_SCIPY', 'HAS_NUMBA',
+            'HAS_SMAC'
         }
         
         # Check that we don't have unexpected exports
