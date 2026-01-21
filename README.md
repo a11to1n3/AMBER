@@ -103,7 +103,7 @@ best_params = results[0]['parameters']
 ## 📦 Installation
 
 ```bash
-pip install -e .
+pip install ambr
 ```
 
 ## 🏗️ Features
