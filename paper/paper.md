@@ -48,7 +48,7 @@ AMBER is distinguished from Mesa and AgentPy by the following aspects.
 
 # Overview
 
-The modules in AMBER can be organized into four clusters: **Model**, **Environments**, **Experiment**, and **Optimization**.
+The modules in AMBER can be organized into six clusters: **Model**, **Environments**, **Experiment**, **Modelling Manager**, **Optimization**, and **Infrastructure**.
 
 ## Model
 
