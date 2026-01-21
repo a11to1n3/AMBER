@@ -27,7 +27,7 @@ Key features include: (1) a `Population` abstraction that stores agent state as 
 
 # Statement of Need
 
-Agent-based modeling has become a standard methodology across disciplines—from epidemiology and ecology to economics and social science [@abar2017review]. Python's accessibility and rich ecosystem make it an attractive platform for ABM, with Mesa [@masad2015mesa] and AgentPy [@foramitti2021agentpy] emerging as the two prominent open-source frameworks.
+Agent-based modeling has become a standard methodology across disciplines—from epidemiology and ecology to economics and social science [@abar2017agent]. Python's accessibility and rich ecosystem make it an attractive platform for ABM, with Mesa [@masad2015mesa] and AgentPy [@foramitti2021agentpy] emerging as the two prominent open-source frameworks.
 
 However, researchers frequently face a trade-off: Python-based frameworks offer usability but encounter performance bottlenecks at scale, while high-performance alternatives (Julia's Agents.jl [@datseris2024agents], Java's Repast [@north2013complex], GPU-accelerated FLAME GPU 2 [@richmond2023flame]) require language switching or specialized expertise. This gap leaves researchers with simulations that either run slowly or require significant investment to port to faster platforms.
 
