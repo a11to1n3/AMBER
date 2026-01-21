@@ -1,6 +1,6 @@
 # Comprehensive Correctness Benchmark Report
 
-**Generated**: 2026-01-21 01:20:30
+**Generated**: 2026-01-21 01:34:36
 
 ## Metric Categories
 
@@ -17,9 +17,9 @@
 
 | Framework | Passed | Total | Score |
 |-----------|--------|-------|-------|
-| AMBER | 8 | 10 | 80% |
-| AgentPy | 8 | 10 | 80% |
-| Mesa | 7 | 10 | 70% |
+| AMBER | 10 | 11 | 91% |
+| AgentPy | 10 | 11 | 91% |
+| Mesa | 9 | 11 | 82% |
 
 ## Detailed Results
 
@@ -33,17 +33,30 @@
 | AgentPy | sir_epidemic | population_error | ✅ | Max step error: 0 |
 | Mesa | wealth_transfer | total_wealth_error | ✅ | Absolute error: 0.00e+00 |
 | Mesa | sir_epidemic | population_error | ✅ | Max step error: 0 |
+| Melodie | wealth_transfer | total_wealth_error | ✅ | Absolute error: 0.00e+00 |
+| Melodie | sir_epidemic | population_error | ✅ | Max step error: 0 |
+| SimPy | wealth_transfer | total_wealth_error | ✅ | Absolute error: 0.00e+00 |
+| SimPy | sir_epidemic | population_error | ✅ | Max step error: 0 |
 
 ### Statistical
 
 | Framework | Model | Metric | Status | Details |
 |-----------|-------|--------|--------|--------|
-| AMBER | wealth_transfer | boltzmann_ks_statistic | ❌ | KS=0.5050, p=0.0000 |
-| AMBER | random_walk | diffusion_coefficient_error | ❌ | Relative error: 82965.41% |
-| AgentPy | wealth_transfer | boltzmann_ks_statistic | ❌ | KS=0.5350, p=0.0000 |
-| AgentPy | random_walk | diffusion_coefficient_error | ❌ | Relative error: 83886.79% |
-| Mesa | wealth_transfer | boltzmann_ks_statistic | ❌ | KS=0.4500, p=0.0000 |
-| Mesa | random_walk | diffusion_coefficient_error | ❌ | Relative error: 87815.01% |
+| AMBER | wealth_transfer | variance_growth | ❌ | Var ratio: 0.00x |
+| AMBER | random_walk | mean_squared_displacement | ✅ | MSD: 1503.85 |
+| AMBER | sir_epidemic | attack_rate | ✅ | Attack rate: 8.0% |
+| AgentPy | wealth_transfer | variance_growth | ❌ | Var ratio: 0.01x |
+| AgentPy | random_walk | mean_squared_displacement | ✅ | MSD: 1848.45 |
+| AgentPy | sir_epidemic | attack_rate | ✅ | Attack rate: 10.0% |
+| Mesa | wealth_transfer | variance_growth | ❌ | Var ratio: 0.00x |
+| Mesa | random_walk | mean_squared_displacement | ✅ | MSD: 1633.51 |
+| Mesa | sir_epidemic | attack_rate | ✅ | Attack rate: 12.0% |
+| Melodie | wealth_transfer | variance_growth | ❌ | Var ratio: 0.01x |
+| Melodie | random_walk | mean_squared_displacement | ✅ | MSD: 100.00 |
+| Melodie | sir_epidemic | attack_rate | ✅ | Attack rate: 0.0% |
+| SimPy | wealth_transfer | variance_growth | ❌ | Var ratio: 0.01x |
+| SimPy | random_walk | mean_squared_displacement | ✅ | MSD: 100.00 |
+| SimPy | sir_epidemic | attack_rate | ✅ | Attack rate: 0.0% |
 
 ### Reproducibility
 
@@ -52,25 +65,33 @@
 | AMBER | wealth_transfer | seed_determinism | ✅ | Same seed → same result |
 | AgentPy | wealth_transfer | seed_determinism | ✅ | Same seed → same result |
 | Mesa | wealth_transfer | seed_determinism | ❌ | Non-deterministic! |
+| Melodie | wealth_transfer | seed_determinism | ❌ | Non-deterministic! |
+| SimPy | wealth_transfer | seed_determinism | ❌ | Non-deterministic! |
 
 ### Emergent
 
 | Framework | Model | Metric | Status | Details |
 |-----------|-------|--------|--------|--------|
-| AMBER | wealth_transfer | gini_increase | ✅ | Gini change: +0.0581 |
+| AMBER | wealth_transfer | gini_increase | ✅ | Gini change: +0.0366 |
 | AMBER | sir_epidemic | recovery_monotonic | ✅ | R monotonically increasing |
-| AgentPy | wealth_transfer | gini_increase | ✅ | Gini change: +0.0563 |
+| AgentPy | wealth_transfer | gini_increase | ✅ | Gini change: +0.0420 |
 | AgentPy | sir_epidemic | recovery_monotonic | ✅ | R monotonically increasing |
-| Mesa | wealth_transfer | gini_increase | ✅ | Gini change: +0.0567 |
+| Mesa | wealth_transfer | gini_increase | ✅ | Gini change: +0.0354 |
 | Mesa | sir_epidemic | recovery_monotonic | ✅ | R monotonically increasing |
+| Melodie | wealth_transfer | gini_increase | ❌ | Gini change: +0.0000 |
+| Melodie | sir_epidemic | recovery_monotonic | ✅ | R monotonically increasing |
+| SimPy | wealth_transfer | gini_increase | ❌ | Gini change: +0.0000 |
+| SimPy | sir_epidemic | recovery_monotonic | ✅ | R monotonically increasing |
 
 ### Precision
 
 | Framework | Model | Metric | Status | Details |
 |-----------|-------|--------|--------|--------|
-| AMBER | wealth_transfer | error_accumulation | ✅ | Error at 100 steps: 0.00e+00, at 1000: 0.00e+00 |
-| AgentPy | wealth_transfer | error_accumulation | ✅ | Error at 100 steps: 0.00e+00, at 1000: 0.00e+00 |
-| Mesa | wealth_transfer | error_accumulation | ✅ | Error at 100 steps: 0.00e+00, at 1000: 0.00e+00 |
+| AMBER | wealth_transfer | error_accumulation | ✅ | Error at 50 steps: 0.00e+00, at 500: 0.00e+00 |
+| AgentPy | wealth_transfer | error_accumulation | ✅ | Error at 50 steps: 0.00e+00, at 500: 0.00e+00 |
+| Mesa | wealth_transfer | error_accumulation | ✅ | Error at 50 steps: 0.00e+00, at 500: 0.00e+00 |
+| Melodie | wealth_transfer | error_accumulation | ✅ | Error at 50 steps: 0.00e+00, at 500: 0.00e+00 |
+| SimPy | wealth_transfer | error_accumulation | ✅ | Error at 50 steps: 0.00e+00, at 500: 0.00e+00 |
 
 ### Edge Case
 
@@ -82,4 +103,8 @@
 | AgentPy | wealth_transfer | zero_steps | ✅ | Zero steps handled |
 | Mesa | wealth_transfer | single_agent | ✅ | Single agent handled |
 | Mesa | wealth_transfer | zero_steps | ✅ | Zero steps handled |
+| Melodie | wealth_transfer | single_agent | ✅ | Single agent handled |
+| Melodie | wealth_transfer | zero_steps | ✅ | Zero steps handled |
+| SimPy | wealth_transfer | single_agent | ✅ | Single agent handled |
+| SimPy | wealth_transfer | zero_steps | ✅ | Zero steps handled |
 
