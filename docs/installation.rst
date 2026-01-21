@@ -19,7 +19,7 @@ The easiest way to install AMBER is using pip:
 
 .. code-block:: bash
 
-   pip install amber
+   pip install ambr
 
 This will install AMBER and all required dependencies.
 
