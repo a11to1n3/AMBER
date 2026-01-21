@@ -71,7 +71,7 @@ Running multi-parameter experiments and Monte Carlo repetitions is a core compon
 
 To evaluate AMBER's scaling behavior, we benchmarked three canonical ABM workloads—Wealth Transfer, SIR Epidemic, and Random Walk—against Mesa and AgentPy across population sizes ranging from 100 to 10,000 agents. All benchmarks were run for 100 simulation steps on the same hardware. Figure 1 presents execution time (in seconds, log scale) as a function of agent count.
 
-![Scaling comparison of AMBER, Mesa, and AgentPy across three benchmark models (Wealth Transfer, SIR Epidemic, Random Walk). AMBER demonstrates consistently lower execution times as agent populations scale, with the largest performance advantage in the Wealth Transfer model where batch attribute updates dominate runtime.](benchmarks/results/scaling_chart.png){#fig:scaling width="100%"}
+![Scaling comparison of AMBER, Mesa, and AgentPy across three benchmark models (Wealth Transfer, SIR Epidemic, Random Walk). AMBER demonstrates consistently lower execution times as agent populations scale, with the largest performance advantage in the Wealth Transfer model where batch attribute updates dominate runtime.](../benchmarks/results/scaling_chart.png){#fig:scaling width="100%"}
 
 Key observations include:
 
