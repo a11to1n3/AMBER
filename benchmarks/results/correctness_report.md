@@ -1,49 +1,85 @@
-# Multi-Framework Correctness Benchmark
+# Comprehensive Correctness Benchmark Report
 
-**Generated**: 2026-01-21 01:09:23
+**Generated**: 2026-01-21 01:20:30
+
+## Metric Categories
+
+| Category | Description |
+|----------|-------------|
+| Conservation | Physical quantities preserved (total wealth, population) |
+| Statistical | Output matches known distributions (Boltzmann, diffusion) |
+| Reproducibility | Same seed produces identical results |
+| Emergent | Expected behaviors emerge (Gini increase, monotonic recovery) |
+| Precision | Numerical errors don't accumulate |
+| Edge Cases | Boundary conditions handled (single agent, zero steps) |
 
 ## Summary by Framework
 
-| Framework | Tests Passed | Pass Rate |
-|-----------|--------------|-----------|
-| ✅ AMBER | 3/3 | 100% |
-| ✅ AgentPy | 3/3 | 100% |
-| ✅ Mesa | 3/3 | 100% |
-| ✅ Melodie | 1/1 | 100% |
-| ✅ SimPy | 1/1 | 100% |
+| Framework | Passed | Total | Score |
+|-----------|--------|-------|-------|
+| AMBER | 8 | 10 | 80% |
+| AgentPy | 8 | 10 | 80% |
+| Mesa | 7 | 10 | 70% |
 
-## Detailed Results by Test
+## Detailed Results
 
-### Wealth Transfer
+### Conservation
 
-| Framework | Test | Status | Time | Details |
-|-----------|------|--------|------|--------|
-| AMBER | conservation | ✅ | 0.0108s | Expected: 10000, Got: 10000 |
-| AgentPy | conservation | ✅ | 0.0110s | Expected: 10000, Got: 10000 |
-| Mesa | conservation | ✅ | 0.0221s | Expected: 10000, Got: 10000 |
-| Melodie | conservation | ✅ | 0.0051s | Expected: 10000, Got: 10000 |
-| SimPy | conservation | ✅ | 0.0051s | Expected: 10000, Got: 10000 |
+| Framework | Model | Metric | Status | Details |
+|-----------|-------|--------|--------|--------|
+| AMBER | wealth_transfer | total_wealth_error | ✅ | Absolute error: 0.00e+00 |
+| AMBER | sir_epidemic | population_error | ✅ | Max step error: 0 |
+| AgentPy | wealth_transfer | total_wealth_error | ✅ | Absolute error: 0.00e+00 |
+| AgentPy | sir_epidemic | population_error | ✅ | Max step error: 0 |
+| Mesa | wealth_transfer | total_wealth_error | ✅ | Absolute error: 0.00e+00 |
+| Mesa | sir_epidemic | population_error | ✅ | Max step error: 0 |
 
-### Sir Epidemic
+### Statistical
 
-| Framework | Test | Status | Time | Details |
-|-----------|------|--------|------|--------|
-| AMBER | population_conservation | ✅ | 0.0046s | S=84, I=0, R=16, Total=100 |
-| AgentPy | population_conservation | ✅ | 0.0062s | S=88, I=0, R=12, Total=100 |
-| Mesa | population_conservation | ✅ | 0.0067s | S=82, I=0, R=18, Total=100 |
+| Framework | Model | Metric | Status | Details |
+|-----------|-------|--------|--------|--------|
+| AMBER | wealth_transfer | boltzmann_ks_statistic | ❌ | KS=0.5050, p=0.0000 |
+| AMBER | random_walk | diffusion_coefficient_error | ❌ | Relative error: 82965.41% |
+| AgentPy | wealth_transfer | boltzmann_ks_statistic | ❌ | KS=0.5350, p=0.0000 |
+| AgentPy | random_walk | diffusion_coefficient_error | ❌ | Relative error: 83886.79% |
+| Mesa | wealth_transfer | boltzmann_ks_statistic | ❌ | KS=0.4500, p=0.0000 |
+| Mesa | random_walk | diffusion_coefficient_error | ❌ | Relative error: 87815.01% |
 
-### Random Walk
+### Reproducibility
 
-| Framework | Test | Status | Time | Details |
-|-----------|------|--------|------|--------|
-| AMBER | spatial_bounds | ✅ | 0.0023s | Out of bounds: 0 |
-| AgentPy | spatial_bounds | ✅ | 0.0036s | Out of bounds: 0 |
-| Mesa | spatial_bounds | ✅ | 0.0038s | Out of bounds: 0 |
+| Framework | Model | Metric | Status | Details |
+|-----------|-------|--------|--------|--------|
+| AMBER | wealth_transfer | seed_determinism | ✅ | Same seed → same result |
+| AgentPy | wealth_transfer | seed_determinism | ✅ | Same seed → same result |
+| Mesa | wealth_transfer | seed_determinism | ❌ | Non-deterministic! |
 
-## Scientific Invariants Tested
+### Emergent
 
-| Model | Invariant | Description |
-|-------|-----------|-------------|
-| Wealth Transfer | Conservation | Total wealth S = constant |
-| SIR Epidemic | Conservation | S + I + R = N at all times |
-| Random Walk | Boundedness | All agents stay within world limits |
+| Framework | Model | Metric | Status | Details |
+|-----------|-------|--------|--------|--------|
+| AMBER | wealth_transfer | gini_increase | ✅ | Gini change: +0.0581 |
+| AMBER | sir_epidemic | recovery_monotonic | ✅ | R monotonically increasing |
+| AgentPy | wealth_transfer | gini_increase | ✅ | Gini change: +0.0563 |
+| AgentPy | sir_epidemic | recovery_monotonic | ✅ | R monotonically increasing |
+| Mesa | wealth_transfer | gini_increase | ✅ | Gini change: +0.0567 |
+| Mesa | sir_epidemic | recovery_monotonic | ✅ | R monotonically increasing |
+
+### Precision
+
+| Framework | Model | Metric | Status | Details |
+|-----------|-------|--------|--------|--------|
+| AMBER | wealth_transfer | error_accumulation | ✅ | Error at 100 steps: 0.00e+00, at 1000: 0.00e+00 |
+| AgentPy | wealth_transfer | error_accumulation | ✅ | Error at 100 steps: 0.00e+00, at 1000: 0.00e+00 |
+| Mesa | wealth_transfer | error_accumulation | ✅ | Error at 100 steps: 0.00e+00, at 1000: 0.00e+00 |
+
+### Edge Case
+
+| Framework | Model | Metric | Status | Details |
+|-----------|-------|--------|--------|--------|
+| AMBER | wealth_transfer | single_agent | ✅ | Single agent handled |
+| AMBER | wealth_transfer | zero_steps | ✅ | Zero steps handled |
+| AgentPy | wealth_transfer | single_agent | ✅ | Single agent handled |
+| AgentPy | wealth_transfer | zero_steps | ✅ | Zero steps handled |
+| Mesa | wealth_transfer | single_agent | ✅ | Single agent handled |
+| Mesa | wealth_transfer | zero_steps | ✅ | Zero steps handled |
+
