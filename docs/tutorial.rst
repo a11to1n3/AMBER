@@ -255,7 +255,7 @@ Let's use AMBER's optimization tools to find the best parameters for our model.
 
 .. code-block:: python
 
-   from amber import ParameterSpace, IntRange, grid_search
+   from ambr import ParameterSpace, IntRange, grid_search
    
    # Define parameter space to explore
    param_space = ParameterSpace({
@@ -280,7 +280,7 @@ Let's use AMBER's optimization tools to find the best parameters for our model.
 
 .. code-block:: python
 
-   from amber import random_search, bayesian_optimization
+   from ambr import random_search, bayesian_optimization
    
    # Compare different optimization approaches
    methods = {
@@ -336,7 +336,7 @@ Finally, let's use the experiment framework to run systematic parameter sweeps.
 
 .. code-block:: python
 
-   from amber import Experiment, Sample, IntRange
+   from ambr import Experiment, Sample, IntRange
    
    # Define parameter variations
    experiment_params = Sample({
