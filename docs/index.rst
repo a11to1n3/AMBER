@@ -36,7 +36,7 @@ Install AMBER using pip:
 
 .. code-block:: bash
 
-   pip install amber
+   pip install ambr
 
 Create your first model:
 
