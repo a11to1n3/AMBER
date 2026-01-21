@@ -30,8 +30,8 @@ To install the latest development version from GitHub:
 
 .. code-block:: bash
 
-   git clone https://github.com/a11to1n3/amber.git
-   cd amber
+   git clone https://github.com/a11to1n3/AMBER.git
+   cd AMBER
    pip install -e .
 
 Development Installation
@@ -41,8 +41,8 @@ For development, install with additional dependencies:
 
 .. code-block:: bash
 
-   git clone https://github.com/a11to1n3/amber.git
-   cd amber
+   git clone https://github.com/a11to1n3/AMBER.git
+   cd AMBER
    pip install -e ".[dev]"
 
 This includes testing, documentation, and code quality tools.

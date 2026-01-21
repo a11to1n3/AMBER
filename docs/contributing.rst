@@ -12,8 +12,8 @@ Getting Started
 
    .. code-block:: bash
 
-      git clone https://github.com/a11to1n3/amber.git
-      cd amber
+      git clone https://github.com/your-username/AMBER.git
+      cd AMBER
 
 2. **Set Up Development Environment**
 
@@ -86,7 +86,7 @@ Development Workflow
       pytest tests/test_model.py
       
       # Run with coverage
-      pytest tests/ --cov=amber
+      pytest tests/ --cov=ambr
 
 4. **Commit Changes**
 
