@@ -21,7 +21,7 @@ bibliography: paper.bib
 
 Agent-based modeling (ABM) is a powerful paradigm for studying complex systems by simulating populations of heterogeneous agents whose local interactions give rise to emergent collective behavior. Python has become a popular language for ABM due to its support for rapid prototyping and seamless integration with the scientific computing ecosystem. However, widely used Python ABM frameworks typically represent each agent as a separate Python object, with per-agent attribute access and update loops. This design can become a performance bottleneck when scaling to large populations or when models require frequent neighborhood queries and repeated attribute updates [@masad2015mesa; @foramitti2021agentpy].
 
-AMBER is an open-source ABM framework for Python that retains a familiar, agent-oriented programming interface while fundamentally changing how agent state is stored and updated. Rather than scattering state across many Python objects, AMBER centralizes agent attributes in a columnar tabular backend built on Polars [@polars_zenodo; @polars_github]. This data-oriented layout enables efficient filtering, aggregation, and batch state updates using vectorized expressions. It also makes simulation outputs immediately available in a tabular form suitable for downstream analysis. In addition to its core state backend, AMBER provides spatial abstractions (including grid and continuous spaces), network environments, and utilities for experiments and parameter search—all within the workflow style that Python ABM users expect [@amber_github].
+AMBER (**A**gent-based **M**odeling with **B**lazingly **E**fficient **R**ecords) is an open-source ABM framework for Python that retains a familiar, agent-oriented programming interface while fundamentally changing how agent state is stored and updated. Rather than scattering state across many Python objects, AMBER centralizes agent attributes in a columnar tabular backend built on Polars [@polars_zenodo; @polars_github]. This data-oriented layout enables efficient filtering, aggregation, and batch state updates using vectorized expressions. It also makes simulation outputs immediately available in a tabular form suitable for downstream analysis. In addition to its core state backend, AMBER provides spatial abstractions (including grid and continuous spaces), network environments, and utilities for experiments and parameter search—all within the workflow style that Python ABM users expect [@amber_github].
 
 ## Statement of Need
 
@@ -48,7 +48,11 @@ Other Python simulation tools occupy complementary niches. PyCX provides a minim
 
 ### Core Abstraction: A Population with Columnar State
 
-In AMBER, the *population* is the primary owner of agent state. Agent attributes are stored as columns in a tabular structure rather than being distributed across many Python objects. This design, described in AMBER's documentation as keeping the framework "still easy to use" while being "much faster," treats the population/state store and spatial abstractions (grid and continuous space) as central concepts [@amber_github]. Users define agent behaviors through agent types, while the underlying state is stored and updated via vectorized operations whenever possible.
+In AMBER, the *population* is the primary owner of agent state. Agent attributes are stored as columns in a tabular structure rather than being distributed across many Python objects. Figure 1 illustrates this paradigm shift from traditional object-oriented ABM to AMBER's columnar approach.
+
+![The paradigm shift from traditional OOP-based ABM (left), where each agent is a separate Python object with scattered memory access, to AMBER's columnar approach (right), where agent attributes are stored in a centralized DataFrame enabling vectorized operations.](paradigm_shift.png){#fig:paradigm width="100%"}
+
+This design, described in AMBER's documentation as keeping the framework "still easy to use" while being "much faster," treats the population/state store and spatial abstractions (grid and continuous space) as central concepts [@amber_github]. Users define agent behaviors through agent types, while the underlying state is stored and updated via vectorized operations whenever possible.
 
 This architecture yields two practical benefits:
 
