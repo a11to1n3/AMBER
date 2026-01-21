@@ -121,7 +121,10 @@ class Model(BaseModel):
     def _print_end_info(self, start_time, max_steps):
         total_time = time.time() - start_time
         print(f"\n✅ Done. Time: {timedelta(seconds=int(total_time))}")
-        print(f"📈 Rate: {max_steps/total_time:.1f} steps/s")
+        if total_time > 0:
+            print(f"📈 Rate: {max_steps/total_time:.1f} steps/s")
+        else:
+            print(f"📈 Rate: Inf steps/s")
 
     def _collect_results(self, start_time, max_steps):
         if self._model_data:
