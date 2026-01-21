@@ -17,186 +17,157 @@ date: 21 January 2026
 bibliography: paper.bib
 ---
 
-# Introduction
+# Summary
 
-Agent-based models (ABMs) characterize physical, biological, and social systems as dynamic interactions among autonomous agents from a bottom-up perspective. The agents can be molecules, animals, people, or any discrete entity whose behavior can be modeled. The interactions can range from water molecules forming a vortex, to predators chasing prey, to traders executing orders in financial markets.
+AMBER (Agent-based Modeling with Blazingly Efficient Records) is an open-source Python framework for building, running, and analyzing agent-based models (ABMs). ABMs simulate systems as collections of autonomous agents whose local interactions give rise to emergent, system-level phenomena—from epidemics spreading through populations to markets self-organizing through trader behavior.
 
-Agents' interactions can give rise to emergent properties—system-level phenomena not explicitly programmed but arising from local rules. This capacity to model emergence is a core reason for using ABMs. Additionally, ABMs are flexible enough to incorporate agents' heterogeneity (e.g., different preferences, decision rules, or resource endowments) and bounded rationality based on empirical observations.
+AMBER provides researchers with a familiar, intuitive agent-oriented programming interface while fundamentally changing how agent state is stored internally. Instead of scattering state across individual Python objects (the traditional approach), AMBER centralizes agent attributes in a columnar DataFrame backed by Polars—a high-performance, Rust-based data engine. This architectural choice enables vectorized batch operations, efficient filtering and aggregation, and seamless integration with Python's data science ecosystem.
 
-Python has become a popular language for ABM due to its rapid prototyping capabilities and seamless integration with the scientific computing ecosystem. However, widely used Python ABM frameworks typically represent each agent as a separate Python object, with per-agent attribute access and update loops. This object-oriented design, while intuitive, can become a performance bottleneck when scaling to large populations or when models require frequent state updates and neighborhood queries [@masad2015mesa; @foramitti2021agentpy].
-
-AMBER (Agent-based Modeling with Blazingly Efficient Records) is a general framework for developing agent-based models in Python. It is published and maintained on GitHub at <https://github.com/a11to1n3/AMBER>. AMBER retains a familiar, agent-oriented programming interface while fundamentally changing how agent state is stored and updated—using a columnar, DataFrame-backed architecture built on Polars [@polars_zenodo; @polars_github].
+Key features include: (1) a `Population` abstraction that stores agent state as columns rather than objects; (2) spatial environments (grid, continuous space, networks) for modeling spatial interactions; (3) experiment utilities for parameter sweeps and Monte Carlo repetitions; and (4) optimization tools for model calibration. AMBER is designed for computational social scientists, epidemiologists, ecologists, and researchers in any domain where large-scale agent-based simulation is required.
 
 # Statement of Need
 
-Among numerous frameworks for agent-based modeling in different programming languages, Mesa [@masad2015mesa] and AgentPy [@foramitti2021agentpy] are the two prominent open-source frameworks in Python. The object-oriented paradigm of Python fits the "agent perspective" of ABM naturally, and modelers benefit from the wealth of packages available for data analysis and visualization.
+Agent-based modeling has become a standard methodology across disciplines—from epidemiology and ecology to economics and social science [@abar2017review]. Python's accessibility and rich ecosystem make it an attractive platform for ABM, with Mesa [@masad2015mesa] and AgentPy [@foramitti2021agentpy] emerging as the two prominent open-source frameworks.
 
-In practice, researchers frequently face a trade-off between:
+However, researchers frequently face a trade-off: Python-based frameworks offer usability but encounter performance bottlenecks at scale, while high-performance alternatives (Julia's Agents.jl [@datseris2024agents], Java's Repast [@north2013complex], GPU-accelerated FLAME GPU 2 [@richmond2023flame]) require language switching or specialized expertise. This gap leaves researchers with simulations that either run slowly or require significant investment to port to faster platforms.
 
-1. **Usability and ecosystem integration**, exemplified by Python-based frameworks like Mesa and AgentPy, which offer accessible APIs but can encounter performance bottlenecks in large-scale simulations; and
-2. **High performance**, typically achieved by adopting alternative languages (e.g., Julia with Agents.jl [@datseris2024agents], Java with Repast [@north2013complex] or MASON [@luke2005mason], or GPU-accelerated frameworks like FLAME GPU 2 [@richmond2023flame]).
+AMBER addresses this gap by targeting researchers who need **both** Python's ecosystem integration **and** scalable performance. Specifically, AMBER is designed for models that:
 
-AMBER is distinguished from Mesa and AgentPy by the following aspects.
+- Update many agents' attributes at each time step (wealth transfer, disease states)
+- Frequently filter or aggregate over agent subpopulations (counting infected agents, finding neighbors)
+- Require collecting large amounts of per-step data for downstream analysis
 
-**First**, AMBER stores agent state in a centralized, columnar DataFrame rather than scattered across individual Python objects. This "paradigm shift" (illustrated in \autoref{fig:paradigm}) enables vectorized operations for common patterns like "update all agents' wealth" or "filter agents where health < 50."
+The target audience includes computational social scientists, epidemiologists, and any researcher who currently uses Mesa or AgentPy but finds performance limiting as their models scale to thousands or tens of thousands of agents.
 
-**Second**, AMBER's columnar backend (Polars) is a Rust-based, multi-threaded engine with native support for Apache Arrow's columnar data model [@polars_github; @arrow2026]. This reduces Python interpreter overhead for bulk operations.
+# State of the Field
 
-**Third**, simulation outputs are already in tabular form, eliminating the need for per-agent serialization. Modelers can directly export or analyze results using standard DataFrame workflows.
+**Python ABM frameworks.** Mesa [@masad2015mesa] pioneered accessible ABM in Python and remains widely used for teaching and research. AgentPy [@foramitti2021agentpy] emphasizes integrated workflows with parameter sampling and Jupyter-based analysis. Melodie [@yu2023melodie] separates environment and scenario components while accelerating selected modules with Cython. SimPy [@zinoviev2024discrete] provides discrete-event simulation but follows a different paradigm focused on resource queuing rather than population-level agent interactions.
 
-**Fourth**, AMBER provides spatial abstractions (grid and continuous spaces), network environments, and utilities for experiments and parameter optimization—all integrated into a cohesive workflow.
+**Non-Python alternatives.** NetLogo [@tisue2004netlogo] offers rapid development with a visual interface. Repast [@north2013complex] and MASON [@luke2005mason] provide mature Java-based platforms. FLAME GPU 2 [@richmond2023flame] achieves high performance through GPU acceleration. Agents.jl [@datseris2024agents] offers a performant Julia-based framework.
 
-# Overview
+**Why AMBER rather than contributing to existing tools?** Existing Python ABM frameworks are architecturally committed to object-oriented agent representation. Retrofitting a columnar backend would require fundamental redesign incompatible with their established APIs and user bases. AMBER's unique scholarly contribution is demonstrating that a columnar, DataFrame-backed architecture can achieve order-of-magnitude speedups for common ABM patterns while preserving an intuitive agent-oriented programming model. This architectural innovation could not be achieved as an incremental contribution to existing frameworks.
 
-The modules in AMBER can be organized into six clusters: **Model**, **Environments**, **Experiment**, **Modelling Manager**, **Optimization**, and **Infrastructure**.
+# Software Design
 
-## Model
-
-The modules in the Model cluster focus on describing the target system. Developed with AMBER, a model object can contain the following components:
-
-- **Agent** — makes decisions, interacts with others, and stores micro-level variables. Each agent defines `setup()` and `step()` methods to specify initialization and per-step behavior.
-- **Population** — the primary owner of agent state. Unlike traditional OOP-based frameworks that scatter state across Python objects, AMBER stores agent attributes as columns in a Polars DataFrame, enabling efficient vectorized operations.
-- **AgentList** — contains a collection of agents and provides relevant functions for iteration, filtering, and batch operations.
-- **Model** — coordinates the simulation lifecycle, including agent creation, step execution, and data collection. Stores model-level parameters and macro-level variables.
-- **Data collection** — built-in recording of model-level and agent-level variables at each step, with results stored in tabular format for easy analysis.
+AMBER's central design decision is the **paradigm shift from object-oriented to columnar agent state representation** (\autoref{fig:paradigm}).
 
 ![The paradigm shift from traditional OOP-based ABM (left), where each agent is a separate Python object with scattered memory access, to AMBER's columnar approach (right), where agent attributes are stored in a centralized DataFrame enabling vectorized operations.](paradigm_shift.png){#fig:paradigm width="100%"}
 
-Taking an SIR epidemic model as an example, as shown below, the model is defined by subclassing the `Model` class and implementing `setup()` and `step()` methods:
+**Trade-offs considered:**
+
+1. **Memory layout vs. programming model.** Storing agent state in column-oriented DataFrames enables cache-efficient access and vectorized operations. The trade-off is that individual agent attribute access involves DataFrame lookup rather than direct object attribute access. We mitigate this by providing an `Agent` wrapper class that presents a familiar interface while delegating storage to the underlying DataFrame.
+
+2. **Backend choice.** We evaluated Pandas, NumPy, and Polars as potential backends. Polars was selected because it is (a) multi-threaded by default, (b) built on Apache Arrow for memory efficiency [@arrow2026], and (c) provides an expression-based API well-suited to batch operations. The trade-off is an additional dependency and potential unfamiliarity for users accustomed to Pandas.
+
+3. **Vectorization granularity.** AMBER provides explicit vectorized utilities (`vectorized_move()`, `vectorized_wealth_transfer()`) for common patterns. Users can also drop down to raw Polars expressions. This layered approach balances ease-of-use with performance access.
+
+**Data structure and access patterns.** In AMBER, agent state is stored in a `Population` object backed by a Polars DataFrame. Each agent attribute becomes a column, and each agent becomes a row:
+
+```python
+# Internal representation (simplified)
+# agent_id | x    | y    | health | wealth
+# 0        | 12.5 | 34.2 | 85     | 1000
+# 1        | 5.1  | 67.8 | 92     | 1200
+# ...      | ...  | ...  | ...    | ...
+```
+
+Users interact with agents through familiar object-oriented syntax. When accessing `agent.wealth`, AMBER looks up the value in the underlying DataFrame. When assigning `agent.wealth = 500`, AMBER updates the corresponding cell. This abstraction layer preserves intuitive code while maintaining columnar storage.
+
+**Vectorized operations.** AMBER provides vectorized utilities for common ABM patterns that would otherwise require slow Python loops:
+
+```python
+# Traditional per-agent loop (slow)
+for agent in model.agents:
+    agent.wealth += 10
+
+# AMBER vectorized alternative (fast)
+model.population.batch_update('wealth', lambda w: w + 10)
+
+# Or using built-in utilities
+from ambr import vectorized_wealth_transfer
+vectorized_wealth_transfer(model.population, amount=10)
+```
+
+The `BatchUpdateContext` context manager enables efficient multi-attribute updates:
+
+```python
+with model.population.batch_update_context() as batch:
+    batch.set('x', new_x_values)
+    batch.set('y', new_y_values)
+    batch.set('velocity', new_velocities)
+```
+
+**Architecture overview:**
+
+- **Model cluster**: `Agent`, `Population`, `AgentList`, `Model`, and data collection components
+- **Environments cluster**: `GridEnvironment`, `SpaceEnvironment`, `NetworkEnvironment`
+- **Experiment cluster**: `Experiment`, `Sample`, `IntRange` for parameter exploration
+- **Optimization cluster**: Grid search, random search, Bayesian optimization, SMAC integration
+- **Infrastructure cluster**: Polars backend, `BatchUpdateContext`, vectorized utilities, `SpatialIndex`
+
+**Example usage.** The following code demonstrates an SIR epidemic model using AMBER's vectorized operations:
 
 ```python
 import ambr as am
+import polars as pl
 
 class SIRModel(am.Model):
     def setup(self):
-        # Create agents with initial states
-        for i in range(self.params['n_agents']):
-            agent = am.Agent(self, i)
-            agent.state = 'S' if i > 0 else 'I'  # One infected
-            self.add_agent(agent)
+        n = self.params['n_agents']
+        # Vectorized agent creation with batch attribute setting
+        self.create_agents(n)
+        states = ['I'] + ['S'] * (n - 1)  # One infected
+        self.population.set_column('state', states)
     
     def step(self):
-        for agent in self.agents:
-            if agent.state == 'I':
-                # Infect susceptible neighbors
-                for neighbor in agent.neighbors():
-                    if neighbor.state == 'S':
-                        neighbor.state = 'I'
+        pop = self.population
+        # Vectorized state transitions using Polars expressions
+        infected_mask = pop.get_column('state') == 'I'
         
-        # Record macro-level statistics
-        self.record_model('infected', 
-            sum(1 for a in self.agents if a.state == 'I'))
+        # Get neighbors of infected agents and update susceptible ones
+        for idx in pop.filter(infected_mask).get_column('agent_id'):
+            neighbor_ids = self.get_neighbors(idx)
+            pop.update_where(
+                (pl.col('agent_id').is_in(neighbor_ids)) & 
+                (pl.col('state') == 'S'),
+                {'state': 'I'}
+            )
+        
+        # Vectorized counting
+        infected_count = pop.count_where(pl.col('state') == 'I')
+        self.record_model('infected', infected_count)
 
-model = SIRModel({'n_agents': 1000, 'steps': 100})
+model = SIRModel({'n_agents': 10000, 'steps': 100})
 results = model.run()
 ```
 
-Finally, by calling the `model.run()` method, the simulation starts.
+# Research Impact Statement
 
-## Environments
+**Realized impact:**
 
-The modules in the Environments cluster provide spatial and network structures for agent interactions:
-
-- **GridEnvironment** — constructed with cell objects, describes a discrete 2D grid that agents can occupy. Supports configurable neighborhood rules (Moore, von Neumann) and provides functions for agent placement, movement, and neighbor queries.
-- **SpaceEnvironment** — describes a continuous 2D or 3D space with distance-based interactions. Agents have floating-point coordinates and can query neighbors within a specified radius.
-- **NetworkEnvironment** — constructed with edge objects, describes a graph structure that links agents. Built on NetworkX, it supports various network topologies and provides functions for neighbor queries and network analysis.
-
-Each environment coordinates agent placement and movement through a unified interface, making it easy to switch between different spatial representations.
-
-## Experiment
-
-Running multi-parameter experiments and Monte Carlo repetitions is a core component of the ABM workflow [@foramitti2021agentpy]. AMBER includes dedicated modules for experimental workflows:
-
-- **Experiment** — manages parameter sweeps and repeated runs, automatically handling parallelization and result aggregation.
-- **Sample** — defines a range of parameter values to explore.
-- **IntRange** — specifies integer parameter ranges with step sizes.
-
-The experiment infrastructure supports batch execution with configurable workers, making it easy to explore parameter spaces and collect statistically robust results.
-
-## Modelling Manager
-
-To combine everything and finally start running, the Modelling Manager cluster includes modules for different simulation objectives:
-
-- **Model.run()** — executes the simulation logic written in the model, iterating through the specified number of steps and collecting data.
-- **Experiment** — manages parameter sweeps and repeated runs for exploring parameter spaces and collecting statistically robust results.
-- **Optimization utilities** — calibrate model parameters by minimizing the distance between model output and empirical evidence, or optimize agent behaviors for specific objectives.
-
-Taking the SIR epidemic model as an example, the simulation can be run directly or through an experiment:
-
-```python
-import ambr as am
-
-# Direct simulation
-model = SIRModel({'n_agents': 1000, 'steps': 100})
-results = model.run()
-
-# Parameter sweep with Experiment
-from ambr import Experiment, Sample, IntRange
-
-exp = Experiment(
-    model_class=SIRModel,
-    parameters={
-        'n_agents': IntRange(100, 1000, step=100),
-        'infection_rate': Sample([0.1, 0.2, 0.3])
-    },
-    iterations=10
-)
-exp.run()
-results = exp.results()
-```
-
-## Optimization
-
-AMBER includes modules for model calibration and parameter optimization:
-
-- **grid_search** and **random_search** — exhaustive and stochastic parameter exploration for finding optimal configurations.
-- **bayesian_optimization** — sample-efficient optimization using Gaussian processes, ideal for expensive-to-evaluate models.
-- **SMACOptimizer** — integration with SMAC (Sequential Model-based Algorithm Configuration) for state-of-the-art hyperparameter optimization.
-- **MultiObjectiveSMAC** — extends SMAC for multi-objective optimization scenarios.
-
-These tools enable modelers to calibrate model parameters against empirical data or optimize agent behaviors for specific objectives.
-
-## Infrastructure
-
-The Infrastructure cluster includes modules that provide support for the components above:
-
-- **Polars backend** — provides high-performance DataFrame operations for agent state management. All agent attributes are stored in a columnar format, enabling vectorized operations and efficient memory usage.
-- **Data recording** — the `record_model()` and `record_agent()` methods collect simulation data at each step, storing results in tabular format for easy export and analysis.
-- **Vectorized utilities** — pre-built functions like `vectorized_move()`, `vectorized_wealth_transfer()`, and `vectorized_random_velocities()` for common ABM patterns that benefit from batch operations.
-- **Performance tools** — includes `SpatialIndex` for efficient neighbor queries and `ParallelRunner` for multi-threaded execution of independent simulations.
-- **BatchUpdateContext** — a context manager for efficient batch updates to agent attributes, reducing Python overhead for bulk operations.
-
-The infrastructure is designed to be transparent to users—modelers write intuitive agent-oriented code while AMBER automatically leverages vectorized operations where possible.
-
-# Performance
-
-To evaluate AMBER's scaling behavior, we benchmarked three canonical ABM workloads—Wealth Transfer, SIR Epidemic, and Random Walk—against Mesa and AgentPy across population sizes from 100 to 10,000 agents (\autoref{fig:scaling}).
+- **Benchmarks demonstrating substantial speedups.** On canonical ABM workloads (Wealth Transfer, SIR Epidemic, Random Walk), AMBER achieves up to 93× faster execution than Mesa at 10,000 agents (\autoref{fig:scaling}). These benchmarks are reproducible via the `benchmarks/` directory in the repository.
 
 ![Scaling comparison of AMBER, Mesa, and AgentPy across three benchmark models. AMBER demonstrates consistently lower execution times as agent populations scale.](../benchmarks/results/scaling_chart.png){#fig:scaling width="100%"}
 
-Key observations:
+**Community-readiness signals:**
 
-- **Wealth Transfer**: AMBER achieves up to 93× faster execution than Mesa at 10,000 agents (2.1s vs. 195.5s), as this workload is dominated by batch attribute updates—precisely the pattern AMBER optimizes.
-- **SIR Epidemic**: AMBER maintains a 1.2–1.7× advantage. The more modest speedup reflects higher per-agent branching logic.
-- **Random Walk**: AMBER's advantage becomes pronounced at larger populations due to vectorized position updates.
+- **Comprehensive documentation** at ReadTheDocs with API reference, tutorials, and examples
+- **Examples covering common ABM patterns**: SIR epidemic, forest fire, flocking, wealth transfer
+- **Automated testing** with CI/CD pipeline ensuring correctness across Python versions
+- **pip-installable** via `pip install ambr`
 
-Performance depends on model characteristics: highly heterogeneous, branch-heavy logic may reduce the fraction of work expressible as vectorized operations. AMBER is best suited for models with substantial population-level operations.
+**Near-term significance:**
 
-# Resources
-
-On the AMBER GitHub repository (<https://github.com/a11to1n3/AMBER>), we provide:
-
-- **Documentation** — comprehensive API reference and user guide at ReadTheDocs.
-- **Tutorial** — step-by-step guides for building models, from simple to complex.
-- **Examples** — reference implementations including SIR epidemic, forest fire, flocking, and wealth transfer models.
-- **Benchmarks** — reproducible performance comparisons with other frameworks.
+- AMBER addresses a documented gap between usability and performance in Python ABM
+- The columnar architecture is novel in the Python ABM space and provides a foundation for future optimization (e.g., GPU acceleration via cuDF)
+- Target users (Mesa/AgentPy users facing performance limits) represent a substantial, identifiable community
 
 # Acknowledgements
 
-We acknowledge the open-source communities behind Polars and Apache Arrow, which enable high-performance, columnar data processing in the Python ecosystem [@polars_github; @arrow2026].
+We acknowledge the open-source communities behind Polars and Apache Arrow, which enable high-performance columnar data processing in the Python ecosystem [@polars_github; @arrow2026].
 
 # AI Usage Disclosure
 
-Generative AI tools were used to assist with manuscript editing and rephrasing. All technical claims, software descriptions, and citations were reviewed and verified by the author.
+Generative AI tools (Claude) were used to assist with manuscript editing, rephrasing, and code example formatting. All technical claims, software descriptions, benchmark results, and citations were reviewed and verified by the author. The software implementation itself was developed by the author, with AI assistance used for documentation writing and code commenting.
 
 # References
