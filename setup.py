@@ -46,7 +46,7 @@ setup(
     python_requires=">=3.8",
     author="a11to1n3",
     author_email="citation.needed@example.com",
-    description="Agent-Based Modeling Environment for Research",
+    description="Agent-based Modeling with Blazingly Efficient Records",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/a11to1n3/AMBER",

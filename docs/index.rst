@@ -1,7 +1,7 @@
 AMBER Documentation
 ===================
 
-**AMBER** (Agent-Based Modeling Environment for Research) is a powerful Python framework for building and running agent-based models. It provides a comprehensive toolkit for researchers and practitioners to create complex simulations with ease.
+**AMBER** (Agent-based Modeling with Blazingly Efficient Records) is a powerful Python framework for building and running agent-based models. It provides a comprehensive toolkit for researchers and practitioners to create complex simulations with ease.
 
 .. image:: https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml/badge.svg
    :target: https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml
