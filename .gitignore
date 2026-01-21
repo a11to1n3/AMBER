@@ -30,3 +30,7 @@ ENV/
 htmlcov/
 .pytest_cache/
 coverage.xml
+
+# Documentation
+docs/_build/
+docs/api/
