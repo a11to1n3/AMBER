@@ -17,8 +17,8 @@ sys.path.insert(0, os.path.abspath('../src'))
 # -- Project information -----------------------------------------------------
 
 project = 'AMBER'
-copyright = '2024, AMBER Team'
-author = 'AMBER Team'
+copyright = '2024, a11to1n3'
+author = 'a11to1n3'
 
 # The full version, including alpha/beta/rc tags
 release = '0.1.0'
