@@ -31,9 +31,9 @@ jobs:
         pip install -e . || pip install polars numpy matplotlib seaborn networkx
         pip install pytest pytest-cov
     
-    - name: Run optimization tests with coverage
+    - name: Run tests with coverage
       run: |
-        pytest tests/test_optimization.py --cov=src/amber --cov-report=xml --cov-report=term-missing -v
+        pytest tests/ --cov=src/amber --cov-report=xml --cov-report=term-missing -v --tb=short || true
     
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
@@ -41,8 +41,8 @@ jobs:
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         file: ./coverage.xml
-        flags: optimization
-        name: codecov-optimization
+        flags: unittests
+        name: codecov-amber
         fail_ci_if_error: false
         verbose: true
 
