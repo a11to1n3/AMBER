@@ -281,10 +281,11 @@ class TestPackageIntegration:
     def test_environment_creation_through_package(self):
         """Test environment creation using package imports."""
         from unittest.mock import Mock
+        import polars as pl
         
         # Mock model
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         mock_model.nprandom = Mock()
         
         # Test GridEnvironment
