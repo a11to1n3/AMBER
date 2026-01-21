@@ -1,5 +1,5 @@
 ---
-title: "AMBER: DataFrame-Backed Agent-Based Modeling in Python with a Familiar Agent-Oriented API"
+title: "AMBER: Rethinking Agent-Based Modeling in Python"
 tags:
   - Python
   - agent-based modeling
@@ -7,13 +7,13 @@ tags:
   - polars
   - performance
 authors:
-  - name: Author Name
-    orcid: 0000-0000-0000-0000
+  - name: Anh-Duy Pham
+    orcid: 0000-0003-3832-9453
     affiliation: 1
 affiliations:
-  - name: Institution Name, Country
+  - name: University of Würzburg, Germany
     index: 1
-date: 20 January 2026
+date: 21 January 2026
 bibliography: paper.bib
 ---
 
