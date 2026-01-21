@@ -4,22 +4,24 @@ import numpy as np
 import itertools
 import random
 import time
-from smac import HyperparameterOptimizationFacade, Scenario, MultiFidelityFacade, RandomFacade, AlgorithmConfigurationFacade
-# Correct imports for SMAC models
-from smac.model.random_forest import RandomForest
-from smac.model.gaussian_process import GaussianProcess
-# Acquisition functions - correct import path
-from smac.acquisition.function import EI, LCB, PI, EIPS, TS
-from smac.acquisition.maximizer import LocalAndSortedRandomSearch
-from smac.initial_design import LatinHypercubeInitialDesign, RandomInitialDesign, SobolInitialDesign
-from smac.runhistory import RunHistory
-from smac.utils.logging import get_logger
-from smac.intensifier import SuccessiveHalving
-from smac.multi_objective import AbstractMultiObjectiveAlgorithm
-from smac.multi_objective.aggregation_strategy import MeanAggregationStrategy
-from smac.utils.pareto_front import calculate_pareto_front
-from smac.utils.multi_objective import normalize_costs
 from .model import Model
+
+# SMAC is an optional dependency - lazy import when needed
+HAS_SMAC = False
+try:
+    import smac
+    HAS_SMAC = True
+except ImportError:
+    pass
+
+
+def _check_smac():
+    """Check if SMAC is available, raise helpful error if not."""
+    if not HAS_SMAC:
+        raise ImportError(
+            "SMAC is required for advanced optimization features. "
+            "Install it with: pip install smac"
+        )
 
 
 # Simple ParameterSpace for basic optimization functions
@@ -357,6 +359,16 @@ class SMACOptimizer:
             use_multi_fidelity: Whether to use multi-fidelity optimization
             use_random_search: Whether to use random search
         """
+        # Check SMAC availability and do lazy imports
+        _check_smac()
+        from smac import HyperparameterOptimizationFacade, Scenario, MultiFidelityFacade, RandomFacade, AlgorithmConfigurationFacade
+        from smac.model.random_forest import RandomForest
+        from smac.model.gaussian_process import GaussianProcess
+        from smac.acquisition.function import EI, LCB, PI, EIPS, TS
+        from smac.acquisition.maximizer import LocalAndSortedRandomSearch
+        from smac.initial_design import LatinHypercubeInitialDesign, RandomInitialDesign, SobolInitialDesign
+        from smac.intensifier import SuccessiveHalving
+        
         self.model_type = model_type
         self.param_space = param_space
         self.objective = objective
@@ -529,6 +541,13 @@ class MultiObjectiveSMAC:
             strategy: Multi-objective strategy ('pareto', 'aggregation')
             use_multi_fidelity: Whether to use multi-fidelity optimization
         """
+        # Check SMAC availability and do lazy imports
+        _check_smac()
+        from smac import HyperparameterOptimizationFacade, Scenario, MultiFidelityFacade
+        from smac.intensifier import SuccessiveHalving
+        from smac.multi_objective import AbstractMultiObjectiveAlgorithm
+        from smac.multi_objective.aggregation_strategy import MeanAggregationStrategy
+        
         self.model_type = model_type
         self.param_space = param_space
         self.objectives = objectives
@@ -641,6 +660,9 @@ class MultiObjectiveSMAC:
         Returns:
             DataFrame containing Pareto-optimal configurations
         """
+        from smac.utils.pareto_front import calculate_pareto_front
+        from smac.utils.multi_objective import normalize_costs
+        
         # Combine all histories
         combined = history[list(history.keys())[0]]
         for name, df in list(history.items())[1:]:
