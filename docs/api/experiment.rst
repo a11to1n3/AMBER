@@ -19,7 +19,7 @@ Run multiple model configurations:
 
 .. code-block:: python
 
-   from amber import Experiment, Sample, IntRange
+   from ambr import Experiment, Sample, IntRange
    
    # Define parameter variations
    params = Sample({
