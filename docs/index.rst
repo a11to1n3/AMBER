@@ -3,8 +3,8 @@ AMBER Documentation
 
 **AMBER** (Agent-Based Modeling Environment for Research) is a powerful Python framework for building and running agent-based models. It provides a comprehensive toolkit for researchers and practitioners to create complex simulations with ease.
 
-.. image:: https://img.shields.io/github/workflow/status/a11to1n3/AMBER/CI
-   :target: https://github.com/a11to1n3/AMBER/actions
+.. image:: https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml/badge.svg
+   :target: https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml
    :alt: CI Status
 
 .. image:: https://codecov.io/gh/a11to1n3/AMBER/branch/main/graph/badge.svg
@@ -12,11 +12,11 @@ AMBER Documentation
    :alt: Coverage
 
 .. image:: https://img.shields.io/pypi/v/ambr.svg
-   :target: https://pypi.org/project/amber/
+   :target: https://pypi.org/project/ambr/
    :alt: PyPI Version
 
 .. image:: https://img.shields.io/pypi/pyversions/ambr.svg
-   :target: https://pypi.org/project/amber/
+   :target: https://pypi.org/project/ambr/
    :alt: Python Versions
 
 Features
