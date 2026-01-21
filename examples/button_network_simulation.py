@@ -22,7 +22,7 @@ This model is based on the Agentbase Button model by Wybo Wiersma and the follow
 
 
 # Import required libraries
-import amber as am
+import ambr as am
 import networkx as nx
 import numpy as np
 import polars as pl

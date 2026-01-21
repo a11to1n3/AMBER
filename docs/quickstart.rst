@@ -10,7 +10,7 @@ Let's create a simple wealth transfer model where agents randomly exchange money
 
 .. code-block:: python
 
-   import amber as am
+   import ambr as am
    import numpy as np
 
    class WealthModel(am.Model):

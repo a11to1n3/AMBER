@@ -30,7 +30,7 @@ To install the latest development version from GitHub:
 
 .. code-block:: bash
 
-   git clone https://github.com/amber-team/amber.git
+   git clone https://github.com/a11to1n3/ambr.git
    cd amber
    pip install -e .
 
@@ -41,7 +41,7 @@ For development, install with additional dependencies:
 
 .. code-block:: bash
 
-   git clone https://github.com/amber-team/amber.git
+   git clone https://github.com/a11to1n3/ambr.git
    cd amber
    pip install -e ".[dev]"
 
@@ -54,7 +54,7 @@ To verify that AMBER is installed correctly, run:
 
 .. code-block:: python
 
-   import amber as am
+   import ambr as am
    print(am.__version__)
 
 You should see the version number printed without any errors.
@@ -102,7 +102,7 @@ Getting Help
 
 If you encounter issues:
 
-1. Check the `GitHub Issues <https://github.com/amber-team/amber/issues>`_
+1. Check the `GitHub Issues <https://github.com/a11to1n3/AMBER/issues>`_
 2. Read the documentation thoroughly
 3. Ask questions in the community forums
 4. Report bugs with minimal reproducible examples 

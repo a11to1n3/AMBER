@@ -14,7 +14,7 @@ The model is based on the NetLogo Segregation model from Uri Wilensky, who descr
 
 
 # Model design
-import amber as am
+import ambr as am
 import polars as pl
 import numpy as np
 

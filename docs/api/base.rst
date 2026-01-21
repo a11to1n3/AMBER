@@ -1,7 +1,7 @@
 Base Classes
 ============
 
-.. automodule:: amber.base
+.. automodule:: ambr.base
    :members:
    :undoc-members:
    :show-inheritance:
@@ -11,7 +11,7 @@ The base module provides abstract base classes for creating custom models and ag
 BaseModel
 ---------
 
-.. autoclass:: amber.BaseModel
+.. autoclass:: ambr.BaseModel
    :members:
    :undoc-members:
 
@@ -19,7 +19,7 @@ Abstract base class for all models. Inherit from this to create custom model typ
 
 .. code-block:: python
 
-   from amber.base import BaseModel
+   from ambr.base import BaseModel
    
    class CustomModel(BaseModel):
        def __init__(self, parameters):
@@ -37,7 +37,7 @@ Abstract base class for all models. Inherit from this to create custom model typ
 BaseAgent
 ---------
 
-.. autoclass:: amber.BaseAgent
+.. autoclass:: ambr.BaseAgent
    :members:
    :undoc-members:
 
@@ -45,7 +45,7 @@ Abstract base class for all agents. Inherit from this to create custom agent typ
 
 .. code-block:: python
 
-   from amber.base import BaseAgent
+   from ambr.base import BaseAgent
    
    class CustomAgent(BaseAgent):
        def __init__(self, model, agent_id):

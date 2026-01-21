@@ -18,7 +18,7 @@ The model assumes there is no wind. So, the fire must have trees along its path 
 
 
 # Import required libraries
-import amber as am
+import ambr as am
 import matplotlib.pyplot as plt
 import seaborn as sns
 import IPython

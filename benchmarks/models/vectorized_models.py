@@ -9,11 +9,11 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-import amber as am
+import ambr as am
 import numpy as np
 
 # Import performance utilities
-from amber.performance import (
+from ambr.performance import (
     SpatialIndex, 
     vectorized_move, 
     vectorized_wealth_transfer,
@@ -23,7 +23,7 @@ from amber.performance import (
 )
 
 if HAS_NUMBA:
-    from amber.performance import fast_neighbors_within_radius
+    from ambr.performance import fast_neighbors_within_radius
 
 
 # =============================================================================

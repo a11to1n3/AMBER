@@ -12,7 +12,7 @@ Getting Started
 
    .. code-block:: bash
 
-      git clone https://github.com/your-username/amber.git
+      git clone https://github.com/your-username/ambr.git
       cd amber
 
 2. **Set Up Development Environment**

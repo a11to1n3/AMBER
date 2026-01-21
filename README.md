@@ -32,7 +32,7 @@ AMBER is the **state-of-the-art for dense simulation** in Python, while SimPy of
 ## 🚀 Quick Start
 
 ```python
-import amber as am
+import ambr as am
 
 # Define a custom agent
 class MyAgent(am.Agent):
@@ -86,7 +86,7 @@ def step(self):
 AMBER includes powerful optimization capabilities for parameter tuning:
 
 ```python
-from amber.optimization import ParameterSpace, grid_search
+from ambr.optimization import ParameterSpace, grid_search
 
 # Define parameter space
 parameter_space = ParameterSpace({

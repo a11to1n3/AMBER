@@ -12,7 +12,7 @@ Let's start with a simple wealth transfer model where agents randomly exchange m
 
 .. code-block:: python
 
-   import amber as am
+   import ambr as am
    import numpy as np
    
    class WealthModel(am.Model):

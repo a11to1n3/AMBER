@@ -1,12 +1,12 @@
 """
-Tests for amber.experiment module.
+Tests for ambr.experiment module.
 """
 
 import pytest
 from unittest.mock import Mock, patch
 import polars as pl
-import amber as am
-from amber.experiment import IntRange, Sample, Experiment
+import ambr as am
+from ambr.experiment import IntRange, Sample, Experiment
 
 
 class TestIntRange:

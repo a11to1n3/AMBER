@@ -1,7 +1,7 @@
 Agent
 =====
 
-.. automodule:: amber.agent
+.. automodule:: ambr.agent
    :members:
    :undoc-members:
    :show-inheritance:
@@ -18,7 +18,7 @@ Basic Usage
 
 .. code-block:: python
 
-   import amber as am
+   import ambr as am
    
    class MyAgent(am.Agent):
        def __init__(self, model, agent_id):
@@ -42,7 +42,7 @@ You can create custom agent classes by inheriting from ``BaseAgent``:
 
 .. code-block:: python
 
-   from amber.base import BaseAgent
+   from ambr.base import BaseAgent
    
    class CustomAgent(BaseAgent):
        def __init__(self, model, agent_id):

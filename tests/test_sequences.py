@@ -1,11 +1,11 @@
 """
-Tests for amber.sequences module.
+Tests for ambr.sequences module.
 """
 
 import pytest
 from unittest.mock import Mock
-import amber as am
-from amber.sequences import AgentList
+import ambr as am
+from ambr.sequences import AgentList
 
 
 class TestAgentList:

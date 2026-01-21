@@ -1,7 +1,7 @@
 Experiment
 ==========
 
-.. automodule:: amber.experiment
+.. automodule:: ambr.experiment
    :members:
    :undoc-members:
    :show-inheritance:
@@ -11,7 +11,7 @@ The experiment module provides tools for running multiple model configurations a
 Experiment Class
 ----------------
 
-.. autoclass:: amber.Experiment
+.. autoclass:: ambr.Experiment
    :members:
    :undoc-members:
 
@@ -40,7 +40,7 @@ Run multiple model configurations:
 Sample Class
 ------------
 
-.. autoclass:: amber.Sample
+.. autoclass:: ambr.Sample
    :members:
    :undoc-members:
 
@@ -63,7 +63,7 @@ Parameter sampling for experiments:
 IntRange Class
 --------------
 
-.. autoclass:: amber.IntRange
+.. autoclass:: ambr.IntRange
    :members:
    :undoc-members:
 

@@ -9,10 +9,10 @@ from unittest.mock import Mock, MagicMock
 import sys
 import os
 
-# Add src to path so we can import amber modules
+# Add src to path so we can import ambr modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-import amber as am
+import ambr as am
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 Sequences
 =========
 
-.. automodule:: amber.sequences
+.. automodule:: ambr.sequences
    :members:
    :undoc-members:
    :show-inheritance:
@@ -11,7 +11,7 @@ The sequences module provides specialized data structures for managing collectio
 AgentList
 ---------
 
-.. autoclass:: amber.AgentList
+.. autoclass:: ambr.AgentList
    :members:
    :undoc-members:
 

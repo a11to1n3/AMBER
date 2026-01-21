@@ -1,12 +1,12 @@
 """
-Tests for amber.optimization module.
+Tests for ambr.optimization module.
 """
 
 import pytest
 import numpy as np
 from unittest.mock import Mock, patch
-import amber as am
-from amber.optimization import (
+import ambr as am
+from ambr.optimization import (
     ParameterSpace, 
     objective_function,
     grid_search,
