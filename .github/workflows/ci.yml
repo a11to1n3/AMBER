@@ -27,7 +27,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e .
+        pip install polars numpy
+        pip install -e . || pip install polars numpy matplotlib seaborn networkx
         pip install pytest pytest-cov
     
     - name: Run optimization tests with coverage
