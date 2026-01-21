@@ -244,24 +244,17 @@ class GridEnvironment(Environment):
         else:
             return tuple(np.random.randint(0, dim) for dim in self.dimensions)
     
-    def empty_positions(self):
-        """Get all empty positions in the grid."""
-        # Handle mock dataframes specially
-        if hasattr(self.df, 'select') and hasattr(self.df.select, 'return_value'):
-            # This is a mock object
-            occupied_positions = self.df.select('grid_position').unique().to_list()
-            occupied = set(pos for pos in occupied_positions if pos is not None)
-        elif hasattr(self.df, 'is_empty') and self.df.is_empty():
-            return self.positions
-        else:
-            # Real dataframe case
-            try:
-                occupied_positions = self.df.select('grid_position').unique().to_list()
-                occupied = set(pos for pos in occupied_positions if pos is not None)
-            except:
-                occupied = set()
-        
-        # Return unoccupied positions
+    def empty_positions(self) -> List[Tuple[int, int]]:
+        """Return a list of empty positions."""
+        occupied = set()
+        if hasattr(self, 'df') and not self.df.is_empty() and 'grid_position' in self.df.columns:
+            # Handle both list and tuple types from Polars
+            if self.df['grid_position'].dtype == pl.Object:
+                occupied = set(self.df['grid_position'].to_list())
+            else:
+                # Likely list type, convert to tuples
+                occupied = set(tuple(p) if isinstance(p, list) else p for p in self.df['grid_position'].to_list())
+            
         return [pos for pos in self.positions if pos not in occupied]
     
     def move_agent(self, agent_id: int, new_position: Position) -> None:
@@ -282,9 +275,11 @@ class GridEnvironment(Environment):
                 
         # Update agent position
         if hasattr(self, 'df') and not self.df.is_empty():
+            # Ensure tuple is treated as object
+            coords_val = tuple(coords)
             self.df = self.df.with_columns([
                 pl.when(pl.col('id') == agent_id)
-                .then(pl.lit(tuple(coords)))
+                .then(pl.lit(coords_val, dtype=pl.Object))
                 .otherwise(pl.col('grid_position'))
                 .alias('grid_position')
             ])
@@ -308,10 +303,11 @@ class SpaceEnvironment(Environment):
         
         # Add space-specific columns to model DataFrame if it exists
         if hasattr(model, 'agents_df'):
-            self.df = model.agents_df.with_columns([
-                pl.lit(None).alias('space_position'),
-                pl.lit(0.0).alias('space_distance')
-            ])
+            self.df = model.agents_df
+            if 'space_position' not in self.df.columns:
+                self.df = self.df.with_columns(pl.lit(None, dtype=pl.Object).alias('space_position'))
+            if 'space_distance' not in self.df.columns:
+                self.df = self.df.with_columns(pl.lit(0.0).alias('space_distance'))
         else:
             self.df = pl.DataFrame()
     
@@ -468,10 +464,11 @@ class NetworkEnvironment(Environment):
         
         # Add network-specific columns to model DataFrame if it exists
         if hasattr(model, 'agents_df'):
-            self.df = model.agents_df.with_columns([
-                pl.lit(None).alias('node_id'),
-                pl.lit(0.0).alias('network_distance')
-            ])
+            self.df = model.agents_df
+            if 'node_id' not in self.df.columns:
+                self.df = self.df.with_columns(pl.lit(None, dtype=pl.Int64).alias('node_id'))
+            if 'network_distance' not in self.df.columns:
+                self.df = self.df.with_columns(pl.lit(0.0).alias('network_distance'))
         else:
             self.df = pl.DataFrame()
     

@@ -7,7 +7,7 @@ import numpy as np
 import networkx as nx
 from unittest.mock import Mock, patch
 import amber as am
-from amber.environments import GridEnvironment, SpaceEnvironment, NetworkEnvironment
+from amber.environments import GridEnvironment, SpaceEnvironment, NetworkEnvironment, Position
 import polars as pl
 
 
@@ -17,7 +17,7 @@ class TestGridEnvironment:
     def test_grid_initialization_square(self):
         """Test GridEnvironment initialization with square grid."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()  # Mock the agents_df attribute
+        mock_model.agents_df = pl.DataFrame()  # Use real DataFrame
         
         grid = GridEnvironment(mock_model, size=10)
         
@@ -30,7 +30,7 @@ class TestGridEnvironment:
     def test_grid_initialization_rectangular(self):
         """Test GridEnvironment initialization with rectangular grid."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         grid = GridEnvironment(mock_model, size=(15, 20))
         
@@ -41,7 +41,7 @@ class TestGridEnvironment:
     def test_grid_initialization_with_torus(self):
         """Test GridEnvironment initialization with torus topology."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         grid = GridEnvironment(mock_model, size=5, torus=True)
         
@@ -51,7 +51,7 @@ class TestGridEnvironment:
     def test_grid_positions_property(self):
         """Test accessing grid positions."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         grid = GridEnvironment(mock_model, size=(3, 4))
         
@@ -67,7 +67,7 @@ class TestGridEnvironment:
     def test_grid_get_neighbors_no_torus(self):
         """Test getting neighbors without torus topology."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         grid = GridEnvironment(mock_model, size=(5, 5), torus=False)
         
@@ -89,7 +89,7 @@ class TestGridEnvironment:
     def test_grid_get_neighbors_with_torus(self):
         """Test getting neighbors with torus topology."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         grid = GridEnvironment(mock_model, size=(3, 3), torus=True)
         
@@ -106,7 +106,7 @@ class TestGridEnvironment:
     def test_grid_get_neighbors_diagonal(self):
         """Test getting neighbors including diagonals."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         grid = GridEnvironment(mock_model, size=(5, 5), torus=False)
         
@@ -127,7 +127,7 @@ class TestGridEnvironment:
     def test_grid_get_neighbors_distance(self):
         """Test getting neighbors at different distances."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         grid = GridEnvironment(mock_model, size=(5, 5), torus=False)
         
@@ -144,7 +144,7 @@ class TestGridEnvironment:
     def test_grid_get_distance(self):
         """Test calculating distance between positions."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         grid = GridEnvironment(mock_model, size=(10, 10), torus=False)
         
@@ -159,7 +159,7 @@ class TestGridEnvironment:
     def test_grid_get_distance_torus(self):
         """Test calculating distance with torus topology."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         grid = GridEnvironment(mock_model, size=(5, 5), torus=True)
         
@@ -175,7 +175,7 @@ class TestGridEnvironment:
     def test_grid_is_valid_position(self):
         """Test checking if positions are valid."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         grid = GridEnvironment(mock_model, size=(3, 4))
         
@@ -191,7 +191,7 @@ class TestGridEnvironment:
     def test_grid_random_position(self):
         """Test getting random position."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         mock_model.nprandom = np.random.RandomState(42)
         
         grid = GridEnvironment(mock_model, size=(3, 3))
@@ -209,12 +209,11 @@ class TestGridEnvironment:
     def test_grid_empty_positions(self):
         """Test getting empty positions."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
-        
-        # Mock df to return some occupied positions
-        mock_df = Mock()
-        mock_df.select.return_value.unique.return_value.to_list.return_value = [(0, 0), (1, 1)]
-        mock_model.agents_df = mock_df
+        # Use real DataFrame with some occupied positions and explicit Object type for tuples
+        mock_model.agents_df = pl.DataFrame({
+            'id': [1, 2],
+            'grid_position': pl.Series([(0, 0), (1, 1)], dtype=pl.Object)
+        })
         
         grid = GridEnvironment(mock_model, size=(3, 3))
         
@@ -227,6 +226,41 @@ class TestGridEnvironment:
         # Should include other positions
         assert (0, 1) in empty
         assert (2, 2) in empty
+    
+    def test_grid_move_agent(self):
+        """Test moving an agent in the grid."""
+        mock_model = Mock()
+        # Use real DataFrame
+        mock_model.agents_df = pl.DataFrame({
+            'id': [1],
+            'grid_position': pl.Series([(0, 0)], dtype=pl.Object)
+        })
+        
+        grid = GridEnvironment(mock_model, size=(5, 5))
+        
+        # Verify initial position
+        
+        # Move agent
+        new_pos = Position((2, 3), 'grid')
+        grid.move_agent(1, new_pos)
+        
+        # Verify new position
+        # Use simple equality check
+        current_pos = grid.df.filter(pl.col('id') == 1)['grid_position'].to_list()[0]
+        # Handle case where Polars converts tuple to list
+        if isinstance(current_pos, list):
+            current_pos = tuple(current_pos)
+        assert current_pos == (2, 3)
+        
+        # Test moving with wrapping
+        grid.wrap = True
+        wrap_pos = Position((5, 5), 'grid') # Should wrap to (0, 0)
+        grid.move_agent(1, wrap_pos)
+        current_pos_wrap = grid.df.filter(pl.col('id') == 1)['grid_position'].to_list()[0]
+        if isinstance(current_pos_wrap, list):
+            current_pos_wrap = tuple(current_pos_wrap)
+        assert current_pos_wrap == (0, 0)
+
 
 
 class TestSpaceEnvironment:
@@ -235,7 +269,7 @@ class TestSpaceEnvironment:
     def test_space_initialization_2d(self):
         """Test SpaceEnvironment initialization in 2D."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         space = SpaceEnvironment(mock_model, bounds=[(0, 10), (0, 20)])
         
@@ -247,7 +281,7 @@ class TestSpaceEnvironment:
     def test_space_initialization_3d(self):
         """Test SpaceEnvironment initialization in 3D."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         space = SpaceEnvironment(mock_model, bounds=[(0, 5), (0, 10), (0, 15)], torus=True)
         
@@ -268,10 +302,11 @@ class TestSpaceEnvironment:
         space = SpaceEnvironment(mock_model, bounds=[(0, 20), (0, 20)])
         
         # Manually set the space positions in the environment's DataFrame
+        # Manually set the space positions in the environment's DataFrame with Object type
         space.df = space.df.with_columns([
-            pl.when(pl.col('id') == 1).then(pl.lit((1.0, 1.0)))
-            .when(pl.col('id') == 2).then(pl.lit((3.0, 3.0)))
-            .when(pl.col('id') == 3).then(pl.lit((10.0, 10.0)))
+            pl.when(pl.col('id') == 1).then(pl.lit((1.0, 1.0), dtype=pl.Object))
+            .when(pl.col('id') == 2).then(pl.lit((3.0, 3.0), dtype=pl.Object))
+            .when(pl.col('id') == 3).then(pl.lit((10.0, 10.0), dtype=pl.Object))
             .otherwise(pl.col('space_position'))
             .alias('space_position')
         ])
@@ -291,7 +326,7 @@ class TestSpaceEnvironment:
     def test_space_get_distance(self):
         """Test calculating Euclidean distance."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         space = SpaceEnvironment(mock_model, bounds=[(0, 10), (0, 10)])
         
@@ -306,7 +341,7 @@ class TestSpaceEnvironment:
     def test_space_get_distance_3d(self):
         """Test calculating distance in 3D."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         space = SpaceEnvironment(mock_model, bounds=[(0, 10), (0, 10), (0, 10)])
         
@@ -317,7 +352,7 @@ class TestSpaceEnvironment:
     def test_space_get_distance_torus(self):
         """Test calculating distance with torus topology."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         space = SpaceEnvironment(mock_model, bounds=[(0, 10), (0, 10)], torus=True)
         
@@ -331,7 +366,7 @@ class TestSpaceEnvironment:
     def test_space_is_valid_position(self):
         """Test checking if positions are within bounds."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         space = SpaceEnvironment(mock_model, bounds=[(0, 10), (5, 15)])
         
@@ -348,7 +383,7 @@ class TestSpaceEnvironment:
     def test_space_random_position(self):
         """Test getting random position."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         mock_model.nprandom = np.random.RandomState(42)
         
         space = SpaceEnvironment(mock_model, bounds=[(0, 10), (5, 15)])
@@ -365,6 +400,46 @@ class TestSpaceEnvironment:
         # Should have some variety
         assert len(set(tuple(p) for p in positions)) > 1
 
+    def test_space_move_agent(self):
+        """Test moving an agent in continuous space."""
+        mock_model = Mock()
+        # Use real DataFrame
+        mock_model.agents_df = pl.DataFrame({
+            'id': [1],
+            'space_position': [(1.0, 1.0)],
+            'space_distance': [0.0]
+        })
+        
+        space = SpaceEnvironment(mock_model, bounds=[(0, 10), (0, 10)])
+        
+        # Verify initial position
+        # Verify initial position
+        current_pos = space.df.filter(pl.col('id') == 1)['space_position'].to_list()[0]
+        if isinstance(current_pos, list):
+            current_pos = tuple(current_pos)
+        assert current_pos == (1.0, 1.0)
+        
+        # Move agent
+        new_pos = Position((5.5, 6.5), 'space')
+        space.move_agent(1, new_pos)
+        
+        # Verify new position
+        current_pos = space.df.filter(pl.col('id') == 1)['space_position'].to_list()[0]
+        if isinstance(current_pos, list):
+            current_pos = tuple(current_pos)
+        assert current_pos == (5.5, 6.5)
+        
+        # Test moving with wrapping (torus)
+        space.torus = True
+        wrap_pos = Position((11.0, 12.0), 'space') # Should wrap to (1.0, 2.0)
+        space.move_agent(1, wrap_pos)
+        
+        pos = space.df.filter(pl.col('id') == 1)['space_position'].to_list()[0]
+        if isinstance(pos, list):
+            pos = tuple(pos)
+        assert abs(pos[0] - 1.0) < 1e-10
+        assert abs(pos[1] - 2.0) < 1e-10
+
 
 class TestNetworkEnvironment:
     """Test cases for NetworkEnvironment class."""
@@ -372,7 +447,7 @@ class TestNetworkEnvironment:
     def test_network_initialization_empty(self):
         """Test NetworkEnvironment initialization with empty graph."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         G = nx.Graph()
         network = NetworkEnvironment(mock_model, G)
@@ -385,7 +460,7 @@ class TestNetworkEnvironment:
     def test_network_initialization_with_graph(self, mock_networkx_graph):
         """Test NetworkEnvironment initialization with existing graph."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         network = NetworkEnvironment(mock_model, mock_networkx_graph)
         
@@ -398,7 +473,7 @@ class TestNetworkEnvironment:
     def test_network_get_neighbors(self, mock_networkx_graph):
         """Test getting neighbors of a node."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         network = NetworkEnvironment(mock_model, mock_networkx_graph)
         
@@ -413,7 +488,7 @@ class TestNetworkEnvironment:
     def test_network_get_distance(self, mock_networkx_graph):
         """Test calculating shortest path distance."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         network = NetworkEnvironment(mock_model, mock_networkx_graph)
         
@@ -436,7 +511,7 @@ class TestNetworkEnvironment:
     def test_network_add_node(self):
         """Test adding nodes to network."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         G = nx.Graph()
         network = NetworkEnvironment(mock_model, G)
@@ -450,7 +525,7 @@ class TestNetworkEnvironment:
     def test_network_add_edge(self):
         """Test adding edges to network."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         G = nx.Graph()
         G.add_nodes_from([1, 2, 3])
@@ -465,7 +540,7 @@ class TestNetworkEnvironment:
     def test_network_remove_node(self, mock_networkx_graph):
         """Test removing nodes from network."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         network = NetworkEnvironment(mock_model, mock_networkx_graph)
         
@@ -482,7 +557,7 @@ class TestNetworkEnvironment:
     def test_network_remove_edge(self, mock_networkx_graph):
         """Test removing edges from network."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         network = NetworkEnvironment(mock_model, mock_networkx_graph)
         
@@ -502,7 +577,7 @@ class TestNetworkEnvironment:
     def test_network_get_degree(self, mock_networkx_graph):
         """Test getting node degree."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         network = NetworkEnvironment(mock_model, mock_networkx_graph)
         
@@ -517,7 +592,7 @@ class TestNetworkEnvironment:
     def test_network_get_clustering(self, mock_networkx_graph):
         """Test getting clustering coefficient."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         
         network = NetworkEnvironment(mock_model, mock_networkx_graph)
         
@@ -529,7 +604,7 @@ class TestNetworkEnvironment:
     def test_network_random_node(self, mock_networkx_graph):
         """Test getting random node."""
         mock_model = Mock()
-        mock_model.agents_df = Mock()
+        mock_model.agents_df = pl.DataFrame()
         mock_model.nprandom = np.random.RandomState(42)
         
         network = NetworkEnvironment(mock_model, mock_networkx_graph)
@@ -544,6 +619,34 @@ class TestNetworkEnvironment:
         # Should have some variety
         assert len(set(nodes)) > 1
 
+    def test_network_move_agent(self, mock_networkx_graph):
+        """Test moving an agent in the network."""
+        mock_model = Mock()
+        # Use real DataFrame
+        mock_model.agents_df = pl.DataFrame({
+            'id': [1],
+            'node_id': [0],
+            'network_distance': [0.0]
+        })
+        
+        network = NetworkEnvironment(mock_model, mock_networkx_graph)
+        
+        # Verify initial position
+        assert network.df.filter(pl.col('id') == 1)['node_id'].item() == 0
+        
+        # Move agent
+        new_pos = Position((2,), 'network')
+        network.move_agent(1, new_pos)
+        
+        # Verify new position
+        current_node = network.df.filter(pl.col('id') == 1)['node_id'].to_list()[0]
+        assert current_node == 2
+        
+        # Test invalid move (node not in graph)
+        invalid_pos = Position((99,), 'network')
+        with pytest.raises(ValueError):
+            network.move_agent(1, invalid_pos)
+
 
 class TestEnvironmentIntegration:
     """Integration tests for environment classes."""
@@ -551,7 +654,7 @@ class TestEnvironmentIntegration:
     def test_grid_with_real_model(self, basic_model):
         """Test GridEnvironment with real model."""
         # Mock the agents_df attribute
-        basic_model.agents_df = Mock()
+        basic_model.agents_df = pl.DataFrame({'id': [], 'grid_position': []})
         
         grid = GridEnvironment(basic_model, size=(5, 5))
         
@@ -564,7 +667,7 @@ class TestEnvironmentIntegration:
     
     def test_space_with_real_model(self, basic_model):
         """Test SpaceEnvironment with real model."""
-        basic_model.agents_df = Mock()
+        basic_model.agents_df = pl.DataFrame({'id': [], 'space_position': []})
         
         space = SpaceEnvironment(basic_model, bounds=[(0, 10), (0, 10)])
         
@@ -576,7 +679,7 @@ class TestEnvironmentIntegration:
     
     def test_network_with_real_model(self, basic_model, mock_networkx_graph):
         """Test NetworkEnvironment with real model."""
-        basic_model.agents_df = Mock()
+        basic_model.agents_df = pl.DataFrame({'id': [], 'node_id': []})
         
         network = NetworkEnvironment(basic_model, mock_networkx_graph)
         
