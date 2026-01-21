@@ -1,5 +1,5 @@
 ---
-title: "AMBER: Agent-Based Modeling with Blazingly Efficient Records"
+title: "AMBER: Rethinking Agent-Based Modeling in Python"
 tags:
   - Python
   - agent-based modeling
@@ -25,7 +25,7 @@ Agents' interactions can give rise to emergent properties—system-level phenome
 
 Python has become a popular language for ABM due to its rapid prototyping capabilities and seamless integration with the scientific computing ecosystem. However, widely used Python ABM frameworks typically represent each agent as a separate Python object, with per-agent attribute access and update loops. This object-oriented design, while intuitive, can become a performance bottleneck when scaling to large populations or when models require frequent state updates and neighborhood queries [@masad2015mesa; @foramitti2021agentpy].
 
-AMBER (**A**gent-based **M**odeling with **B**lazingly **E**fficient **R**ecords) is a general framework for developing agent-based models in Python. It is published and maintained on GitHub at <https://github.com/a11to1n3/AMBER>. AMBER retains a familiar, agent-oriented programming interface while fundamentally changing how agent state is stored and updated—using a columnar, DataFrame-backed architecture built on Polars [@polars_zenodo; @polars_github].
+AMBER (Agent-based Modeling with Blazingly Efficient Records) is a general framework for developing agent-based models in Python. It is published and maintained on GitHub at <https://github.com/a11to1n3/AMBER>. AMBER retains a familiar, agent-oriented programming interface while fundamentally changing how agent state is stored and updated—using a columnar, DataFrame-backed architecture built on Polars [@polars_zenodo; @polars_github].
 
 # Statement of Need
 
