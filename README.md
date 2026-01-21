@@ -21,9 +21,6 @@ AMBER achieves high performance through its columnar memory layout (SoA), KD-Tre
 | **Melodie** | Python | Hybrid | 4th (0.4s - 20s) |
 | **AgentPy** | Python | Object | 5th (2s - 30s) |
 | **Mesa** | Python | Object | 6th (50s - 30s) |
-| **BPTK-Py** | Python | Hybrid | - (Failed) |
-| **PyABM** | Python | Legacy | - (Failed) |
-| **PADE** | Python | Legacy | - (Failed) |
 
 
 *\*SimPy is exceptionally fast for sparse models (like SIR) due to its event-driven nature, but AMBER is faster for dense/movement-heavy models.*
