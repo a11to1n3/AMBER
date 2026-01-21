@@ -124,11 +124,11 @@
     "model": "wealth_transfer",
     "category": "statistical",
     "metric_name": "variance_growth",
-    "value": 0.004014,
-    "expected": 1.0,
-    "error": 0.995986,
-    "passed": false,
-    "details": "Var ratio: 0.00x",
+    "value": 33.12,
+    "expected": 0.0,
+    "error": 0.0,
+    "passed": true,
+    "details": "Final variance: 33.12 (expected >0)",
     "execution_time": 0
   },
   {
@@ -136,11 +136,11 @@
     "model": "random_walk",
     "category": "statistical",
     "metric_name": "mean_squared_displacement",
-    "value": 1503.846900086763,
+    "value": 1338.9122068804263,
     "expected": 0.0,
     "error": 0.0,
     "passed": true,
-    "details": "MSD: 1503.85",
+    "details": "MSD: 1338.91",
     "execution_time": 0
   },
   {
@@ -148,11 +148,11 @@
     "model": "sir_epidemic",
     "category": "statistical",
     "metric_name": "attack_rate",
-    "value": 0.08,
+    "value": 0.16,
     "expected": 0.5,
-    "error": 0.42,
+    "error": 0.33999999999999997,
     "passed": true,
-    "details": "Attack rate: 8.0%",
+    "details": "Attack rate: 16.0%",
     "execution_time": 0
   },
   {
@@ -160,11 +160,11 @@
     "model": "wealth_transfer",
     "category": "statistical",
     "metric_name": "variance_growth",
-    "value": 0.005156,
-    "expected": 1.0,
-    "error": 0.994844,
-    "passed": false,
-    "details": "Var ratio: 0.01x",
+    "value": 36.56,
+    "expected": 0.0,
+    "error": 0.0,
+    "passed": true,
+    "details": "Final variance: 36.56 (expected >0)",
     "execution_time": 0
   },
   {
@@ -172,11 +172,11 @@
     "model": "random_walk",
     "category": "statistical",
     "metric_name": "mean_squared_displacement",
-    "value": 1848.4476829339378,
+    "value": 1623.8729067752583,
     "expected": 0.0,
     "error": 0.0,
     "passed": true,
-    "details": "MSD: 1848.45",
+    "details": "MSD: 1623.87",
     "execution_time": 0
   },
   {
@@ -184,11 +184,11 @@
     "model": "sir_epidemic",
     "category": "statistical",
     "metric_name": "attack_rate",
-    "value": 0.1,
+    "value": 0.22,
     "expected": 0.5,
-    "error": 0.4,
+    "error": 0.28,
     "passed": true,
-    "details": "Attack rate: 10.0%",
+    "details": "Attack rate: 22.0%",
     "execution_time": 0
   },
   {
@@ -196,11 +196,11 @@
     "model": "wealth_transfer",
     "category": "statistical",
     "metric_name": "variance_growth",
-    "value": 0.00485,
-    "expected": 1.0,
-    "error": 0.99515,
-    "passed": false,
-    "details": "Var ratio: 0.00x",
+    "value": 28.84,
+    "expected": 0.0,
+    "error": 0.0,
+    "passed": true,
+    "details": "Final variance: 28.84 (expected >0)",
     "execution_time": 0
   },
   {
@@ -208,11 +208,11 @@
     "model": "random_walk",
     "category": "statistical",
     "metric_name": "mean_squared_displacement",
-    "value": 1633.5122068608712,
+    "value": 1449.484664376368,
     "expected": 0.0,
     "error": 0.0,
     "passed": true,
-    "details": "MSD: 1633.51",
+    "details": "MSD: 1449.48",
     "execution_time": 0
   },
   {
@@ -220,11 +220,11 @@
     "model": "sir_epidemic",
     "category": "statistical",
     "metric_name": "attack_rate",
-    "value": 0.12,
+    "value": 0.18,
     "expected": 0.5,
-    "error": 0.38,
+    "error": 0.32,
     "passed": true,
-    "details": "Attack rate: 12.0%",
+    "details": "Attack rate: 18.0%",
     "execution_time": 0
   },
   {
@@ -232,11 +232,11 @@
     "model": "wealth_transfer",
     "category": "statistical",
     "metric_name": "variance_growth",
-    "value": 0.005698,
-    "expected": 1.0,
-    "error": 0.994302,
-    "passed": false,
-    "details": "Var ratio: 0.01x",
+    "value": 27.16,
+    "expected": 0.0,
+    "error": 0.0,
+    "passed": true,
+    "details": "Final variance: 27.16 (expected >0)",
     "execution_time": 0
   },
   {
@@ -268,11 +268,11 @@
     "model": "wealth_transfer",
     "category": "statistical",
     "metric_name": "variance_growth",
-    "value": 0.00534,
-    "expected": 1.0,
-    "error": 0.99466,
-    "passed": false,
-    "details": "Var ratio: 0.01x",
+    "value": 34.36,
+    "expected": 0.0,
+    "error": 0.0,
+    "passed": true,
+    "details": "Final variance: 34.36 (expected >0)",
     "execution_time": 0
   },
   {
@@ -340,11 +340,11 @@
     "model": "wealth_transfer",
     "category": "reproducibility",
     "metric_name": "seed_determinism",
-    "value": 0.0,
+    "value": 1.0,
     "expected": 1.0,
-    "error": 1.0,
-    "passed": false,
-    "details": "Non-deterministic!",
+    "error": 0.0,
+    "passed": true,
+    "details": "Same seed \u2192 same result",
     "execution_time": 0
   },
   {
@@ -352,11 +352,11 @@
     "model": "wealth_transfer",
     "category": "reproducibility",
     "metric_name": "seed_determinism",
-    "value": 0.0,
+    "value": 1.0,
     "expected": 1.0,
-    "error": 1.0,
-    "passed": false,
-    "details": "Non-deterministic!",
+    "error": 0.0,
+    "passed": true,
+    "details": "Same seed \u2192 same result",
     "execution_time": 0
   },
   {
@@ -364,11 +364,11 @@
     "model": "wealth_transfer",
     "category": "emergent",
     "metric_name": "gini_increase",
-    "value": 0.03660200000000003,
+    "value": 0.029728000000000067,
     "expected": 1.0,
     "error": 0.0,
     "passed": true,
-    "details": "Gini change: +0.0366",
+    "details": "Gini change: +0.0297",
     "execution_time": 0
   },
   {
@@ -388,11 +388,11 @@
     "model": "wealth_transfer",
     "category": "emergent",
     "metric_name": "gini_increase",
-    "value": 0.042009999999999936,
+    "value": 0.03145600000000002,
     "expected": 1.0,
     "error": 0.0,
     "passed": true,
-    "details": "Gini change: +0.0420",
+    "details": "Gini change: +0.0315",
     "execution_time": 0
   },
   {
@@ -412,11 +412,11 @@
     "model": "wealth_transfer",
     "category": "emergent",
     "metric_name": "gini_increase",
-    "value": 0.03543199999999999,
+    "value": 0.02240799999999993,
     "expected": 1.0,
     "error": 0.0,
     "passed": true,
-    "details": "Gini change: +0.0354",
+    "details": "Gini change: +0.0224",
     "execution_time": 0
   },
   {
@@ -436,11 +436,11 @@
     "model": "wealth_transfer",
     "category": "emergent",
     "metric_name": "gini_increase",
-    "value": 0.0,
+    "value": 0.03307199999999995,
     "expected": 1.0,
-    "error": 1.0,
-    "passed": false,
-    "details": "Gini change: +0.0000",
+    "error": 0.0,
+    "passed": true,
+    "details": "Gini change: +0.0331",
     "execution_time": 0
   },
   {
@@ -460,11 +460,11 @@
     "model": "wealth_transfer",
     "category": "emergent",
     "metric_name": "gini_increase",
-    "value": 0.0,
+    "value": 0.03236000000000004,
     "expected": 1.0,
-    "error": 1.0,
-    "passed": false,
-    "details": "Gini change: +0.0000",
+    "error": 0.0,
+    "passed": true,
+    "details": "Gini change: +0.0324",
     "execution_time": 0
   },
   {
@@ -488,7 +488,7 @@
     "expected": 0.0,
     "error": 0.0,
     "passed": true,
-    "details": "Error at 50 steps: 0.00e+00, at 500: 0.00e+00",
+    "details": "Error at 30 steps: 0.00e+00, at 300: 0.00e+00",
     "execution_time": 0
   },
   {
@@ -500,7 +500,7 @@
     "expected": 0.0,
     "error": 0.0,
     "passed": true,
-    "details": "Error at 50 steps: 0.00e+00, at 500: 0.00e+00",
+    "details": "Error at 30 steps: 0.00e+00, at 300: 0.00e+00",
     "execution_time": 0
   },
   {
@@ -512,7 +512,7 @@
     "expected": 0.0,
     "error": 0.0,
     "passed": true,
-    "details": "Error at 50 steps: 0.00e+00, at 500: 0.00e+00",
+    "details": "Error at 30 steps: 0.00e+00, at 300: 0.00e+00",
     "execution_time": 0
   },
   {
@@ -524,7 +524,7 @@
     "expected": 0.0,
     "error": 0.0,
     "passed": true,
-    "details": "Error at 50 steps: 0.00e+00, at 500: 0.00e+00",
+    "details": "Error at 30 steps: 0.00e+00, at 300: 0.00e+00",
     "execution_time": 0
   },
   {
@@ -536,7 +536,7 @@
     "expected": 0.0,
     "error": 0.0,
     "passed": true,
-    "details": "Error at 50 steps: 0.00e+00, at 500: 0.00e+00",
+    "details": "Error at 30 steps: 0.00e+00, at 300: 0.00e+00",
     "execution_time": 0
   },
   {
