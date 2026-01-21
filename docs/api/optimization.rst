@@ -19,7 +19,7 @@ Define parameter ranges for optimization:
 
 .. code-block:: python
 
-   from amber import ParameterSpace, IntRange
+   from ambr import ParameterSpace, IntRange
    
    space = ParameterSpace({
        'n_agents': IntRange(50, 200),
