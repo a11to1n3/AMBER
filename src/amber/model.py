@@ -133,7 +133,7 @@ class Model(BaseModel):
                 for k in all_keys:
                     data_dict[k].append(d.get(k, None))
             
-            model_df = pl.DataFrame(data_dict)
+            model_df = pl.DataFrame(data_dict, strict=False)
         else:
             model_df = pl.DataFrame({'t': []})
             
