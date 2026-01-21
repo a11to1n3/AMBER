@@ -3,13 +3,9 @@ on:
   push:
     branches:
       - joss-paper
-    paths:
-      - 'paper.md'
-      - 'paper.bib'
   pull_request:
-    paths:
-      - 'paper.md'
-      - 'paper.bib'
+    branches:
+      - joss-paper
   workflow_dispatch:
 
 jobs:
