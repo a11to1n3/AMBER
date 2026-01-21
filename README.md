@@ -1,7 +1,7 @@
 # AMBER (Agent-based Modeling with Blazingly Efficient Records)
 
-[![CI](https://github.com/USERNAME/AMBER/actions/workflows/ci.yml/badge.svg)](https://github.com/USERNAME/AMBER/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/USERNAME/AMBER/branch/main/graph/badge.svg)](https://codecov.io/gh/USERNAME/AMBER)
+[![CI](https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml/badge.svg)](https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/a11to1n3/AMBER/graph/badge.svg)](https://codecov.io/gh/a11to1n3/AMBER)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3_Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
