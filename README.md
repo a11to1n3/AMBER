@@ -127,7 +127,8 @@ Working examples are available in the `examples/` directory:
 
 ## 📖 Documentation
 
-For detailed documentation, tutorials, and API reference, visit our documentation site.
+- **Documentation**: https://ambr.readthedocs.io/
+- **Paper**: https://arxiv.org/abs/2601.16292
 
 ## 🤝 Contributing
 
