@@ -130,6 +130,19 @@ Working examples are available in the `examples/` directory:
 - **Documentation**: https://ambr.readthedocs.io/
 - **Paper**: https://arxiv.org/abs/2601.16292
 
+## 📝 How to cite?
+
+If you use AMBER in your research, please cite our paper:
+
+```bibtex
+@article{pham2026amber,
+  title={AMBER: A Columnar Architecture for High-Performance Agent-Based Modeling in Python},
+  author={Pham, Anh-Duy},
+  journal={arXiv preprint arXiv:2601.16292},
+  year={2026}
+}
+```
+
 ## 🤝 Contributing
 
 We welcome contributions! Please see our contributing guidelines for more information.
