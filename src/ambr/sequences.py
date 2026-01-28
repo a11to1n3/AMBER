@@ -64,6 +64,38 @@ class AgentList:
         """String representation."""
         return f"AgentList({len(self.agents)} agents)"
 
+    def __getattr__(self, name):
+        """
+        AgentPy compatibility: Forward attribute access to agents.
+        
+        This allows calling methods on all agents using AgentPy syntax:
+            agents.getWage()  ->  agents.call('getWage')
+        
+        For attributes, returns a list of values from all agents.
+        """
+        # Avoid infinite recursion for internal attributes
+        if name.startswith('_') or name in ('agents', 'model', 'agent_type'):
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        
+        # Check if agents have this attribute/method
+        if len(self.agents) > 0:
+            first_agent = self.agents[0]
+            if hasattr(first_agent, name):
+                attr = getattr(first_agent, name)
+                if callable(attr):
+                    # Return a wrapper that calls the method on all agents
+                    def method_caller(*args, **kwargs):
+                        return self.call(name, *args, **kwargs)
+                    return method_caller
+                else:
+                    # Return attribute values from all agents
+                    return [getattr(a, name) for a in self.agents]
+        
+        # Fallback: return a caller that will try to call the method
+        def method_caller(*args, **kwargs):
+            return self.call(name, *args, **kwargs)
+        return method_caller
+
     def append(self, agent: Agent):
         """Add an agent to the end of the list."""
         self.agents.append(agent)
@@ -149,11 +181,17 @@ class AgentList:
             method_name: Name of the method to call
             *args: Positional arguments to pass to the method
             **kwargs: Keyword arguments to pass to the method
+
+        Returns:
+            List of return values from each agent's method call
         """
+        results = []
         for agent in self.agents:
             if hasattr(agent, method_name):
                 method = getattr(agent, method_name)
-                method(*args, **kwargs)
+                result = method(*args, **kwargs)
+                results.append(result)
+        return results
 
     def get_data(self) -> pl.DataFrame:
         """Get all agents' data.
