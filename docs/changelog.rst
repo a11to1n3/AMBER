@@ -9,6 +9,19 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+[0.1.2] - 2026-01-28
+---------------------
+
+Added
+~~~~~
+- ``AttrDict`` class for AgentPy-compatible attribute-style parameter access (``self.p.param_name``)
+- Method forwarding on ``AgentList`` for AgentPy-style syntax (``agents.method()`` calls method on all agents)
+
+Changed
+~~~~~~~
+- ``AgentList.call()`` now returns list of results from each agent's method call
+- ``BaseModel`` and ``BaseAgent`` now use ``AttrDict`` for parameter storage
+
 [0.1.1] - 2026-01-21
 ---------------------
 
