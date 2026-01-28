@@ -73,17 +73,20 @@ class TestBaseModel:
         assert model.p['none'] is None
     
     def test_parameters_reference_behavior(self):
-        """Test parameter reference behavior."""
+        """Test parameter reference behavior with AttrDict wrapper."""
         original_params = {'key': 'original'}
         model = BaseModel(original_params)
         
-        # BaseModel stores reference to original dict
-        # This is the current behavior - documenting it in tests
-        assert model.p is original_params
+        # BaseModel now wraps parameters in AttrDict for attribute-style access
+        # The wrapper contains the same values but is a new object
+        assert model.p == original_params  # Values are equal
+        assert model.p['key'] == 'original'  # Dict-style access works
+        assert model.p.key == 'original'  # Attribute-style access works (new feature)
         
-        # Modifying through model updates original
+        # Modifying through model updates the AttrDict
         model.p['key'] = 'modified'
-        assert original_params['key'] == 'modified'
+        assert model.p['key'] == 'modified'
+        assert model.p.key == 'modified'  # Also works via attribute access
     
     def test_repr_string(self):
         """Test string representation of BaseModel."""
