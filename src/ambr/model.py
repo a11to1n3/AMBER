@@ -157,10 +157,16 @@ class Model(BaseModel):
     # --- Agent Management Delegates ---
     def add_agent(self, agent: 'Agent'):
         self.population.add_agent(agent.id, self.t)
-        self.agents.append(agent)
-        # Set default agent_type if not already set
-        if self.agents.agent_type is None or self.agents.agent_type == type(None):
-            self.agents.agent_type = type(agent)
+        
+        # Track in self.agents if it's an AgentList (initialized in __init__)
+        # If the user has overwritten it with another structure (like a dict in some tests), 
+        # we respect that and don't attempt to append.
+        from .sequences import AgentList
+        if isinstance(self.agents, AgentList):
+            self.agents.append(agent)
+            # Set default agent_type if not already set
+            if self.agents.agent_type is None or self.agents.agent_type == type(None):
+                self.agents.agent_type = type(agent)
         
     def update_agent_data(self, agent_id: int, data: Dict[str, Any]):
         """Update data for a single agent."""
