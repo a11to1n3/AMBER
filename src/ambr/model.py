@@ -39,6 +39,10 @@ class Model(BaseModel):
         self._rng = np.random.default_rng(seed)
         
         self.nprandom = self._create_np_wrapper(self._rng)
+        
+        # Track agents in an AgentList for AgentPy compatibility
+        from .sequences import AgentList
+        self.agents = AgentList(self, [])
     
     @property
     def agents_df(self) -> pl.DataFrame:
@@ -151,8 +155,12 @@ class Model(BaseModel):
         }
 
     # --- Agent Management Delegates ---
-    def add_agent(self, agent):
+    def add_agent(self, agent: 'Agent'):
         self.population.add_agent(agent.id, self.t)
+        self.agents.append(agent)
+        # Set default agent_type if not already set
+        if self.agents.agent_type is None or self.agents.agent_type == type(None):
+            self.agents.agent_type = type(agent)
         
     def update_agent_data(self, agent_id: int, data: Dict[str, Any]):
         """Update data for a single agent."""
