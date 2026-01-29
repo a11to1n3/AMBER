@@ -56,7 +56,7 @@ from .performance import (
     HAS_NUMBA,
 )
 
-__version__ = '0.1.3'
+__version__ = '0.1.4'
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'
 __url__ = 'https://github.com/a11to1n3/AMBER'

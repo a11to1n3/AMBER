@@ -9,6 +9,21 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+[0.1.4] - 2026-01-30
+---------------------
+
+Added
+~~~~~
+- Vectorized attribute access on ``AgentList`` (returns numpy arrays)
+- Advanced indexing/masking support for ``AgentList`` (slices, list of indices, boolean masks)
+- Concatenation support for ``AgentList`` using the ``+`` operator
+- ``Model.record()`` as an alias for ``record_model()`` (AgentPy compatibility)
+
+Changed
+~~~~~~~
+- ``AgentList.select()`` now supports boolean mask indexing
+- ``AgentList.call()`` now returns a numpy array of results
+
 [0.1.3] - 2026-01-28
 ---------------------
 
