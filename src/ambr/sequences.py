@@ -1,5 +1,6 @@
 from typing import List, Type, Callable, Any, Dict, Union
 import polars as pl
+import numpy as np
 from .agent import Agent
 from .model import Model
 
@@ -49,8 +50,20 @@ class AgentList:
         return len(self.agents)
 
     def __getitem__(self, idx):
-        """Get agent by index."""
-        return self.agents[idx]
+        """Get agent(s) by index, slice, or selection array."""
+        if isinstance(idx, (int, slice, np.integer)):
+            return self.agents[idx]
+        elif isinstance(idx, (list, np.ndarray)):
+            # Handle list of indices or boolean mask
+            idx = np.array(idx)
+            if idx.dtype == bool:
+                if len(idx) != len(self.agents):
+                    raise ValueError(f"Boolean mask length ({len(idx)}) does not match AgentList length ({len(self.agents)})")
+                return AgentList(self.model, [a for i, a in enumerate(self.agents) if idx[i]], agent_type=self.agent_type)
+            else:
+                return AgentList(self.model, [self.agents[i] for i in idx], agent_type=self.agent_type)
+        else:
+            raise TypeError(f"Invalid index type: {type(idx)}")
 
     def __setitem__(self, idx, agent):
         """Set agent by index."""
@@ -88,10 +101,25 @@ class AgentList:
                         return self.call(name, *args, **kwargs)
                     return method_caller
                 else:
-                    # Return attribute values from all agents
-                    return [getattr(a, name) for a in self.agents]
-        
-        # Fallback: return a caller that will try to call the method
+                    # Return attribute values from all agents as a numpy array for vectorized operations
+                    values = [getattr(a, name) for a in self.agents]
+                    try:
+                        return np.array(values)
+                    except ValueError:
+                        # Fallback for inhomogeneous shapes (like lists of lists with different lengths)
+                        return values
+        elif self.agent_type is not None:
+            # If list is empty but we know the agent type, check if it's a method or attribute
+            attr = getattr(self.agent_type, name, None)
+            if attr is not None and callable(attr):
+                def method_caller(*args, **kwargs):
+                    return self.call(name, *args, **kwargs)
+                return method_caller
+            else:
+                # Assume it's an attribute if not a callable on the class
+                return np.array([])
+            
+        # Last resort fallback: return a caller that will try to call the method
         def method_caller(*args, **kwargs):
             return self.call(name, *args, **kwargs)
         return method_caller
@@ -143,24 +171,33 @@ class AgentList:
         """Sort the agents."""
         self.agents.sort(key=key, reverse=reverse)
 
+    def __add__(self, other):
+        """Concatenate two AgentLists or an AgentList and a list of agents."""
+        if isinstance(other, AgentList):
+            combined_agents = self.agents + other.agents
+        elif isinstance(other, list):
+            combined_agents = self.agents + other
+        else:
+            raise TypeError(f"Cannot add {type(other)} to AgentList")
+            
+        new_list = AgentList(self.model, combined_agents)
+        new_list.agent_type = self.agent_type # Use first list's type as default
+        return new_list
+
     # Legacy properties for backward compatibility
     @property
     def agent_ids(self):
         """Get list of agent IDs."""
         return [getattr(agent, "id", i) for i, agent in enumerate(self.agents)]
 
-    def select(self, condition: pl.Expr) -> "AgentList":
-        """Select agents based on a Polars expression.
-
-        Args:
-            condition: Polars expression to filter agents
-
-        Returns:
-            New AgentList containing only the selected agents
+    def select(self, selection) -> "AgentList":
         """
-        selected = AgentList(self.model, [])
-        selected.agent_type = self.agent_type
-        return selected
+        Select agents based on a boolean mask, list of indices, or Polars expression.
+        
+        This provides AgentPy compatibility for:
+            agents.select(agents.attr == value)
+        """
+        return self.__getitem__(selection)
 
     def record(self, name: str, value: Any):
         """Record a variable for all agents in the list.
@@ -191,7 +228,7 @@ class AgentList:
                 method = getattr(agent, method_name)
                 result = method(*args, **kwargs)
                 results.append(result)
-        return results
+        return np.array(results)
 
     def get_data(self) -> pl.DataFrame:
         """Get all agents' data.

@@ -69,6 +69,10 @@ class Model(BaseModel):
         if not hasattr(self, '_current_step_data'):
             self._current_step_data = {'t': self.t}
         self._current_step_data[key] = value
+        
+    def record(self, key: str, value: Any):
+        """AgentPy compatibility alias for record_model."""
+        self.record_model(key, value)
 
     def _finalize_step_data(self):
         if hasattr(self, '_current_step_data'):
