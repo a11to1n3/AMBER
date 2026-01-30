@@ -9,6 +9,13 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+[0.1.5] - 2026-01-30
+---------------------
+
+Fixed
+~~~~~
+- Fixed regression in ``Model.add_agent()`` making it defensive against users overwriting ``self.agents`` (critical for integration tests)
+
 [0.1.4] - 2026-01-30
 ---------------------
 
