@@ -59,34 +59,35 @@ jobs:
     
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip setuptools
-        pip install -e .
-        pip install pytest pytest-cov coverage-badge
-    
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
     - name: Run tests with coverage for badge
       run: |
-        pytest tests/ --cov=src/ambr --cov-report=term-missing --cov-fail-under=0
-        coverage-badge -o coverage-badge.svg
-    
-    - name: Create test badge
+        pytest tests/ --cov=src/ambr --cov-report=term-missing --cov-report=xml --cov-fail-under=0
+
+    - name: Generate badges
       run: |
-        # Get test results
+        # Test status
         if pytest tests/ --tb=no -q; then
           echo "TESTS_STATUS=passing" >> $GITHUB_ENV
           echo "TESTS_COLOR=brightgreen" >> $GITHUB_ENV
         else
-          echo "TESTS_STATUS=failing" >> $GITHUB_ENV  
+          echo "TESTS_STATUS=failing" >> $GITHUB_ENV
           echo "TESTS_COLOR=red" >> $GITHUB_ENV
         fi
-    
-    - name: Generate badges
-      run: |
-        # Create tests badge
-        curl -s "https://img.shields.io/badge/tests-${{ env.TESTS_STATUS }}-${{ env.TESTS_COLOR }}" > tests-badge.svg
-        
-        # Get coverage percentage for manual badge creation if coverage-badge doesn't work
-        COVERAGE=$(python -c "import coverage; cov = coverage.Coverage(); cov.load(); print(f'{cov.report():.0f}')" 2>/dev/null || echo "0")
+        # Coverage percentage from the XML report
+        COVERAGE=$(python -c "
+        import xml.etree.ElementTree as ET
+        tree = ET.parse('coverage.xml')
+        rate = float(tree.getroot().attrib['line-rate'])
+        print(int(rate * 100))
+        " 2>/dev/null || echo "0")
+        echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
         echo "Coverage: $COVERAGE%"
+        # Download badges from shields.io
+        curl -sL "https://img.shields.io/badge/tests-${{ env.TESTS_STATUS }}-${{ env.TESTS_COLOR }}" > tests-badge.svg
+        curl -sL "https://img.shields.io/badge/coverage-${COVERAGE}%25-brightgreen" > coverage-badge.svg
     
     - name: Commit badges
       run: |
