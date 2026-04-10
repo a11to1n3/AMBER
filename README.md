@@ -9,25 +9,42 @@ AMBER is a Python framework for agent-based modeling that uses Polars for effici
 
 ## 🚀 Performance
 
-AMBER achieves high performance through its columnar memory layout (SoA), KD-Trees, and SIMD-vectorized operations.
+AMBER stores the entire population as a columnar Polars DataFrame and
+exposes a vectorized view API (`agents.where(...)`, `agents.at[ids]`,
+`scatter_add`) that compiles per-step updates down to a handful of
+Polars expressions — regardless of population size.
 
-**Benchmark vs Other Frameworks (5,000 Agents, 100 Steps)**
+**Benchmark against every other ABM framework we found
+— 5000 agents, 50 steps, Python 3.13.11, Julia 1.12.3, Apple Silicon.**
+All numbers are wall-clock, averaged over 3 runs (slowest trimmed).
+Every framework is **verified against output invariants** (wealth
+conservation, boundary clamping, S+I+R population conservation) before
+timing — see [`benchmarks/correctness_check.py`](benchmarks/correctness_check.py).
+Reproducer: [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.py).
 
-| Framework | Language | Architecture | Speed Rank |
-|-----------|----------|--------------|------------|
-| **Agents.jl** | Julia | Vectorized | 🥇 1st (0.02s - 0.9s) |
-| **AMBER** | Python | Vectorized | 🥈 **2nd (0.1s - 2.3s)** |
-| **SimPy (Dense)** | Python | Process/DES | 🥉 3rd (0.3s - 4.3s) |
-| **Melodie** | Python | Hybrid | 4th (0.4s - 20s) |
-| **AgentPy** | Python | Object | 5th (2s - 30s) |
-| **Mesa** | Python | Object | 6th (50s - 30s) |
+| Framework | Language | Arch. | Wealth Transfer | Random Walk | SIR Epidemic |
+|---|---|---|---:|---:|---:|
+| **AMBER (vectorized)** | Python | Columnar (Polars) | 17 ms 🥈 | **5 ms** 🥇 | **608 ms** 🥇 |
+| Agents.jl | Julia | Object | **7 ms** 🥇 | 7 ms 🥈 | 892 ms 🥈 |
+| AMBER (loop) | Python | Object | 89 ms | 79 ms | 12.23 s |
+| Mesa | Python | Object | 2.87 s | 87 ms | 9.18 s |
+| AgentPy | Python | Object | 266 ms | 98 ms | 8.78 s |
+| SimPy | Python | Event loop | 205 ms | 209 ms | 6.75 s |
+| Melodie | Python | Hybrid | 168 ms | 963 ms | 11.21 s |
 
+**AMBER (vectorized) wins two of three models outright** (random walk
+and SIR) and comes second on wealth transfer, trailing only
+JIT-compiled Julia. **It is the fastest Python-hosted framework on
+every model at 5000 agents** and within 2.4× of Agents.jl on the one
+model Julia wins — while every other Python-hosted framework is 5× to
+160× slower on the same workload.
 
-*\*SimPy is exceptionally fast for sparse models (like SIR) due to its event-driven nature, but AMBER is faster for dense/movement-heavy models.*
+![Seven-framework scaling chart](benchmarks/results/scaling_chart_all.png)
 
-AMBER is the **state-of-the-art for dense simulation** in Python, while SimPy offers an alternative for event-driven logic.
-
-![Comparison Chart](benchmarks/results/scaling_chart.png)
+See [`benchmarks/README.md`](benchmarks/README.md) for the full table at
+500 / 1000 / 5000 agents, speedup ratios, a per-model correctness audit,
+and a discussion of why some of the numbers I previously shipped were
+measuring different problems across frameworks.
 
 ## 🚀 Quick Start
 
