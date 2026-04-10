@@ -9,6 +9,77 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+Added
+~~~~~
+- Vectorized view API on ``AgentList`` as the primary vectorized interface.
+  ``model.agents.where(predicate)`` / ``model.agents[mask]`` return filtered
+  views; ``model.agents.at[ids]`` returns scatter views. Column attribute
+  access on any view returns a Polars Series backed by ``model.agents_df``,
+  and column attribute assignment queues through the batched flush path.
+- ``Model.add_agents(n, agent_class=None, **columns)`` — columnar bulk-create
+  that delegates to ``Population.batch_add_agents`` and, if ``agent_class``
+  is supplied, also wires up lightweight Python ``Agent`` instances for
+  per-agent method dispatch.
+- ``view.scatter_add(**increments)`` — id-indexed accumulate for flow-of-
+  resources updates. Correctly sums duplicate ids instead of last-write-wins.
+- New ``Model.get_agent_data`` and ``Model.run_step`` methods, finally
+  matching the signatures the tutorial and examples had been assuming.
+- ``Population.batch_add_agents`` now accepts ``pl.Series`` column inputs
+  alongside lists and numpy arrays.
+- Full quickstart and tutorial rewrite showing the vectorized idiom as the
+  default path. Docs now build strict (``sphinx-build -W``).
+- ``TestVectorizedWorkflows`` integration tests covering wealth-transfer,
+  SIR transitions, scatter-add invariants, and mixed per-agent/view usage.
+
+Changed (breaking)
+~~~~~~~~~~~~~~~~~~
+- ``AgentList.<col>`` attribute access now reads from ``model.agents_df``
+  and returns a Polars Series. Previously it aggregated Python attributes
+  from each ``Agent`` instance into a numpy array, which silently desynced
+  from any DataFrame-level write (the biggest footgun in the library).
+
+  **Migration:** if you set custom state via Python attributes on Agent
+  objects and read it back as a numpy array, switch to::
+
+      # Before
+      agent.custom = value
+      arr = self.agents.custom  # np.ndarray (Python attrs)
+
+      # After — column lives in the DataFrame
+      self.agents.custom = value_array  # bulk write
+      series = self.agents.custom       # pl.Series (agents_df)
+
+- ``AgentList.__getattr__`` no longer forwards unknown names to per-agent
+  method calls. Use the explicit ``agents.call('method_name', ...)`` entry
+  point, which has been there since v0.1.4.
+
+Deprecated
+~~~~~~~~~~
+- ``Population.create_batch_context()`` now emits a ``DeprecationWarning``.
+  Replace with ``model.agents.at[ids].col = values`` or
+  ``model.agents.at[ids].scatter_add(col=delta)``.
+
+Fixed
+~~~~~
+- Batched ``Agent.record()`` path: per-call DataFrame clones are replaced
+  by a hash-join flush. On a 10 000-agent wealth-transfer benchmark, step
+  throughput improved by ~6300× over the previous per-call ``with_columns``
+  path (0.33 s vs. ~35 min projected for 100 steps).
+- ``AgentList.record()`` / ``update_data()`` on a subset view now only
+  touch rows inside the subset. Previously both methods accidentally
+  broadcast their value to every agent in the population.
+- ``Agent.record()`` / ``update_data()`` auto-create missing columns
+  instead of raising ``ColumnNotFoundError``.
+- ``GridEnvironment.get_neighbors()`` with wrapping now deduplicates
+  wrapped offsets and excludes the origin when ``distance >= dim``.
+- ``MultiObjectiveSMAC`` target-function lambdas now capture their
+  objective by value (loop-closure bug).
+- ``pytest.ini`` / ``MANIFEST.in`` / ``docs/api/population.rst``: corrected
+  ``src/amber`` → ``src/ambr`` path typo that had been hiding coverage
+  tracking on ``population.py`` and autodoc on ``Population``.
+- Sphinx docs now build under ``sphinx-build -W --keep-going`` with zero
+  warnings.
+
 [0.1.5] - 2026-01-30
 ---------------------
 
@@ -62,6 +133,7 @@ Fixed
 Changed
 ~~~~~~~
 - Bumped version to 0.1.1
+
 Added
 ~~~~~
 - Comprehensive documentation with ReadTheDocs integration
