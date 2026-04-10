@@ -15,22 +15,15 @@ import sys
 # =============================================================================
 
 def wealth_agent(env, agent_id, agents_list):
-    """Wealth Transfer Agent Process"""
-    wealth = 1
+    """Wealth Transfer Agent Process."""
     while True:
-        if wealth > 0:
-            # Pick random partner
+        current = agents_list[agent_id]['wealth']
+        if current > 0:
             partner_id = random.randrange(len(agents_list))
             if partner_id != agent_id:
-                # Direct interaction (process-based)
-                # In SimPy, we usually use resources/stores, but for speed 
-                # we'll use a shared list like standard ABMs
-                wealth -= 1
-                # We can't easily modify other process variables directly without shared state
-                # So we use the shared list 'agents_data'
+                agents_list[agent_id]['wealth'] = current - 1
                 agents_list[partner_id]['wealth'] += 1
-                agents_list[agent_id]['wealth'] = wealth
-                
+
         yield env.timeout(1)
 
 def run_wealth_benchmark(n=100, steps=100):
@@ -49,20 +42,23 @@ def run_wealth_benchmark(n=100, steps=100):
 # =============================================================================
 
 def walk_agent(env, agent_id, agents_list):
-    """Random Walk Agent Process"""
-    x = random.uniform(0, 100)
-    y = random.uniform(0, 100)
+    """Random Walk Agent Process."""
+    world_size = 100.0
+    x = random.uniform(0, world_size)
+    y = random.uniform(0, world_size)
     speed = 1.0
-    
+
     while True:
-        theta = random.uniform(0, 2*math.pi)
+        theta = random.uniform(0, 2 * math.pi)
         x += speed * math.cos(theta)
         y += speed * math.sin(theta)
-        
-        # Output to shared state (mimicking update)
+        # Clamp to world bounds (parity with AMBER/AgentPy/Mesa/Melodie).
+        x = max(0.0, min(world_size, x))
+        y = max(0.0, min(world_size, y))
+
         agents_list[agent_id]['x'] = x
         agents_list[agent_id]['y'] = y
-        
+
         yield env.timeout(1)
 
 def run_walk_benchmark(n=100, steps=100):
@@ -79,49 +75,49 @@ def run_walk_benchmark(n=100, steps=100):
 # =============================================================================
 
 def sir_agent(env, agent_id, agents_list, params):
-    """SIR Agent Process"""
-    # Init state
-    x = random.uniform(0, 100)
-    y = random.uniform(0, 100)
-    # Init state
-    x = random.uniform(0, 100)
-    y = random.uniform(0, 100)
-    status = 1 # Force 100% infected for Dense Benchmark (User Request)
-    # if agent_id < 5: 
-    #     status = 1 # I
+    """SIR Agent Process."""
+    initial_infected = params.get('initial_infected', 5)
+    world_size = params.get('world_size', 100.0)
+    radius = params.get('infection_radius', 5.0)
+    transmission = params.get('transmission_rate', 0.1)
+    recovery_time = params.get('recovery_time', 14)
+    speed = params.get('movement_speed', 2.0)
+
+    x = random.uniform(0, world_size)
+    y = random.uniform(0, world_size)
+    status = 1 if agent_id < initial_infected else 0  # 1 = I, 0 = S
     infection_time = 0
-    
+
     agents_list[agent_id]['status'] = status
     agents_list[agent_id]['x'] = x
     agents_list[agent_id]['y'] = y
-    
+
     while True:
-        # Move
-        theta = random.uniform(0, 2*math.pi)
-        x += 2.0 * math.cos(theta)
-        y += 2.0 * math.sin(theta)
+        # Move + clamp (parity with the other frameworks)
+        theta = random.uniform(0, 2 * math.pi)
+        x = max(0.0, min(world_size, x + speed * math.cos(theta)))
+        y = max(0.0, min(world_size, y + speed * math.sin(theta)))
         agents_list[agent_id]['x'] = x
         agents_list[agent_id]['y'] = y
-        
-        # Infection Logic
-        # This is tricky in DES. Agents usually react to events.
-        # Active polling (neighbor search) every step is very inefficient in SimPy
-        # but is the only way to replicate the ABM logic exactly.
-        
-        if status == 1: # Infected
-            # Look for S neighbors
+
+        # Read current status in case we were just infected by another agent.
+        status = agents_list[agent_id]['status']
+
+        if status == 1:  # Infected — try to spread to susceptible neighbours
             for other in agents_list:
                 if other['status'] == 0:
-                    dist = math.sqrt((x - other['x'])**2 + (y - other['y'])**2)
-                    if dist <= 5.0 and random.random() < 0.1:
-                        other['status'] = 1 # Infect them
-                        other['infection_time'] = 0 # Need to track this
-            
-            infection_time += 1
-            if infection_time >= 14:
-                status = 2 # R
+                    dx = x - other['x']
+                    dy = y - other['y']
+                    if dx * dx + dy * dy <= radius * radius and random.random() < transmission:
+                        other['status'] = 1
+                        other['infection_time'] = 0
+
+            infection_time = agents_list[agent_id].get('infection_time', 0) + 1
+            agents_list[agent_id]['infection_time'] = infection_time
+            if infection_time >= recovery_time:
+                status = 2
                 agents_list[agent_id]['status'] = 2
-                
+
         yield env.timeout(1)
 
 def run_sir_benchmark(n=100, steps=100):

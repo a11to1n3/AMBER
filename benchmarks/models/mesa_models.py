@@ -2,7 +2,7 @@
 Mesa Model Implementations for Benchmarking
 
 These models implement the same logic as AMBER models for fair comparison.
-Compatible with Mesa 3.x (no schedulers, uses AgentSet).
+Compatible with Mesa 3.x (AgentSet-based, no schedulers).
 """
 
 import mesa
@@ -15,7 +15,7 @@ import random
 
 class MesaWealthAgent(mesa.Agent):
     """Agent that can transfer wealth to other agents."""
-    
+
     def __init__(self, model, initial_wealth=1):
         super().__init__(model)
         self.wealth = initial_wealth
