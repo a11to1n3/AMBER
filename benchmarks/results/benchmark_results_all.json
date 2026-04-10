@@ -1,0 +1,515 @@
+{
+  "generated_at": "2026-04-09T22:21:00.176515",
+  "agent_counts": [
+    500,
+    1000,
+    5000
+  ],
+  "n_steps": 50,
+  "results": [
+    {
+      "framework": "AMBER (loop)",
+      "model": "wealth_transfer",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0087,
+      "time_per_step": 0.000174
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "wealth_transfer",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0038,
+      "time_per_step": 7.7e-05
+    },
+    {
+      "framework": "AgentPy",
+      "model": "wealth_transfer",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.026,
+      "time_per_step": 0.000519
+    },
+    {
+      "framework": "Mesa",
+      "model": "wealth_transfer",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0352,
+      "time_per_step": 0.000703
+    },
+    {
+      "framework": "SimPy",
+      "model": "wealth_transfer",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0182,
+      "time_per_step": 0.000365
+    },
+    {
+      "framework": "Melodie",
+      "model": "wealth_transfer",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0167,
+      "time_per_step": 0.000335
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.0172,
+      "time_per_step": 0.000344
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.0052,
+      "time_per_step": 0.000104
+    },
+    {
+      "framework": "AgentPy",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.0505,
+      "time_per_step": 0.00101
+    },
+    {
+      "framework": "Mesa",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.1156,
+      "time_per_step": 0.002311
+    },
+    {
+      "framework": "SimPy",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.0367,
+      "time_per_step": 0.000734
+    },
+    {
+      "framework": "Melodie",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.0333,
+      "time_per_step": 0.000666
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.0885,
+      "time_per_step": 0.001771
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.017,
+      "time_per_step": 0.00034
+    },
+    {
+      "framework": "AgentPy",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.266,
+      "time_per_step": 0.00532
+    },
+    {
+      "framework": "Mesa",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 2.8741,
+      "time_per_step": 0.057481
+    },
+    {
+      "framework": "SimPy",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.2052,
+      "time_per_step": 0.004103
+    },
+    {
+      "framework": "Melodie",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.1684,
+      "time_per_step": 0.003368
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0082,
+      "time_per_step": 0.000165
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0028,
+      "time_per_step": 5.6e-05
+    },
+    {
+      "framework": "AgentPy",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0103,
+      "time_per_step": 0.000207
+    },
+    {
+      "framework": "Mesa",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0094,
+      "time_per_step": 0.000189
+    },
+    {
+      "framework": "SimPy",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0196,
+      "time_per_step": 0.000392
+    },
+    {
+      "framework": "Melodie",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.096,
+      "time_per_step": 0.00192
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.0165,
+      "time_per_step": 0.000329
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.0025,
+      "time_per_step": 4.9e-05
+    },
+    {
+      "framework": "AgentPy",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.0198,
+      "time_per_step": 0.000396
+    },
+    {
+      "framework": "Mesa",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.0179,
+      "time_per_step": 0.000359
+    },
+    {
+      "framework": "SimPy",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.04,
+      "time_per_step": 0.0008
+    },
+    {
+      "framework": "Melodie",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.1904,
+      "time_per_step": 0.003809
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "random_walk",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.0786,
+      "time_per_step": 0.001572
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "random_walk",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.0049,
+      "time_per_step": 9.7e-05
+    },
+    {
+      "framework": "AgentPy",
+      "model": "random_walk",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.0979,
+      "time_per_step": 0.001959
+    },
+    {
+      "framework": "Mesa",
+      "model": "random_walk",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.0867,
+      "time_per_step": 0.001735
+    },
+    {
+      "framework": "SimPy",
+      "model": "random_walk",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.2089,
+      "time_per_step": 0.004177
+    },
+    {
+      "framework": "Melodie",
+      "model": "random_walk",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.9626,
+      "time_per_step": 0.019252
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "sir_epidemic",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.1912,
+      "time_per_step": 0.003824
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "sir_epidemic",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.0918,
+      "time_per_step": 0.001836
+    },
+    {
+      "framework": "AgentPy",
+      "model": "sir_epidemic",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.1154,
+      "time_per_step": 0.002308
+    },
+    {
+      "framework": "Mesa",
+      "model": "sir_epidemic",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.1884,
+      "time_per_step": 0.003768
+    },
+    {
+      "framework": "SimPy",
+      "model": "sir_epidemic",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.1005,
+      "time_per_step": 0.002009
+    },
+    {
+      "framework": "Melodie",
+      "model": "sir_epidemic",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.3743,
+      "time_per_step": 0.007486
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "sir_epidemic",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.857,
+      "time_per_step": 0.01714
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "sir_epidemic",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.1411,
+      "time_per_step": 0.002821
+    },
+    {
+      "framework": "AgentPy",
+      "model": "sir_epidemic",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.8085,
+      "time_per_step": 0.016171
+    },
+    {
+      "framework": "Mesa",
+      "model": "sir_epidemic",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.7281,
+      "time_per_step": 0.014561
+    },
+    {
+      "framework": "SimPy",
+      "model": "sir_epidemic",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.5284,
+      "time_per_step": 0.010569
+    },
+    {
+      "framework": "Melodie",
+      "model": "sir_epidemic",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 1.1678,
+      "time_per_step": 0.023357
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "sir_epidemic",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 12.2332,
+      "time_per_step": 0.244665
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "sir_epidemic",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.6085,
+      "time_per_step": 0.012169
+    },
+    {
+      "framework": "AgentPy",
+      "model": "sir_epidemic",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 8.7842,
+      "time_per_step": 0.175684
+    },
+    {
+      "framework": "Mesa",
+      "model": "sir_epidemic",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 9.1838,
+      "time_per_step": 0.183676
+    },
+    {
+      "framework": "SimPy",
+      "model": "sir_epidemic",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 6.75,
+      "time_per_step": 0.135001
+    },
+    {
+      "framework": "Melodie",
+      "model": "sir_epidemic",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 11.2073,
+      "time_per_step": 0.224145
+    },
+    {
+      "framework": "Agents.jl",
+      "model": "wealth_transfer",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.001,
+      "time_per_step": 2e-05
+    },
+    {
+      "framework": "Agents.jl",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.001,
+      "time_per_step": 2e-05
+    },
+    {
+      "framework": "Agents.jl",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.007,
+      "time_per_step": 0.00014
+    },
+    {
+      "framework": "Agents.jl",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.001,
+      "time_per_step": 2e-05
+    },
+    {
+      "framework": "Agents.jl",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.001,
+      "time_per_step": 2e-05
+    },
+    {
+      "framework": "Agents.jl",
+      "model": "random_walk",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.007,
+      "time_per_step": 0.00014
+    },
+    {
+      "framework": "Agents.jl",
+      "model": "sir_epidemic",
+      "n_agents": 500,
+      "n_steps": 50,
+      "execution_time": 0.005,
+      "time_per_step": 0.0001
+    },
+    {
+      "framework": "Agents.jl",
+      "model": "sir_epidemic",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "execution_time": 0.04,
+      "time_per_step": 0.0008
+    },
+    {
+      "framework": "Agents.jl",
+      "model": "sir_epidemic",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "execution_time": 0.892,
+      "time_per_step": 0.01784
+    }
+  ]
+}
