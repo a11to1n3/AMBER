@@ -91,11 +91,14 @@ class BenchmarkRunner:
         """Load model implementations from each framework."""
         self.frameworks = {}
         
-        # Load AMBER models
+        # Load AMBER models (both the legacy per-agent-loop variant, kept
+        # for apples-to-apples comparison with AgentPy/Mesa, and the
+        # vectorized view-API variant that the library actually ships).
         try:
-            from models.amber_models import AMBER_MODELS
+            from models.amber_models import AMBER_MODELS, AMBER_VECTORIZED_MODELS
             self.frameworks['AMBER'] = AMBER_MODELS
-            print("✅ AMBER models loaded")
+            self.frameworks['AMBER (vectorized)'] = AMBER_VECTORIZED_MODELS
+            print("✅ AMBER models loaded (per-agent + vectorized)")
         except ImportError as e:
             print(f"⚠️  AMBER models not available: {e}")
         

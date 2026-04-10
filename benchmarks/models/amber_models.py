@@ -12,6 +12,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 import ambr as am
+import numpy as np
+import polars as pl
 import random
 
 
@@ -243,11 +245,190 @@ class AMBERRandomWalk(am.Model):
         self._record_state()
 
 
+# =============================================================================
+# Vectorized variants — use AMBER's view API (the idiom the docs now teach).
+#
+# The three classes above (AMBERWealthTransfer, AMBERSIRModel, AMBERRandomWalk)
+# hand-roll ``self.agent_objects_list`` and loop over it in pure Python so the
+# cross-framework comparison stays apples-to-apples at the OOP abstraction
+# level. The classes below implement the same models using the vectorized
+# ``model.agents.where(...) / .at[ids] / .scatter_add(...)`` surface that
+# AMBER actually ships — this is where the columnar backend pays off.
+# =============================================================================
+
+class AMBERVectorizedWealthTransfer(am.Model):
+    """Wealth transfer using the view API with fused donor/recipient scatter."""
+
+    def setup(self):
+        n = self.p.get('n', 100)
+        self.add_agents(
+            n,
+            wealth=np.full(n, self.p.get('initial_wealth', 1), dtype=np.int64),
+        )
+
+    def step(self):
+        ids = self.agents.ids.to_numpy()
+        wealth = self.agents.wealth.to_numpy()
+        donor_mask = wealth > 0
+        n_active = int(donor_mask.sum())
+        if n_active == 0:
+            return
+        donor_ids = ids[donor_mask]
+        recipient_ids = self.nprandom.choice(ids, size=n_active)
+        all_ids = np.concatenate([donor_ids, recipient_ids])
+        deltas = np.concatenate([np.full(n_active, -1, dtype=np.int64),
+                                 np.full(n_active, 1, dtype=np.int64)])
+        self.agents.at[all_ids].scatter_add(wealth=deltas)
+
+    def update(self):
+        super().update()
+        # Aggregate metrics — one Polars expression each.
+        wealth = self.agents.wealth
+        self.record_model('total_wealth', int(wealth.sum()))
+        self.record_model('gini', self._gini(wealth.to_numpy()))
+
+    @staticmethod
+    def _gini(values):
+        if values.size == 0 or values.sum() == 0:
+            return 0.0
+        sorted_vals = np.sort(values)
+        n = len(sorted_vals)
+        cum = np.cumsum(sorted_vals)
+        return (2 * cum.sum()) / (n * sorted_vals.sum()) - (n + 1) / n
+
+
+class AMBERVectorizedSIRModel(am.Model):
+    """SIR epidemic on a continuous 2D world using columnar updates.
+
+    All three phases of the step — movement, infection, recovery — are
+    expressed as DataFrame operations. The infection phase is quadratic in
+    population (all-pairs distance test) but runs as a single Polars join
+    rather than a Python double loop.
+    """
+
+    STATUS_S = 0
+    STATUS_I = 1
+    STATUS_R = 2
+
+    def setup(self):
+        n = self.p.get('n', 100)
+        world_size = self.p.get('world_size', 100)
+        initial_infected = self.p.get('initial_infected', 5)
+
+        status = np.full(n, self.STATUS_S, dtype=np.int64)
+        status[:initial_infected] = self.STATUS_I
+
+        self.add_agents(
+            n,
+            status=status,
+            infection_time=np.zeros(n, dtype=np.int64),
+            x=self.nprandom.random(size=n) * world_size,
+            y=self.nprandom.random(size=n) * world_size,
+        )
+
+    def step(self):
+        n = len(self.agents)
+        speed = self.p.get('movement_speed', 2.0)
+        world_size = self.p.get('world_size', 100)
+
+        # --- movement ---
+        xs = self.agents.x.to_numpy() + self.nprandom.uniform(-speed, speed, n)
+        ys = self.agents.y.to_numpy() + self.nprandom.uniform(-speed, speed, n)
+        np.clip(xs, 0, world_size, out=xs)
+        np.clip(ys, 0, world_size, out=ys)
+        self.agents.x = xs
+        self.agents.y = ys
+
+        # --- infection ---
+        radius = self.p.get('infection_radius', 5.0)
+        transmission = self.p.get('transmission_rate', 0.1)
+        df = self.agents_df
+
+        infected_df = df.filter(pl.col('status') == self.STATUS_I).select(
+            pl.col('x').alias('ix'), pl.col('y').alias('iy'),
+            pl.col('id').alias('iid'),
+        )
+        susceptible_df = df.filter(pl.col('status') == self.STATUS_S)
+
+        if infected_df.height and susceptible_df.height:
+            # Cross join susceptibles × infected, keep pairs within radius,
+            # then sample one uniform per candidate pair for transmission.
+            pairs = susceptible_df.join(infected_df, how='cross').with_columns(
+                ((pl.col('x') - pl.col('ix')) ** 2
+                 + (pl.col('y') - pl.col('iy')) ** 2).alias('dist_sq')
+            ).filter(pl.col('dist_sq') <= radius ** 2)
+            if pairs.height:
+                draws = self.nprandom.random(size=pairs.height)
+                hits = pairs.with_columns(pl.Series('draw', draws)).filter(
+                    pl.col('draw') < transmission
+                )
+                if hits.height:
+                    newly_infected_ids = hits['id'].unique().to_list()
+                    self.agents.at[newly_infected_ids].status = self.STATUS_I
+                    self.agents.at[newly_infected_ids].infection_time = 0
+
+        # --- recovery ---
+        recovery_time = self.p.get('recovery_time', 14)
+        active = self.agents.where(pl.col('status') == self.STATUS_I)
+        active.infection_time = active.infection_time + 1
+        recovered = self.agents.where(
+            (pl.col('status') == self.STATUS_I)
+            & (pl.col('infection_time') >= recovery_time)
+        )
+        if len(recovered) > 0:
+            recovered.status = self.STATUS_R
+
+    def update(self):
+        super().update()
+        status = self.agents.status.to_numpy()
+        self.record_model('susceptible', int((status == self.STATUS_S).sum()))
+        self.record_model('infected', int((status == self.STATUS_I).sum()))
+        self.record_model('recovered', int((status == self.STATUS_R).sum()))
+
+
+class AMBERVectorizedRandomWalk(am.Model):
+    """Random walk expressed as two numpy updates and one columnar write."""
+
+    def setup(self):
+        n = self.p.get('n', 100)
+        world_size = self.p.get('world_size', 100)
+        self.add_agents(
+            n,
+            x=self.nprandom.random(size=n) * world_size,
+            y=self.nprandom.random(size=n) * world_size,
+        )
+
+    def step(self):
+        n = len(self.agents)
+        speed = self.p.get('speed', 1.0)
+        world_size = self.p.get('world_size', 100)
+        xs = self.agents.x.to_numpy() + self.nprandom.uniform(-speed, speed, n)
+        ys = self.agents.y.to_numpy() + self.nprandom.uniform(-speed, speed, n)
+        np.clip(xs, 0, world_size, out=xs)
+        np.clip(ys, 0, world_size, out=ys)
+        self.agents.x = xs
+        self.agents.y = ys
+
+    def update(self):
+        super().update()
+        self.record_model('avg_x', float(self.agents.x.mean()))
+        self.record_model('avg_y', float(self.agents.y.mean()))
+
+
 # Model registry for benchmark runner
 AMBER_MODELS = {
     'wealth_transfer': AMBERWealthTransfer,
     'sir_epidemic': AMBERSIRModel,
     'random_walk': AMBERRandomWalk,
+}
+
+# Separate registry for the vectorized variants — loaded by runner.py under
+# the "AMBER (vectorized)" framework label so we can chart both alongside
+# Mesa / AgentPy.
+AMBER_VECTORIZED_MODELS = {
+    'wealth_transfer': AMBERVectorizedWealthTransfer,
+    'sir_epidemic': AMBERVectorizedSIRModel,
+    'random_walk': AMBERVectorizedRandomWalk,
 }
 
 if __name__ == '__main__':
