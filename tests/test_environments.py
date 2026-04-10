@@ -263,6 +263,49 @@ class TestGridEnvironment:
 
 
 
+class TestGridEnvironmentWrapNeighbors:
+    """Regression tests for torus neighbor dedup / origin exclusion."""
+
+    def _env(self, torus=True):
+        import ambr as am
+        from ambr.environments import GridEnvironment
+
+        class M(am.Model):
+            def setup(self):
+                pass
+
+        m = M({"show_progress": False})
+        return GridEnvironment(m, size=(10, 10), torus=torus)
+
+    def test_orthogonal_distance_3_wrapped(self):
+        env = self._env()
+        n = env.get_neighbors((0, 0), include_diagonal=False, distance=3)
+        assert len(n) == len(set(n))  # no dupes
+        assert (0, 0) not in n
+        # 6 per axis (±1, ±2, ±3), 2 axes => 12
+        assert len(n) == 12
+
+    def test_orthogonal_large_distance_no_duplicates(self):
+        """distance=6 on a 10-grid used to yield 24 entries with 6 duplicates."""
+        env = self._env()
+        n = env.get_neighbors((0, 0), include_diagonal=False, distance=6)
+        assert len(n) == len(set(n))
+        assert (0, 0) not in n
+
+    def test_distance_equal_to_dim_excludes_origin(self):
+        env = self._env()
+        n = env.get_neighbors((0, 0), include_diagonal=True, distance=10)
+        assert (0, 0) not in n
+        assert len(n) == len(set(n))
+        # everything except origin on a 10x10 grid
+        assert len(n) == 99
+
+    def test_non_wrapped_corner_diagonal(self):
+        env = self._env(torus=False)
+        n = sorted(env.get_neighbors((0, 0), include_diagonal=True, distance=1))
+        assert n == [(0, 1), (1, 0), (1, 1)]
+
+
 class TestSpaceEnvironment:
     """Test cases for SpaceEnvironment class."""
     

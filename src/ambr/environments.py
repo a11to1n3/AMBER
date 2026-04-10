@@ -142,24 +142,29 @@ class GridEnvironment(Environment):
                         offset[dim] = offset_val
                         offsets.append(tuple(offset))
             
+            seen = set()
+            origin = tuple(position)
             for offset in offsets:
                 new_pos = []
                 valid = True
                 for i, (coord, off) in enumerate(zip(position, offset)):
                     new_coord = coord + off
-                    
-                    # Handle wrapping/bounds
                     if self.wrap:
                         new_coord = new_coord % self.dimensions[i]
                     elif not (0 <= new_coord < self.dimensions[i]):
                         valid = False
                         break
-                    
                     new_pos.append(new_coord)
-                
-                if valid:
-                    neighbors.append(tuple(new_pos))
-            
+
+                if not valid:
+                    continue
+                new_tuple = tuple(new_pos)
+                # Dedup wrap-around collisions and exclude origin.
+                if new_tuple == origin or new_tuple in seen:
+                    continue
+                seen.add(new_tuple)
+                neighbors.append(new_tuple)
+
             return neighbors
         else:
             # Agent-based neighbor search

@@ -70,7 +70,7 @@ class Population:
                     try:
                         # Try casting new_df to self.data's type
                         new_df = new_df.with_columns(pl.col(col).cast(left_type))
-                    except:
+                    except (pl.exceptions.ComputeError, pl.exceptions.InvalidOperationError, TypeError, ValueError):
                         # Last resort: cast both to String
                         self.data = self.data.with_columns(pl.col(col).cast(pl.Utf8))
                         new_df = new_df.with_columns(pl.col(col).cast(pl.Utf8))
@@ -103,10 +103,14 @@ class Population:
         }
         
         for k, v in attributes.items():
-            if isinstance(v, (list, np.ndarray)):
+            if isinstance(v, pl.Series):
+                if v.len() != count:
+                    raise ValueError(f"Attribute {k} length mismatch")
+                new_data[k] = v.to_list()
+            elif isinstance(v, (list, np.ndarray)):
                 if len(v) != count:
                     raise ValueError(f"Attribute {k} length mismatch")
-                new_data[k] = v
+                new_data[k] = list(v) if isinstance(v, np.ndarray) else v
             else:
                 new_data[k] = [v] * count
                 
@@ -198,6 +202,24 @@ class Population:
         self.data = self.data.with_columns(cols).drop([f"{col}_new" for col in data.keys()])
 
     def create_batch_context(self):
+        """Legacy batched-update context manager.
+
+        .. deprecated::
+            Prefer the vectorized view API:
+            ``model.agents.at[ids].col = values`` or
+            ``model.agents.at[ids].scatter_add(col=delta)``. The view API
+            flushes through the same hash-join path but is discoverable
+            via attribute access rather than a context manager.
+        """
+        import warnings
+
+        warnings.warn(
+            "Population.create_batch_context() is deprecated; use "
+            "model.agents.at[ids].col = values (or scatter_add) instead. "
+            "See the AMBER quickstart for examples.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return BatchUpdateContext(self)
 
 class BatchUpdateContext:
