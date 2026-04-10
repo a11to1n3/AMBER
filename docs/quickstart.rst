@@ -3,208 +3,210 @@ Quick Start Guide
 
 This guide will get you up and running with AMBER in just a few minutes.
 
-Your First Model
+The vectorized mindset
+----------------------
+
+AMBER stores the entire population as a Polars DataFrame under the hood, so
+the fast path is to update **many agents in one expression** instead of
+looping over individuals. The view API is built around three moves:
+
+* ``self.agents`` — a view of the whole population
+* ``self.agents.where(predicate)`` — a view of agents matching a condition
+* ``self.agents.at[ids]`` — a view of specific agents by id
+
+On any view, ``view.col`` returns a Polars Series sourced from
+``self.agents_df``, and ``view.col = value`` queues a columnar update that
+lands in the DataFrame on the next flush.
+
+Your first model
 ----------------
 
-Let's create a simple wealth transfer model where agents randomly exchange money:
+A wealth transfer model where agents randomly exchange money, written the
+vectorized way:
 
 .. code-block:: python
 
    import ambr as am
-   import numpy as np
 
    class WealthModel(am.Model):
        def setup(self):
-           # Create 100 agents with random initial wealth
-           for i in range(100):
-               agent = am.Agent(self, i)
-               agent.wealth = self.nprandom.randint(1, 10)
-               self.add_agent(agent)
+           # Bulk-create 100 agents with random initial wealth — no loop.
+           self.add_agents(
+               100,
+               wealth=self.nprandom.integers(1, 10, size=100),
+           )
 
        def step(self):
-           # Each agent gives $1 to a random other agent
-           for agent_id in range(len(self.agents)):
-               if self.get_agent_data(agent_id)['wealth'].item() > 0:
-                   # Find a random recipient
-                   recipient_id = self.nprandom.randint(0, 100)
-                   if recipient_id != agent_id:
-                       # Transfer $1
-                       self.update_agent_data(agent_id, {
-                           'wealth': self.get_agent_data(agent_id)['wealth'].item() - 1
-                       })
-                       self.update_agent_data(recipient_id, {
-                           'wealth': self.get_agent_data(recipient_id)['wealth'].item() + 1
-                       })
+           # Every agent with wealth > 0 gives $1 to a random other agent.
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
+
+           # Pick a random recipient for each donor (with replacement),
+           # then scatter the $1 credits — duplicate recipients correctly
+           # receive multiple dollars via scatter_add.
+           ids = self.agents.ids.to_numpy()
+           recipients = self.nprandom.choice(ids, size=len(donors))
+           self.agents.at[recipients].scatter_add(wealth=1)
+
+           # Track aggregate state at the model level.
+           self.record('total_wealth', int(self.agents.wealth.sum()))
 
    # Run the model
-   model = WealthModel({'steps': 100, 'seed': 42})
+   model = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
    results = model.run()
 
-   # Analyze results
-   print(f"Final wealth distribution:")
-   print(results['agents'].select(['id', 'wealth']).tail(10))
+   # Inspect the results
+   print("Final wealth distribution (first 10 agents):")
+   print(results['agents'].select(['id', 'wealth']).head(10))
 
-Understanding the Results
+That's the whole idiom. No per-agent loops, no ``update_agent_data`` calls,
+and no ``.item()`` ceremonies. The ``step()`` body is four Polars calls
+regardless of whether you have 100 agents or 100 000.
+
+Understanding the results
 -------------------------
 
-The model returns a dictionary with three main components:
+The model returns a dictionary with three keys:
 
-* **agents**: DataFrame containing all agent data over time
-* **model**: DataFrame containing model-level metrics over time  
-* **info**: Dictionary with simulation metadata
+* ``agents`` — a Polars DataFrame of agent state at the end of the run
+* ``model`` — a Polars DataFrame of the model-level metrics you ``record``-ed
+* ``info`` — a small dict with ``steps`` and ``run_time``
 
 .. code-block:: python
 
-   # Examine the structure
    print("Agent data shape:", results['agents'].shape)
    print("Agent columns:", results['agents'].columns)
-   
-   print("Model data shape:", results['model'].shape)
-   print("Model columns:", results['model'].columns)
-   
    print("Simulation info:", results['info'])
 
-Adding Environments
--------------------
+Filtering and conditional updates
+---------------------------------
 
-Let's enhance our model with a grid environment where agents can only interact with neighbors:
+``where`` accepts either an attribute-predicate (``self.agents.wealth > 0``)
+or a raw Polars expression (``pl.col('wealth') > 0``). Both lower to the
+same filter:
+
+.. code-block:: python
+
+   import polars as pl
+
+   # Attribute-predicate form — the most common
+   wealthy = self.agents.where(self.agents.wealth > 100)
+
+   # Polars expression form — useful when chaining multiple conditions
+   rich_adults = self.agents.where((pl.col('wealth') > 100) & (pl.col('age') >= 18))
+
+   # Mark the wealthy with a tag column — created on first assignment
+   wealthy.tag = 'rich'
+
+Adding spatial structure
+------------------------
+
+Let's enhance the model with a 20×20 grid:
 
 .. code-block:: python
 
    class SpatialWealthModel(am.Model):
        def setup(self):
-           # Create a 10x10 grid
-           self.grid = am.GridEnvironment(self, size=(10, 10))
-           
-           # Place agents randomly on the grid
-           for i in range(100):
-               agent = am.Agent(self, i)
-               agent.wealth = self.nprandom.randint(1, 10)
-               
-               # Find random empty position
-               position = self.grid.random_position()
-               agent.position = position
-               
-               self.add_agent(agent)
-               self.update_agent_data(i, {
-                   'x': position[0],
-                   'y': position[1],
-                   'wealth': agent.wealth
-               })
+           self.grid = am.GridEnvironment(self, size=(20, 20))
+
+           n = 200
+           # Place agents randomly on the grid (sampled with replacement)
+           xs = self.nprandom.integers(0, 20, size=n)
+           ys = self.nprandom.integers(0, 20, size=n)
+           self.add_agents(
+               n,
+               wealth=self.nprandom.integers(1, 10, size=n),
+               x=xs,
+               y=ys,
+           )
 
        def step(self):
-           for agent_id in range(100):
-               agent_data = self.get_agent_data(agent_id)
-               if agent_data['wealth'].item() > 0:
-                   # Get current position
-                   pos = (agent_data['x'].item(), agent_data['y'].item())
-                   
-                   # Find neighbors
-                   neighbors = self.grid.get_neighbors(pos)
-                   if neighbors:
-                       # Choose random neighbor for transaction
-                       neighbor_pos = neighbors[self.nprandom.randint(0, len(neighbors))]
-                       
-                       # Find agent at that position
-                       neighbor_data = self.agents_df.filter(
-                           (self.agents_df['x'] == neighbor_pos[0]) & 
-                           (self.agents_df['y'] == neighbor_pos[1])
-                       )
-                       
-                       if not neighbor_data.is_empty():
-                           neighbor_id = neighbor_data['id'].item()
-                           
-                           # Transfer wealth
-                           self.update_agent_data(agent_id, {
-                               'wealth': agent_data['wealth'].item() - 1
-                           })
-                           neighbor_wealth = self.get_agent_data(neighbor_id)['wealth'].item()
-                           self.update_agent_data(neighbor_id, {
-                               'wealth': neighbor_wealth + 1
-                           })
+           # Same "donor gives $1" idiom as before.
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
+           ids = self.agents.ids.to_numpy()
+           recipients = self.nprandom.choice(ids, size=len(donors))
+           self.agents.at[recipients].scatter_add(wealth=1)
 
-   # Run spatial model
-   spatial_model = SpatialWealthModel({'steps': 50, 'seed': 42})
+   spatial_model = SpatialWealthModel({'steps': 50, 'seed': 42, 'show_progress': False})
    spatial_results = spatial_model.run()
 
-Data Collection and Analysis
-----------------------------
+Model-level analytics
+---------------------
 
-AMBER automatically collects agent data at each time step. You can also record model-level metrics:
+Aggregate metrics go through ``self.record``, which takes any scalar you
+can compute from the current DataFrame:
 
 .. code-block:: python
 
+   import numpy as np
+
    class AnalyticalWealthModel(am.Model):
        def setup(self):
-           # Same setup as before
-           for i in range(100):
-               agent = am.Agent(self, i)
-               agent.wealth = self.nprandom.randint(1, 10)
-               self.add_agent(agent)
+           self.add_agents(100, wealth=self.nprandom.integers(1, 10, size=100))
 
        def step(self):
-           # Wealth transfer logic (same as before)
-           # ...
-           
-           # Record model-level statistics
-           wealth_values = self.agents_df['wealth'].to_list()
-           self.record_model('total_wealth', sum(wealth_values))
-           self.record_model('mean_wealth', np.mean(wealth_values))
-           self.record_model('wealth_std', np.std(wealth_values))
-           self.record_model('gini_coefficient', self.calculate_gini(wealth_values))
-       
-       def calculate_gini(self, wealth_list):
-           """Calculate Gini coefficient of wealth inequality."""
-           sorted_wealth = sorted(wealth_list)
-           n = len(sorted_wealth)
-           cumsum = np.cumsum(sorted_wealth)
-           return (n + 1 - 2 * sum(cumsum) / cumsum[-1]) / n
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
+           ids = self.agents.ids.to_numpy()
+           recipients = self.nprandom.choice(ids, size=len(donors))
+           self.agents.at[recipients].scatter_add(wealth=1)
 
-   # Run and analyze
-   model = AnalyticalWealthModel({'steps': 100, 'seed': 42})
-   results = model.run()
+           # Polars Series expose the usual aggregate methods.
+           wealth = self.agents.wealth
+           self.record('mean_wealth', float(wealth.mean()))
+           self.record('wealth_std', float(wealth.std() or 0.0))
+           self.record('gini', self._gini(wealth.to_numpy()))
 
-   # Plot results
-   import matplotlib.pyplot as plt
-   
-   plt.figure(figsize=(12, 4))
-   
-   plt.subplot(1, 3, 1)
-   plt.plot(results['model']['mean_wealth'])
-   plt.title('Mean Wealth Over Time')
-   plt.xlabel('Time Step')
-   plt.ylabel('Mean Wealth')
-   
-   plt.subplot(1, 3, 2)
-   plt.plot(results['model']['wealth_std'])
-   plt.title('Wealth Standard Deviation')
-   plt.xlabel('Time Step')
-   plt.ylabel('Std Dev')
-   
-   plt.subplot(1, 3, 3)
-   plt.plot(results['model']['gini_coefficient'])
-   plt.title('Wealth Inequality (Gini)')
-   plt.xlabel('Time Step')
-   plt.ylabel('Gini Coefficient')
-   
-   plt.tight_layout()
-   plt.show()
+       @staticmethod
+       def _gini(values):
+           if values.size == 0 or values.sum() == 0:
+               return 0.0
+           sorted_vals = np.sort(values)
+           n = len(sorted_vals)
+           cum = np.cumsum(sorted_vals)
+           return (n + 1 - 2 * cum.sum() / cum[-1]) / n
+
+When per-agent loops are OK
+---------------------------
+
+The view API isn't mandatory — you can still write OOP-style agents for
+behaviours that genuinely don't vectorize (graph traversal, bespoke
+scheduling). ``Agent.record()`` and ``Agent.update_data()`` queue writes
+through the same batched flush path, so you won't pay a per-call
+DataFrame clone:
+
+.. code-block:: python
+
+   class Walker(am.Agent):
+       def step(self):
+           # Per-agent behaviour — appropriate when the logic depends on
+           # this specific agent's neighbourhood in a way that can't be
+           # expressed as a single Polars expression.
+           neighbours = self.get_neighbors()
+           self.record('neighbour_count', neighbours.height)
+
+In general: reach for ``self.agents.where(...).col = ...`` first. Fall
+back to per-agent style only when the logic is inherently sequential or
+needs side effects on external state.
 
 Next Steps
 ----------
 
-Now that you've created your first AMBER models, you can:
+* :doc:`tutorial` — the longer-form walkthrough
+* :doc:`api/sequences` — the full view API reference
+* ``examples/`` — worked models you can copy from
 
-1. **Explore Examples**: Check out the :doc:`examples/index` and the ``examples/`` directory for more complex models
-2. **Learn the API**: Read the full :doc:`api/index` documentation
-3. **Follow Tutorials**: Work through detailed :doc:`tutorial` guides
-4. **Experiment**: Try different environments, agent behaviors, and analysis techniques
+Key concepts
+------------
 
-Key Concepts to Remember
-------------------------
-
-* **Models** define the overall simulation structure and rules
-* **Agents** are individual entities with behaviors and properties
-* **Environments** provide spatial or network contexts for agent interactions
-* **Data Collection** happens automatically, with options for custom metrics
-* **Reproducibility** is ensured through random seeds and deterministic execution 
+* **Views are always DataFrame-backed.** ``self.agents.wealth`` is a Polars
+  Series read from ``self.agents_df``; it stays in sync with every other
+  update automatically.
+* **Bulk create with** ``add_agents``. Avoid ``Agent(self, i); add_agent(agent)``
+  loops unless you actually need a Python class per agent.
+* **Use** ``scatter_add`` **for resource flow.** ``view.col = ...`` handles
+  deterministic updates; use ``scatter_add`` when ids may repeat and you
+  want the deltas to sum.
+* **Reproducibility** comes from ``self.nprandom`` and ``self.random``,
+  both seeded from ``parameters['seed']``.
