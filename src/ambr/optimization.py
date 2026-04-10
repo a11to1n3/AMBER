@@ -584,7 +584,7 @@ class MultiObjectiveSMAC:
                     raise ValueError("No fidelity parameters defined for multi-fidelity optimization")
                 self.smacs[name] = MultiFidelityFacade(
                     scenario=self.scenario,
-                    target_function=lambda config: self._evaluate_objective(config, objective),
+                    target_function=lambda config, obj=objective: self._evaluate_objective(config, obj),
                     multi_objective_algorithm=mo_algorithm,
                     intensifier=SuccessiveHalving(
                         scenario=self.scenario,
@@ -595,7 +595,7 @@ class MultiObjectiveSMAC:
             else:
                 self.smacs[name] = HyperparameterOptimizationFacade(
                     scenario=self.scenario,
-                    target_function=lambda config: self._evaluate_objective(config, objective),
+                    target_function=lambda config, obj=objective: self._evaluate_objective(config, obj),
                     multi_objective_algorithm=mo_algorithm
                 )
                 

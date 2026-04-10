@@ -157,9 +157,83 @@ class TestAgent:
         assert agent.custom_method() == "Agent 5 custom method"
 
 
+class TestAgentRecord:
+    """Regression tests for Agent.record() / update_data() column handling."""
+
+    def _make_model(self, n=4):
+        class A(Agent):
+            def setup(self):
+                pass
+
+        class M(am.Model):
+            def setup(self_m):
+                for i in range(n):
+                    a = A(self_m, i)
+                    a.setup()
+                    self_m.add_agent(a)
+
+        m = M({})
+        m.setup()
+        return m
+
+    def test_record_creates_new_column(self):
+        """Agent.record() must auto-create missing columns (previously crashed with ColumnNotFoundError)."""
+        m = self._make_model()
+        m.agents[0].record("score", 42)
+        assert "score" in m.agents_df.columns
+        assert m.agents_df["score"].to_list() == [42, None, None, None]
+
+    def test_record_updates_existing_column(self):
+        """Recording on an existing column must preserve other rows."""
+        m = self._make_model()
+        m.agents[0].record("score", 1)
+        m.agents[1].record("score", 2)
+        m.agents[2].record("score", 3)
+        assert m.agents_df["score"].to_list() == [1, 2, 3, None]
+
+    def test_update_data_creates_new_column(self):
+        m = self._make_model()
+        m.agents[1].update_data({"age": 7})
+        assert m.agents_df["age"].to_list() == [None, 7, None, None]
+
+    def test_update_data_multiple_columns(self):
+        m = self._make_model()
+        m.agents[0].update_data({"a": 1, "b": 2})
+        assert m.agents_df["a"].to_list() == [1, None, None, None]
+        assert m.agents_df["b"].to_list() == [2, None, None, None]
+
+    def test_record_is_buffered_until_flush(self):
+        """record() should queue, not clone the DataFrame per call."""
+        m = self._make_model()
+        m.agents[0].record("score", 1)
+        # Buffer contains the pending write, df isn't touched yet
+        assert m._pending_writes == {"score": {0: 1}}
+        assert "score" not in m.population.data.columns
+        # Reading via agents_df triggers the flush
+        df = m.agents_df
+        assert "score" in df.columns
+        assert m._pending_writes == {}
+
+    def test_record_last_write_wins_within_step(self):
+        m = self._make_model()
+        m.agents[0].record("x", 1)
+        m.agents[0].record("x", 2)
+        m.agents[0].record("x", 3)
+        assert m.agents_df["x"].to_list()[0] == 3
+
+    def test_agents_df_setter_clears_buffer(self):
+        import polars as pl
+
+        m = self._make_model()
+        m.agents[0].record("x", 1)
+        m.agents_df = pl.DataFrame({"id": [0, 1, 2, 3], "step": [0, 0, 0, 0]})
+        assert m._pending_writes == {}
+        assert "x" not in m.agents_df.columns
+
+
 class TestAgentIntegration:
     """Integration tests for Agent with other components."""
-    
+
     def test_agent_with_real_model(self, basic_model):
         """Test agent integration with a real model."""
         # Create agent with real model
