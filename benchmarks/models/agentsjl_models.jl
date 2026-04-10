@@ -113,10 +113,10 @@ end
 # Benchmark Runner
 # =============================================================================
 
-function run_benchmarks(; agent_counts=[100, 500, 1000], steps=100)
+function run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=50)
     println("Agents.jl Benchmark")
     println("="^50)
-    
+
     for (name, runner) in [
         ("wealth_transfer", run_wealth_benchmark),
         ("random_walk", run_walk_benchmark),
@@ -124,7 +124,8 @@ function run_benchmarks(; agent_counts=[100, 500, 1000], steps=100)
     ]
         println("\n$name:")
         for n in agent_counts
-            # Warmup
+            # Warmup (JIT compile) on a smaller run to avoid biasing the
+            # smallest measured size with compilation cost.
             runner(; n=min(n, 100), steps=10)
             # Timed
             t = @elapsed runner(; n=n, steps=steps)
@@ -133,5 +134,27 @@ function run_benchmarks(; agent_counts=[100, 500, 1000], steps=100)
     end
 end
 
-# Run benchmarks
-run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=100)
+# Parse optional --steps and --agents arguments so the outer Python runner
+# can hold every framework to the same (agent_counts, steps) configuration.
+function _parse_args(args)
+    agent_counts = [100, 500, 1000, 5000]
+    steps = 50
+    i = 1
+    while i <= length(args)
+        a = args[i]
+        if a == "--steps" && i + 1 <= length(args)
+            steps = parse(Int, args[i + 1])
+            i += 2
+        elseif a == "--agents" && i + 1 <= length(args)
+            agent_counts = parse.(Int, split(args[i + 1], ','))
+            i += 2
+        else
+            i += 1
+        end
+    end
+    return (agent_counts, steps)
+end
+
+let (agent_counts, steps) = _parse_args(ARGS)
+    run_benchmarks(; agent_counts=agent_counts, steps=steps)
+end
