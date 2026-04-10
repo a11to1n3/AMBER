@@ -230,6 +230,84 @@ class TestModel:
             assert True  # Either way is acceptable
 
 
+class TestModelGetAgentDataAndRunStep:
+    """Tests for Model.get_agent_data() and Model.run_step()."""
+
+    def _make_model(self, n=3):
+        from ambr.agent import Agent
+
+        class A(Agent):
+            def setup(self):
+                pass
+
+        class M(Model):
+            def setup(self_m):
+                for i in range(n):
+                    a = A(self_m, i)
+                    a.setup()
+                    self_m.add_agent(a)
+                self_m.update_agent_data(0, {"wealth": 10})
+                self_m.update_agent_data(1, {"wealth": 20})
+                self_m.update_agent_data(2, {"wealth": 30})
+
+        m = M({"show_progress": False})
+        m.setup()
+        return m
+
+    def test_get_agent_data_returns_single_row(self):
+        m = self._make_model()
+        row = m.get_agent_data(1)
+        assert row.height == 1
+        assert row["wealth"].item() == 20
+
+    def test_get_agent_data_missing_id_returns_empty(self):
+        m = self._make_model()
+        row = m.get_agent_data(999)
+        assert row.height == 0
+
+    def test_run_step_first_call_runs_setup(self):
+        from ambr.agent import Agent
+
+        class A(Agent):
+            def setup(self):
+                pass
+
+        calls = {"setup": 0, "step": 0}
+
+        class M(Model):
+            def setup(self_m):
+                calls["setup"] += 1
+                a = A(self_m, 0)
+                self_m.add_agent(a)
+
+            def step(self_m):
+                calls["step"] += 1
+
+        m = M({"show_progress": False})
+        m.run_step()
+        assert calls == {"setup": 1, "step": 0}
+        assert m.t == 1  # update() ran once
+
+        m.run_step()
+        assert calls == {"setup": 1, "step": 1}
+        assert m.t == 2
+
+    def test_run_step_records_model_data(self):
+        class M(Model):
+            def setup(self_m):
+                pass
+
+            def step(self_m):
+                self_m.record_model("x", self_m.t * 2)
+
+        m = M({"show_progress": False})
+        m.run_step()  # setup + initial update
+        m.run_step()  # step 1
+        m.run_step()  # step 2
+        # _model_data has initial + 2 step entries
+        assert len(m._model_data) == 3
+
+
 class TestModelSubclassing:
     """Test Model subclassing functionality."""
     
