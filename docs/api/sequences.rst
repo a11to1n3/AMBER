@@ -1,12 +1,14 @@
 Sequences
 =========
 
-.. automodule:: ambr.sequences
-   :members:
-   :undoc-members:
-   :show-inheritance:
+.. module:: ambr.sequences
 
-The sequences module provides specialized data structures for managing collections of agents.
+The ``sequences`` module defines AMBER's vectorized view API. The full
+population lives at ``model.agents``; filtered and scatter views are
+produced by ``where`` / indexing / ``at[...]``. All three view types share
+the same attribute/assignment protocol — column reads return Polars Series
+sourced from ``model.agents_df``, and column writes queue through the
+batched flush path.
 
 AgentList
 ---------
@@ -14,35 +16,64 @@ AgentList
 .. autoclass:: ambr.AgentList
    :members:
    :undoc-members:
+   :show-inheritance:
 
-The AgentList class provides a list-like interface for managing collections of agents with additional functionality.
+The full population view. Lives at ``model.agents`` and acts as both the
+entry point for vectorized queries and a legacy list of ``Agent`` objects.
 
-**Usage:**
+**Vectorized usage (preferred):**
 
 .. code-block:: python
 
-   # Create AgentList with agents
-   agents = [am.Agent(model, i) for i in range(10)]
-   agent_list = am.AgentList(model, agents)
-   
-   # Or create with count and type
-   agent_list = am.AgentList(model, 10, am.Agent)
-   
-   # Use like a regular list
-   agent_list.append(new_agent)
-   agent_list.remove(old_agent)
-   
-   # Access agents
-   first_agent = agent_list[0]
-   for agent in agent_list:
-       # Do something with agent
-       pass
+   # Filter by predicate and update columnar state
+   rich = model.agents.where(model.agents.wealth > 100)
+   rich.tag = 'rich'
 
-**Features:**
+   # Scatter-add deltas for random id draws (duplicates sum correctly)
+   recipients = model.nprandom.choice(model.agents.ids.to_numpy(), size=50)
+   model.agents.at[recipients].scatter_add(wealth=1)
 
-* List-like interface (append, remove, insert, etc.)
-* Iteration support
-* Indexing and slicing
-* Length and containment checks
-* Agent type validation
-* Integration with AMBER models 
+**Legacy list usage (still supported):**
+
+.. code-block:: python
+
+   # Indexing, iteration, append/remove — works as before
+   first = model.agents[0]
+   for agent in model.agents:
+       agent.step()
+   model.agents.append(new_agent)
+
+FilteredAgentList
+-----------------
+
+.. autoclass:: ambr.sequences.FilteredAgentList
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Returned from ``model.agents.where(...)`` or ``model.agents[mask]``.
+Operates on the subset of rows matching a predicate. Writing to a column
+on this view touches only the filtered agents.
+
+ScatterAgentList
+----------------
+
+.. autoclass:: ambr.sequences.ScatterAgentList
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Returned from ``model.agents.at[ids]``. Unlike a filtered view, a scatter
+view can contain duplicate ids — which is the whole point for "random
+recipient" style updates. Use ``scatter_add`` to accumulate deltas when
+ids repeat; plain assignment falls back to last-write-wins semantics.
+
+Features
+--------
+
+* DataFrame-backed attribute reads and writes — no sync gotchas.
+* Predicate filtering via ``where(...)`` with attribute predicates or raw
+  Polars expressions.
+* Scatter-add for flow-of-resources updates.
+* Full back-compat with legacy list-style access (indexing, iteration,
+  ``append``/``remove``, ``call``/``apply``).
