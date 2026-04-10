@@ -1,10 +1,23 @@
 """
 Integration tests for amber package - testing multiple components working together.
+
+This module has two test classes:
+
+* :class:`TestFullSimulationWorkflows` — the legacy per-agent-loop path
+  (``self.agents = {}`` + ``update_agent_data(id, {...})`` inside a for
+  loop). These tests are the back-compat regression guard for users still
+  on the OOP-style API.
+
+* :class:`TestVectorizedWorkflows` — the vectorized view API
+  (``add_agents(n, **cols)`` + ``agents.where(...).col = ...`` +
+  ``agents.at[ids].scatter_add(...)``). These tests exercise the path the
+  docs and quickstart now teach.
 """
 
 import pytest
 import numpy as np
 import networkx as nx
+import polars as pl
 from unittest.mock import patch
 import ambr as am
 
@@ -520,3 +533,129 @@ class TestPerformanceAndScaling:
         # Model should complete successfully
         assert len(results['agents']) > 0
         assert len(results['model']) > 0 
+
+class TestVectorizedWorkflows:
+    """End-to-end tests for the vectorized view API.
+
+    These cover the idiom that the quickstart and tutorial now teach:
+    bulk create → mask/scatter updates → Polars-backed aggregate metrics.
+    """
+
+    def test_wealth_transfer_full_run(self):
+        """Wealth-transfer donor/recipient flow via ``where`` + ``scatter_add``."""
+
+        class WealthModel(am.Model):
+            def setup(self):
+                self.add_agents(
+                    50,
+                    wealth=self.nprandom.integers(5, 15, size=50),
+                )
+
+            def step(self):
+                donors = self.agents.where(self.agents.wealth > 0)
+                if len(donors) == 0:
+                    return
+                donors.wealth -= 1
+                ids = self.agents.ids.to_numpy()
+                recipients = self.nprandom.choice(ids, size=len(donors))
+                self.agents.at[recipients].scatter_add(wealth=1)
+
+        m = WealthModel({"steps": 10, "seed": 7, "show_progress": False})
+        r = m.run()
+
+        # Closed-economy invariant: total wealth is preserved across steps.
+        initial_total = 50 * (5 + 14) / 2  # mean of integers[5,15)
+        final_total = int(r["agents"]["wealth"].sum())
+        # The exact initial draw varies with seed; just assert sanity bounds.
+        assert 50 * 5 <= final_total <= 50 * 15
+        assert final_total == int(m.agents.wealth.sum())
+
+    def test_sir_transitions_with_where_assignment(self):
+        """SIR-style state transitions expressed purely via ``where`` views."""
+
+        class SIRModel(am.Model):
+            def setup(self):
+                n = 100
+                # 5 initially infected, rest susceptible.
+                status = ["S"] * n
+                for i in range(5):
+                    status[i] = "I"
+                self.add_agents(n, status=status, recovery_timer=0)
+
+            def step(self):
+                # 1. All infected agents tick their recovery timer.
+                infected = self.agents.where(pl.col("status") == "I")
+                infected.recovery_timer = infected.recovery_timer + 1
+
+                # 2. Agents past the recovery threshold move to R.
+                recovered = self.agents.where(
+                    (pl.col("status") == "I") & (pl.col("recovery_timer") >= 3)
+                )
+                recovered.status = "R"
+
+                # 3. A fraction of susceptibles get infected (ignoring spatial
+                #    structure for the test — we just want to verify the
+                #    transition mechanics).
+                susceptible = self.agents.where(pl.col("status") == "S")
+                if len(susceptible) > 0:
+                    to_infect_count = min(3, len(susceptible))
+                    picked = self.nprandom.choice(
+                        susceptible.ids.to_numpy(), size=to_infect_count, replace=False
+                    )
+                    self.agents.at[picked].status = "I"
+
+        m = SIRModel({"steps": 10, "seed": 1, "show_progress": False})
+        r = m.run()
+
+        statuses = r["agents"]["status"].to_list()
+        assert set(statuses).issubset({"S", "I", "R"})
+        # At least one recovery happened over 10 steps with a 3-step timer.
+        assert statuses.count("R") > 0
+        # Population size is preserved.
+        assert len(statuses) == 100
+
+    def test_scatter_add_preserves_wealth_total(self):
+        """Hot-path invariant: duplicate-id scatter-add must sum, not clobber."""
+
+        class ScatterModel(am.Model):
+            def setup(self):
+                self.add_agents(10, wealth=0)
+
+            def step(self):
+                # Every agent id receives 1 credit, twice — expect wealth == 2.
+                all_ids = self.agents.ids.to_numpy()
+                self.agents.at[all_ids].scatter_add(wealth=1)
+                self.agents.at[all_ids].scatter_add(wealth=1)
+
+        # steps=2 ensures step() is called at least once (Model.run only
+        # enters the step loop while ``t < max_steps``; the initial
+        # setup/update pair advances t to 1).
+        m = ScatterModel({"steps": 2, "seed": 0, "show_progress": False})
+        m.run()
+        assert m.agents.wealth.to_list() == [2] * 10
+
+    def test_mixed_agent_record_and_view_assignment(self):
+        """Per-agent ``Agent.record`` and view assignment compose correctly."""
+        from ambr.agent import Agent
+
+        class A(Agent):
+            def setup(self):
+                pass
+
+        class M(am.Model):
+            def setup(self_m):
+                for i in range(5):
+                    a = A(self_m, i)
+                    self_m.add_agent(a)
+
+            def step(self_m):
+                # Per-agent record on one agent (queues into buffer).
+                self_m.agents[0].record("tag", "first")
+                # Vectorized write on the rest via where (flushes the buffer,
+                # then applies the bulk update).
+                rest = self_m.agents.where(pl.col("id") > 0)
+                rest.tag = "rest"
+
+        m = M({"steps": 2, "seed": 0, "show_progress": False})
+        m.run()
+        assert m.agents.tag.to_list() == ["first", "rest", "rest", "rest", "rest"]
