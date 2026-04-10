@@ -42,6 +42,11 @@ setup(
             "nbconvert>=6.0.0",
             "jupyter>=1.0.0",
         ],
+        "examples": [
+            "plotly>=5.0.0",
+            "ipywidgets>=8.0.0",
+            "notebook>=6.0.0",
+        ],
     },
     python_requires=">=3.8",
     author="a11to1n3",

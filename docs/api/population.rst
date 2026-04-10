@@ -1,7 +1,7 @@
 Population Managers
 ===================
 
-.. module:: amber
+.. module:: ambr.population
 
 The ``Population`` class is the central engine of AMBER's high-performance architecture. It implements the Structure of Arrays (SoA) memory layout using Polars DataFrames and provides the interface for vectorized state updates.
 

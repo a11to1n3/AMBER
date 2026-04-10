@@ -34,3 +34,15 @@ coverage.xml
 # Documentation
 docs/_build/
 docs/api/
+
+# LaTeX / JOSS paper build artifacts
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.pdf
+paper/*.synctex.gz
+paper/scaling_chart.png
+paper.zip
