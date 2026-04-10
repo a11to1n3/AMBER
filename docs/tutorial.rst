@@ -6,39 +6,36 @@ This tutorial will guide you through building increasingly complex agent-based m
 Part 1: Your First Model
 -------------------------
 
-Let's start with a simple wealth transfer model where agents randomly exchange money.
+Let's start with a simple wealth transfer model where agents randomly
+exchange money. AMBER's view API expresses this in a handful of Polars
+operations — no per-agent loop.
 
 **Step 1: Define the Model**
 
 .. code-block:: python
 
    import ambr as am
-   import numpy as np
-   
+
    class WealthModel(am.Model):
        def setup(self):
-           # Create agents with random initial wealth
-           for i in range(self.p['n_agents']):
-               agent = am.Agent(self, i)
-               agent.wealth = self.nprandom.randint(1, 10)
-               self.add_agent(agent)
-       
+           # Bulk-create the population with columnar initial state.
+           n = self.p['n_agents']
+           self.add_agents(
+               n,
+               wealth=self.nprandom.integers(1, 10, size=n),
+           )
+
        def step(self):
-           # Each agent gives $1 to a random other agent
-           for agent_id in range(self.p['n_agents']):
-               agent_data = self.get_agent_data(agent_id)
-               if agent_data['wealth'].item() > 0:
-                   # Choose random recipient
-                   recipient_id = self.nprandom.randint(0, self.p['n_agents'])
-                   if recipient_id != agent_id:
-                       # Transfer $1
-                       self.update_agent_data(agent_id, {
-                           'wealth': agent_data['wealth'].item() - 1
-                       })
-                       recipient_data = self.get_agent_data(recipient_id)
-                       self.update_agent_data(recipient_id, {
-                           'wealth': recipient_data['wealth'].item() + 1
-                       })
+           # Every agent with wealth > 0 gives $1 to a random other agent.
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
+
+           # Scatter the $1 credits. Using ``scatter_add`` (rather than a
+           # plain ``view.wealth = ...``) is what makes the math right when
+           # two donors happen to pick the same recipient.
+           ids = self.agents.ids.to_numpy()
+           recipients = self.nprandom.choice(ids, size=len(donors))
+           self.agents.at[recipients].scatter_add(wealth=1)
 
 **Step 2: Run the Model**
 
@@ -72,53 +69,27 @@ Now let's enhance our model with a grid environment where agents can only intera
        def setup(self):
            # Create grid environment
            self.grid = am.GridEnvironment(self, size=(20, 20))
-           
-           # Create agents and place them on grid
-           for i in range(self.p['n_agents']):
-               agent = am.Agent(self, i)
-               agent.wealth = self.nprandom.randint(1, 10)
-               
-               # Find random position
-               position = self.grid.random_position()
-               agent.position = position
-               
-               self.add_agent(agent)
-               self.update_agent_data(i, {
-                   'x': position[0],
-                   'y': position[1],
-                   'wealth': agent.wealth
-               })
-       
+
+           n = self.p['n_agents']
+           # Columnar creation: position + wealth together, no loop.
+           self.add_agents(
+               n,
+               wealth=self.nprandom.integers(1, 10, size=n),
+               x=self.nprandom.integers(0, 20, size=n),
+               y=self.nprandom.integers(0, 20, size=n),
+           )
+
        def step(self):
-           for agent_id in range(self.p['n_agents']):
-               agent_data = self.get_agent_data(agent_id)
-               if agent_data['wealth'].item() > 0:
-                   # Get current position
-                   pos = (agent_data['x'].item(), agent_data['y'].item())
-                   
-                   # Find neighbors
-                   neighbors = self.grid.get_neighbors(pos)
-                   if neighbors:
-                       # Choose random neighbor
-                       neighbor_pos = neighbors[self.nprandom.randint(0, len(neighbors))]
-                       
-                       # Find agent at that position
-                       neighbor_data = self.agents_df.filter(
-                           (self.agents_df['x'] == neighbor_pos[0]) & 
-                           (self.agents_df['y'] == neighbor_pos[1])
-                       )
-                       
-                       if not neighbor_data.is_empty():
-                           neighbor_id = neighbor_data['id'].item()
-                           
-                           # Transfer wealth
-                           self.update_agent_data(agent_id, {
-                               'wealth': agent_data['wealth'].item() - 1
-                           })
-                           neighbor_wealth = self.get_agent_data(neighbor_id)['wealth'].item()
-                           self.update_agent_data(neighbor_id, {
-                               'wealth': neighbor_wealth + 1
-                           })
+           # Same donor-pays-$1 idiom as Part 1 — the grid only affects
+           # *who* the recipients are, not the vectorized shape of the
+           # update. Here we keep the transfer global for simplicity; see
+           # ``examples/segregation_model.py`` for a neighbourhood-scoped
+           # variant built on ``GridEnvironment.get_neighbors``.
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
+           ids = self.agents.ids.to_numpy()
+           recipients = self.nprandom.choice(ids, size=len(donors))
+           self.agents.at[recipients].scatter_add(wealth=1)
 
 **Step 2: Visualize Results**
 
@@ -162,44 +133,36 @@ Let's add comprehensive data collection to track model-level metrics.
 
 .. code-block:: python
 
+   import numpy as np
+
    class AnalyticalWealthModel(am.Model):
        def setup(self):
-           # Same setup as before
-           for i in range(self.p['n_agents']):
-               agent = am.Agent(self, i)
-               agent.wealth = self.nprandom.randint(1, 10)
-               self.add_agent(agent)
-       
+           n = self.p['n_agents']
+           self.add_agents(n, wealth=self.nprandom.integers(1, 10, size=n))
+
        def step(self):
-           # Wealth transfer logic (same as before)
-           for agent_id in range(self.p['n_agents']):
-               agent_data = self.get_agent_data(agent_id)
-               if agent_data['wealth'].item() > 0:
-                   recipient_id = self.nprandom.randint(0, self.p['n_agents'])
-                   if recipient_id != agent_id:
-                       self.update_agent_data(agent_id, {
-                           'wealth': agent_data['wealth'].item() - 1
-                       })
-                       recipient_data = self.get_agent_data(recipient_id)
-                       self.update_agent_data(recipient_id, {
-                           'wealth': recipient_data['wealth'].item() + 1
-                       })
-           
-           # Record model-level statistics
-           wealth_values = self.agents_df['wealth'].to_list()
-           self.record_model('total_wealth', sum(wealth_values))
-           self.record_model('mean_wealth', np.mean(wealth_values))
-           self.record_model('wealth_std', np.std(wealth_values))
-           self.record_model('gini_coefficient', self.calculate_gini(wealth_values))
-       
-       def calculate_gini(self, wealth_list):
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
+           ids = self.agents.ids.to_numpy()
+           recipients = self.nprandom.choice(ids, size=len(donors))
+           self.agents.at[recipients].scatter_add(wealth=1)
+
+           # Polars Series aggregates are the idiomatic way to record metrics.
+           wealth = self.agents.wealth
+           self.record_model('total_wealth', int(wealth.sum()))
+           self.record_model('mean_wealth', float(wealth.mean()))
+           self.record_model('wealth_std', float(wealth.std() or 0.0))
+           self.record_model('gini_coefficient', self.calculate_gini(wealth.to_numpy()))
+
+       @staticmethod
+       def calculate_gini(values):
            """Calculate Gini coefficient of wealth inequality."""
-           sorted_wealth = sorted(wealth_list)
-           n = len(sorted_wealth)
-           if n == 0 or sum(sorted_wealth) == 0:
-               return 0
-           cumsum = np.cumsum(sorted_wealth)
-           return (n + 1 - 2 * sum(cumsum) / cumsum[-1]) / n
+           if values.size == 0 or values.sum() == 0:
+               return 0.0
+           sorted_vals = np.sort(values)
+           n = len(sorted_vals)
+           cumsum = np.cumsum(sorted_vals)
+           return (n + 1 - 2 * cumsum.sum() / cumsum[-1]) / n
 
 **Step 2: Analyze Results**
 
