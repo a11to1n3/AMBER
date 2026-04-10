@@ -340,6 +340,228 @@ class TestAgentList:
         assert step_result == [mock_agents[0], mock_agents[2], mock_agents[4]]
 
 
+class TestAgentListRecordSubset:
+    """Regression tests: record()/update_data() on a subset must not touch other agents."""
+
+    def _make_model(self, n=4):
+        from ambr.agent import Agent
+
+        class A(Agent):
+            def setup(self):
+                pass
+
+        class M(am.Model):
+            def setup(self_m):
+                for i in range(n):
+                    a = A(self_m, i)
+                    a.setup()
+                    self_m.add_agent(a)
+
+        m = M({})
+        m.setup()
+        return m
+
+    def test_subset_record_only_touches_subset(self):
+        m = self._make_model()
+        subset = m.agents[[0, 1]]
+        subset.record("flag", 1)
+        assert m.agents_df["flag"].to_list() == [1, 1, None, None]
+
+    def test_subset_update_data_only_touches_subset(self):
+        import polars as pl
+
+        m = self._make_model()
+        m.agents_df = m.agents_df.with_columns(pl.lit(0).alias("y"))
+        subset = m.agents[[0, 1]]
+        subset.update_data({"y": 99})
+        assert m.agents_df["y"].to_list() == [99, 99, 0, 0]
+
+    def test_full_agentlist_record_touches_all(self):
+        m = self._make_model()
+        m.agents.record("z", 5)
+        assert m.agents_df["z"].to_list() == [5, 5, 5, 5]
+
+
+class TestAgentListViews:
+    """Vectorized view API: attribute protocol, filtering, scatter-add."""
+
+    def _make_model(self, n=5):
+        import polars as pl
+        from ambr.agent import Agent
+
+        class M(am.Model):
+            def setup(self_m):
+                self_m.add_agents(
+                    n,
+                    wealth=pl.Series(
+                        "wealth", list(range(10, 10 + n)), strict=False
+                    ),
+                    status="S",
+                )
+
+        m = M({"show_progress": False})
+        m.setup()
+        return m
+
+    def test_column_attr_read_returns_series_from_df(self):
+        """``agents.col`` must come from agents_df, not Python attrs.
+
+        Regression for the main footgun: AgentList.__getattr__ used to read
+        Python attributes from Agent objects, which silently desynced from
+        batch-written DataFrame columns.
+        """
+        import polars as pl
+
+        m = self._make_model()
+        wealth = m.agents.wealth
+        assert isinstance(wealth, pl.Series)
+        assert wealth.to_list() == [10, 11, 12, 13, 14]
+
+    def test_column_attr_assign_updates_df(self):
+        m = self._make_model()
+        m.agents.wealth = 0
+        assert m.agents_df["wealth"].to_list() == [0, 0, 0, 0, 0]
+
+    def test_column_attr_arith_assign(self):
+        m = self._make_model()
+        m.agents.wealth -= 5
+        assert m.agents_df["wealth"].to_list() == [5, 6, 7, 8, 9]
+
+    def test_where_with_series_predicate(self):
+        m = self._make_model()
+        view = m.agents.where(m.agents.wealth > 11)
+        assert view.ids.to_list() == [2, 3, 4]
+        view.status = "R"
+        assert m.agents_df["status"].to_list() == ["S", "S", "R", "R", "R"]
+
+    def test_where_with_polars_expression(self):
+        import polars as pl
+
+        m = self._make_model()
+        view = m.agents.where(pl.col("wealth") >= 13)
+        assert view.ids.to_list() == [3, 4]
+
+    def test_getitem_bool_series_is_mask(self):
+        import polars as pl
+
+        m = self._make_model()
+        mask = pl.Series([True, False, True, False, True])
+        view = m.agents[mask]
+        assert view.ids.to_list() == [0, 2, 4]
+
+    def test_at_scatter_view(self):
+        m = self._make_model()
+        view = m.agents.at[[1, 3]]
+        view.status = "R"
+        assert m.agents_df["status"].to_list() == ["S", "R", "S", "R", "S"]
+
+    def test_scatter_add_with_duplicates(self):
+        """scatter_add must SUM deltas when ids repeat (the key flow pattern)."""
+        m = self._make_model()
+        m.agents.at[[1, 1, 3]].scatter_add(wealth=1)
+        assert m.agents_df["wealth"].to_list() == [10, 13, 12, 14, 14]
+
+    def test_iter_yields_underlying_agents(self):
+        from ambr.agent import Agent
+
+        class A(Agent):
+            def setup(self):
+                pass
+
+        class M(am.Model):
+            def setup(self_m):
+                for i in range(3):
+                    a = A(self_m, i)
+                    a.setup()
+                    self_m.add_agent(a)
+
+        m = M({"show_progress": False})
+        m.setup()
+        agents = list(m.agents)
+        assert len(agents) == 3
+        assert all(isinstance(a, A) for a in agents)
+
+    def test_wholesale_assign_from_numpy(self):
+        import numpy as np
+
+        m = self._make_model()
+        m.agents.wealth = np.array([1, 2, 3, 4, 5])
+        assert m.agents_df["wealth"].to_list() == [1, 2, 3, 4, 5]
+
+    def test_view_assignment_after_pending_writes_flush(self):
+        """Ensures per-agent write buffer is flushed before bulk writes."""
+        m = self._make_model()
+        # Queue a per-agent write directly through the buffer — no Agent
+        # instances are needed to exercise the flush ordering.
+        m._queue_write("wealth", 0, 999)
+        assert m._pending_writes.get("wealth", {}).get(0) == 999
+        m.agents.wealth = 0
+        # Bulk assign should flush then overwrite — result is all 0
+        assert m.agents_df["wealth"].to_list() == [0, 0, 0, 0, 0]
+        assert m._pending_writes == {}
+
+
+class TestModelAddAgents:
+    """Model.add_agents() bulk-create API."""
+
+    def test_scalar_and_array_columns(self):
+        import numpy as np
+
+        class M(am.Model):
+            def setup(self_m):
+                self_m.add_agents(
+                    4,
+                    wealth=np.array([10, 20, 30, 40]),
+                    status="S",
+                )
+
+        m = M({"show_progress": False})
+        m.setup()
+        assert m.agents_df["wealth"].to_list() == [10, 20, 30, 40]
+        assert m.agents_df["status"].to_list() == ["S", "S", "S", "S"]
+        assert m.agents_df["id"].to_list() == [0, 1, 2, 3]
+
+    def test_length_mismatch_raises(self):
+        class M(am.Model):
+            def setup(self_m):
+                self_m.add_agents(4, wealth=[1, 2, 3])  # wrong length
+
+        m = M({"show_progress": False})
+        with pytest.raises(ValueError, match="length mismatch"):
+            m.setup()
+
+    def test_len_reports_df_rows_without_agent_class(self):
+        """``len(self.agents)`` must equal the population size even when
+        ``add_agents(n)`` was called without an ``agent_class`` (so no
+        Python Agent instances were created). Regression guard for a bug
+        found while rewriting the benchmark to use the view API."""
+
+        class M(am.Model):
+            def setup(self_m):
+                self_m.add_agents(7)
+
+        m = M({"show_progress": False})
+        m.setup()
+        assert len(m.agents) == 7
+
+    def test_agent_class_creates_python_instances(self):
+        from ambr.agent import Agent
+
+        class A(Agent):
+            def setup(self):
+                pass
+
+        class M(am.Model):
+            def setup(self_m):
+                self_m.add_agents(3, agent_class=A, wealth=[5, 5, 5])
+
+        m = M({"show_progress": False})
+        m.setup()
+        assert len(m.agents) == 3
+        for a in m.agents:
+            assert isinstance(a, A)
+
+
 class TestAgentListIntegration:
     """Integration tests for AgentList with other components."""
     
