@@ -26,7 +26,19 @@ import IPython
 
 ## Model definition
 
-To start, we define our agents who initiate with a random group and have two methods to check whether they are happy and to move to a new location if they are not.
+To start, we define our agents who initiate with a random group and have
+two methods to check whether they are happy and to move to a new location
+if they are not.
+
+.. note::
+    This Schelling-style model is the "per-agent loops are OK" case from
+    the AMBER tutorial: each agent's happiness is a function of its own
+    Moore neighbourhood, which does not vectorize cleanly. The model
+    therefore uses the per-agent ``Person.update_happiness`` /
+    ``Person.find_new_home`` methods rather than the ``agents.where(...)``
+    view API. Column-level state (``x``, ``y``, ``group``, ``happy``,
+    ``share_similar``) is still backed by ``self.agents_df`` so metrics
+    and visualisation see a single source of truth.
 
 # In[57]:
 

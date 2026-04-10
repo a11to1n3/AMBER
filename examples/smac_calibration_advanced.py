@@ -16,6 +16,19 @@ Key Features:
 
 Requirements:
     pip install smac ConfigSpace
+
+.. note::
+    This example is currently broken against HEAD: it calls several
+    ``GridEnvironment`` methods that no longer exist
+    (``get_random_empty_cell``, ``add_agent_from_id``,
+    ``get_empty_cells_in_radius``, ``get_agent_at_pos``,
+    ``remove_agent_from_pos``) and uses ``get_agent_data`` /
+    ``update_agent_data`` inside a per-agent loop. The Schelling-style
+    neighbourhood logic is a legitimate case for per-agent code (see
+    "When per-agent loops are OK" in the tutorial), but the underlying
+    GridEnvironment surface needs the missing methods back before this
+    example can be rewritten cleanly. Tracked as a follow-up; use
+    ``smac_calibration_basic.py`` for the vectorized reference instead.
 """
 
 import ambr as am

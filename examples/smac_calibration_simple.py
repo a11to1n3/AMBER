@@ -22,36 +22,33 @@ import matplotlib.pyplot as plt
 
 
 class SimpleWealthModel(am.Model):
-    """A very simple wealth transfer model for demonstration."""
-    
+    """A very simple wealth transfer model, written with the vectorized view API."""
+
     def setup(self):
-        """Create agents with random initial wealth."""
-        for i in range(self.p['n_agents']):
-            agent = am.Agent(self, i)
-            agent.wealth = self.nprandom.randint(1, 100)
-            self.add_agent(agent)
-    
+        """Create agents with random initial wealth — one columnar call."""
+        n = int(self.p['n_agents'])
+        self.add_agents(n, wealth=self.nprandom.integers(1, 100, size=n))
+
     def step(self):
-        """Simple wealth transfer step."""
-        # Each agent may give money to another agent
-        for agent_id in range(self.p['n_agents']):
-            agent_data = self.get_agent_data(agent_id)
-            wealth = agent_data['wealth'].item()
-            
-            # Transfer probability based on model parameter
-            if wealth > 0 and self.nprandom.random() < self.p['transfer_rate']:
-                # Give some money to a random other agent
-                recipient_id = self.nprandom.randint(0, self.p['n_agents'])
-                if recipient_id != agent_id:
-                    amount = int(wealth * self.p['transfer_fraction'])
-                    amount = max(1, min(amount, wealth))
-                    
-                    # Execute transfer
-                    self.update_agent_data(agent_id, {'wealth': wealth - amount})
-                    recipient_data = self.get_agent_data(recipient_id)
-                    self.update_agent_data(recipient_id, {
-                        'wealth': recipient_data['wealth'].item() + amount
-                    })
+        """Simple wealth transfer step, fully columnar."""
+        n = int(self.p['n_agents'])
+        wealth = self.agents.wealth.to_numpy()
+
+        # Each agent transfers with probability p['transfer_rate'] and only
+        # if it has something to give.
+        active_mask = (wealth > 0) & (self.nprandom.random(size=n) < self.p['transfer_rate'])
+        if not active_mask.any():
+            return
+
+        amount = np.maximum(1, (wealth * self.p['transfer_fraction']).astype(int))
+        amount = np.minimum(amount, wealth) * active_mask
+
+        donor_ids = self.agents.ids.to_numpy()[active_mask]
+        donor_amounts = amount[active_mask]
+        self.agents.at[donor_ids].scatter_add(wealth=-donor_amounts)
+
+        recipient_ids = self.nprandom.choice(self.agents.ids.to_numpy(), size=int(active_mask.sum()))
+        self.agents.at[recipient_ids].scatter_add(wealth=donor_amounts)
     
     def update(self):
         """Track wealth inequality."""

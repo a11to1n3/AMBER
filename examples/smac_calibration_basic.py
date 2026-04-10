@@ -24,42 +24,42 @@ from typing import Dict, Any
 
 
 class WealthTransferModel(am.Model):
-    """A wealth transfer model for SMAC optimization."""
-    
+    """A wealth transfer model for SMAC optimization, written vectorized."""
+
     def setup(self):
-        """Initialize the model with agents."""
-        # Create agents with initial wealth
-        for i in range(self.p['n_agents']):
-            agent = am.Agent(self, i)
-            agent.wealth = self.nprandom.randint(1, 10)
-            self.add_agent(agent)
-    
+        """Initialize the model with agents using the bulk-create API."""
+        n = int(self.p['n_agents'])
+        self.add_agents(n, wealth=self.nprandom.integers(1, 10, size=n))
+
     def step(self):
-        """Execute one simulation step."""
-        # Each agent potentially transfers wealth based on model parameters
-        for agent_id in range(self.p['n_agents']):
-            agent_data = self.get_agent_data(agent_id)
-            current_wealth = agent_data['wealth'].item()
-            
-            # Transfer probability based on wealth and model parameters
-            transfer_prob = self.p['base_transfer_rate'] * (current_wealth / 10.0) ** self.p['wealth_exponent']
-            
-            if current_wealth > 0 and self.nprandom.random() < transfer_prob:
-                # Choose recipient
-                recipient_id = self.nprandom.randint(0, self.p['n_agents'])
-                if recipient_id != agent_id:
-                    # Transfer amount based on generosity parameter
-                    transfer_amount = max(1, int(current_wealth * self.p['generosity_factor']))
-                    transfer_amount = min(transfer_amount, current_wealth)
-                    
-                    # Execute transfer
-                    self.update_agent_data(agent_id, {
-                        'wealth': current_wealth - transfer_amount
-                    })
-                    recipient_data = self.get_agent_data(recipient_id)
-                    self.update_agent_data(recipient_id, {
-                        'wealth': recipient_data['wealth'].item() + transfer_amount
-                    })
+        """Execute one simulation step using columnar updates."""
+        import polars as pl
+
+        n = int(self.p['n_agents'])
+        # Per-agent transfer probability: p(wealth) = base * (w/10) ** exponent.
+        # Compute the probability column once, draw one uniform per agent,
+        # and flag which agents actively transfer this step.
+        wealth = self.agents.wealth.to_numpy()
+        prob = self.p['base_transfer_rate'] * (wealth / 10.0) ** self.p['wealth_exponent']
+        draws = self.nprandom.random(size=n)
+        active_mask = (wealth > 0) & (draws < prob)
+        if not active_mask.any():
+            return
+
+        # Each active agent transfers max(1, int(w * generosity)) capped at w.
+        generosity = float(self.p['generosity_factor'])
+        transfer = np.maximum(1, (wealth * generosity).astype(int))
+        transfer = np.minimum(transfer, wealth)
+        transfer = transfer * active_mask  # zero out the inactive
+
+        # Debit donors.
+        donor_ids = self.agents.ids.to_numpy()[active_mask]
+        donor_amounts = transfer[active_mask]
+        self.agents.at[donor_ids].scatter_add(wealth=-donor_amounts)
+
+        # Credit random recipients (sampled with replacement).
+        recipient_ids = self.nprandom.choice(self.agents.ids.to_numpy(), size=int(active_mask.sum()))
+        self.agents.at[recipient_ids].scatter_add(wealth=donor_amounts)
     
     def update(self):
         """Update model-level statistics."""
