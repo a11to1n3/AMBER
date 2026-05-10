@@ -69,6 +69,25 @@ class Model(BaseModel):
         self._pending_writes = {}
 
         df = self.population.data
+
+        # If the DataFrame is empty or 'id' is null-typed, initialise it
+        # with an Int64 id column so the update join key types match.
+        if df.is_empty() or 'id' not in df.columns:
+            # Build the full DataFrame from the pending writes instead.
+            touched_ids = list({aid for col_map in pending.values() for aid in col_map})
+            data_cols: Dict[str, list] = {'id': touched_ids}
+            for col, id_to_val in pending.items():
+                data_cols[col] = [id_to_val.get(aid, None) for aid in touched_ids]
+            self.population.data = pl.DataFrame(
+                [pl.Series(k, v, strict=False) for k, v in data_cols.items()]
+            )
+            self._bump_id_version()
+            return
+
+        # Ensure id column is not null-typed (Polars update requires matching types).
+        if df['id'].dtype == pl.Null:
+            df = df.with_columns(pl.col('id').cast(pl.Int64))
+
         missing = [c for c in pending if c not in df.columns]
         if missing:
             df = df.with_columns(
