@@ -68,6 +68,23 @@ class _BaseView:
             raise AttributeError(name)
         df = model.agents_df
         if name not in df.columns:
+            # Backward-compat fallback: if the name is a callable method
+            # on the underlying agents, return a wrapper that dispatches
+            # to each agent and collects results into a numpy array.
+            root = self._root()
+            agents = getattr(root, '_agent_objects', None)
+            if agents:
+                first = agents[0] if agents else None
+                method = getattr(first, name, None) if first is not None else None
+                if callable(method):
+                    import numpy as np
+                    def _dispatch(*args, **kwargs):
+                        results = [getattr(a, name)(*args, **kwargs) for a in self]
+                        try:
+                            return np.array(results)
+                        except (ValueError, TypeError):
+                            return results
+                    return _dispatch
             raise AttributeError(
                 f"{type(self).__name__!r} has no column {name!r}; "
                 f"available columns: {df.columns}"
@@ -162,6 +179,35 @@ class _BaseView:
         else:
             raise TypeError("predicate must be a polars Series (boolean) or Expr")
         return FilteredAgentList(model, new_ids, parent=self._root())
+
+    def select(self, selection) -> "_BaseView":
+        """AgentPy-compatible filter.
+
+        Accepts bool masks (list/ndarray/Series), Polars expressions,
+        and id lists. Returns a FilteredAgentList or ScatterAgentList.
+        """
+        model = self.__dict__["model"]
+        root = self._root()
+        if isinstance(selection, pl.Expr):
+            return self.where(selection)
+        if isinstance(selection, pl.Series):
+            if selection.dtype == pl.Boolean:
+                return self.where(selection)
+            return FilteredAgentList(model, selection.rename("id"), parent=root)
+        if isinstance(selection, (list, np.ndarray)):
+            arr = np.asarray(selection)
+            if arr.dtype == bool:
+                ids = self._ids_series()
+                if len(arr) != ids.len():
+                    raise ValueError(
+                        f"Boolean mask length ({len(arr)}) does not match "
+                        f"view length ({ids.len()})"
+                    )
+                picked = ids.filter(pl.Series("mask", arr))
+                return FilteredAgentList(model, picked, parent=root)
+            # List of ids
+            return FilteredAgentList(model, pl.Series("id", arr.tolist()), parent=root)
+        raise TypeError(f"select() unsupported type: {type(selection)}")
 
     def _root(self) -> "AgentList":
         return self.__dict__.get("_parent") or self  # type: ignore[return-value]
@@ -359,6 +405,12 @@ class AgentList(_BaseView):
     # --- view hooks ----------------------------------------------------------
 
     def _ids_series(self) -> pl.Series:
+        # When Agent objects are tracked, return only their IDs — not
+        # the entire population. This keeps each AgentList isolated.
+        if self._agent_objects:
+            ids = [a.id for a in self._agent_objects]
+            return pl.Series("id", ids, dtype=pl.Int64)
+        # Fall back to the full DataFrame for view-only or vectorized usage.
         df = self.model.agents_df
         return df["id"] if "id" in df.columns else pl.Series("id", [], dtype=pl.Int64)
 
@@ -500,20 +552,6 @@ class AgentList(_BaseView):
 
     # --- legacy APIs (kept as thin wrappers around the column protocol) ----
 
-    def select(self, selection) -> "_BaseView":
-        """AgentPy-compatible filter: accepts everything ``__getitem__`` does."""
-        result = self.__getitem__(selection)
-        if isinstance(result, Agent):
-            return ScatterAgentList(
-                self.model,
-                pl.Series("id", [getattr(result, "id", None)]),
-                parent=self,
-            )
-        if isinstance(result, list):
-            ids = [getattr(a, "id", None) for a in result]
-            return FilteredAgentList(self.model, pl.Series("id", ids), parent=self)
-        return result
-
     def get_data(self) -> pl.DataFrame:
         if hasattr(self.model, "agents_df"):
             return self.model.agents_df
@@ -548,6 +586,40 @@ class _SubView(_BaseView):
 
     def _root(self) -> AgentList:
         return self._parent
+
+    def __getitem__(self, idx):
+        """Index by position (int/slice/list/ndarray) within this view."""
+        if isinstance(idx, (int, np.integer)):
+            id_list = self._ids.to_list()
+            aid = id_list[int(idx)]
+            lookup = getattr(self._root(), "_agents_by_id", None) or {}
+            agent = lookup.get(aid)
+            if agent is not None:
+                return agent
+            raise IndexError(f"Agent id={aid} not found in AgentList")
+        if isinstance(idx, slice):
+            id_list = self._ids.to_list()[idx]
+            lookup = getattr(self._root(), "_agents_by_id", None) or {}
+            return [lookup.get(aid) for aid in id_list]
+        if isinstance(idx, (list, np.ndarray)):
+            arr = np.asarray(idx)
+            id_list = self._ids.to_list()
+            if arr.dtype == bool:
+                return self.select(arr)
+            # List of positions → return a FilteredAgentList view
+            picked_ids = [id_list[int(i)] for i in arr]
+            return FilteredAgentList(
+                self.__dict__["model"],
+                pl.Series("id", picked_ids),
+                parent=self._root(),
+            )
+        if isinstance(idx, pl.Expr):
+            return self.where(idx)
+        if isinstance(idx, pl.Series):
+            if idx.dtype == pl.Boolean:
+                return self.where(idx)
+            return FilteredAgentList(self.__dict__["model"], idx.rename("id"), parent=self._root())
+        raise TypeError(f"{type(self).__name__} indices must be int, slice, list, or ndarray")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._ids.len()} agents)"
