@@ -11,7 +11,8 @@ from ambr.optimization import (
     objective_function,
     grid_search,
     random_search,
-    bayesian_optimization
+    bayesian_optimization,
+    HAS_SMAC,
 )
 
 
@@ -413,7 +414,8 @@ class TestRandomSearch:
 
 class TestBayesianOptimization:
     """Test cases for bayesian_optimization function."""
-    
+
+    @pytest.mark.skipif(not HAS_SMAC, reason="SMAC3 not installed")
     @pytest.mark.slow
     def test_bayesian_optimization_basic(self):
         """Test basic Bayesian optimization functionality."""
@@ -453,6 +455,7 @@ class TestBayesianOptimization:
         assert abs(best_x - 5) <= 2  # Allow some tolerance
         assert best['objective'] > 20  # Should be close to maximum of 25
     
+    @pytest.mark.skipif(not HAS_SMAC, reason="SMAC3 not installed")
     @pytest.mark.slow
     def test_bayesian_optimization_minimize(self):
         """Test Bayesian optimization with minimization."""
@@ -492,6 +495,7 @@ class TestBayesianOptimization:
         assert abs(best_x - 3) <= 1
         assert best['objective'] <= 2  # Should be close to minimum of 0
     
+    @pytest.mark.skipif(not HAS_SMAC, reason="SMAC3 not installed")
     def test_bayesian_optimization_with_noise(self):
         """Test Bayesian optimization with noisy objective."""
         class NoisyModel(am.Model):
