@@ -48,8 +48,8 @@ class ParameterSpace:
         for name, value in self.parameters.items():
             if isinstance(value, list):
                 result[name] = np.random.choice(value)
-            elif isinstance(value, IntRange):  # IntRange objects
-                result[name] = np.random.randint(value.start, value.end + 1)
+            elif isinstance(value, IntRange):  # IntRange objects (exclusive end)
+                result[name] = np.random.randint(value.start, value.end)
             else:  # Fixed value
                 result[name] = value
         return result
@@ -66,8 +66,8 @@ class ParameterSpace:
         for name, value in self.parameters.items():
             if isinstance(value, list):
                 param_lists[name] = value
-            elif isinstance(value, IntRange):  # IntRange objects
-                param_lists[name] = list(range(value.start, value.end + 1))
+            elif isinstance(value, IntRange):  # IntRange objects (exclusive end)
+                param_lists[name] = list(range(value.start, value.end))
             else:  # Fixed value
                 param_lists[name] = [value]
         
@@ -185,44 +185,152 @@ def random_search(model_class: Type[Model], parameter_space: ParameterSpace,
     return results
 
 
-def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSpace, 
-                         metric: str, n_calls: int = 10, iterations: int = 1, 
-                         minimize: bool = False, random_state: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Perform Bayesian optimization using simple heuristics.
-    
-    Note: This is a simplified implementation for testing purposes.
-    For production use, consider using the SMACOptimizer class.
-    
+def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSpace,
+                         metric: str, n_calls: int = 10, iterations: int = 1,
+                         minimize: bool = False, random_state: Optional[int] = None,
+                         n_initial_design: int = 5) -> List[Dict[str, Any]]:
+    """Perform Bayesian optimisation using SMAC3's Gaussian Process facade.
+
+    Converts the simple ``ParameterSpace`` to a SMAC3 ``ConfigurationSpace``
+    internally and runs true Bayesian optimisation with Expected Improvement
+    acquisition. Requires SMAC3 to be installed (``pip install smac``).
+
     Args:
-        model_class: Model class to optimize
-        parameter_space: Parameter space to search
-        metric: Metric to optimize
-        n_calls: Number of function evaluations
-        iterations: Number of iterations per parameter combination
-        minimize: Whether to minimize the metric
-        random_state: Random state for reproducibility
-        
+        model_class: Model class to optimize.
+        parameter_space: Parameter space to search.
+        metric: Metric to optimize.
+        n_calls: Total number of function evaluations.
+        iterations: Number of iterations per parameter combination.
+        minimize: Whether to minimize (True) or maximize (False).
+        random_state: Random state for reproducibility.
+        n_initial_design: Number of initial random designs before
+            Bayesian search begins.
+
     Returns:
-        List of results sorted by objective value (best first)
+        List of results sorted by objective value (best first).
     """
-    if random_state is not None:
-        random.seed(random_state)
-        np.random.seed(random_state)
-    
-    results = []
-    
-    # Start with random samples (simplified acquisition)
-    for _ in range(n_calls):
-        params = parameter_space.sample()
-        obj_value = objective_function(model_class, params, metric, iterations, minimize)
+    _check_smac()
+
+    from ConfigSpace import (
+        ConfigurationSpace,
+        UniformIntegerHyperparameter,
+        UniformFloatHyperparameter,
+        CategoricalHyperparameter,
+    )
+    import tempfile
+    from smac import HyperparameterOptimizationFacade, Scenario
+    from smac.acquisition.function import EI
+    from smac.model.random_forest import RandomForest
+    from smac.initial_design import LatinHypercubeInitialDesign
+
+    from .experiment import IntRange
+
+    # --- build ConfigurationSpace from ParameterSpace -----------------------
+    cs = ConfigurationSpace(seed=random_state or 0)
+    cat_params: Dict[str, List[Any]] = {}
+    fixed_params: Dict[str, Any] = {}
+
+    for name, value in parameter_space.parameters.items():
+        if isinstance(value, list):
+            # Categorical — SMAC requires strings
+            str_choices = [str(v) for v in value]
+            cat_params[name] = value  # keep original mapping
+            hp = CategoricalHyperparameter(
+                name=name,
+                choices=str_choices,
+                default_value=str_choices[0],
+            )
+            cs.add(hp)
+        elif isinstance(value, IntRange):
+            hp = UniformIntegerHyperparameter(
+                name=name,
+                lower=value.start,
+                upper=value.end - 1,  # IntRange.end is exclusive
+                default_value=value.start,
+            )
+            cs.add(hp)
+        elif isinstance(value, float):
+            hp = UniformFloatHyperparameter(
+                name=name,
+                lower=value,
+                upper=value,
+                default_value=value,
+            )
+            cs.add(hp)
+        elif isinstance(value, (int, str, bool)):
+            # Fixed scalar — not optimised; stored separately.
+            fixed_params[name] = value
+        else:
+            raise TypeError(
+                f"Unsupported parameter type for {name!r}: {type(value)}"
+            )
+
+    # --- scenario & SMAC facade --------------------------------------------
+    # Use a temporary output directory so each call starts fresh.
+    tmp_dir = tempfile.mkdtemp(prefix='amber_bayes_')
+    scenario = Scenario(
+        cs,
+        n_trials=n_calls,
+        seed=random_state,
+        deterministic=True,
+        output_directory=tmp_dir,
+    )
+
+    # Target function for SMAC (always minimises)
+    def _target(config: dict, seed: int = 0) -> float:
+        # Merge SMAC config + fixed params + restore categorical types
+        params = dict(fixed_params)
+        for k, v in config.items():
+            if k in cat_params:
+                str_choices = [str(cv) for cv in cat_params[k]]
+                try:
+                    idx = str_choices.index(str(v))
+                    params[k] = cat_params[k][idx]
+                except ValueError:
+                    params[k] = v
+            else:
+                params[k] = v
+        obj = objective_function(model_class, params, metric, iterations, minimize)
+        # SMAC always minimises; if the user wants to maximise, negate
+        return -obj if not minimize else obj
+
+    smac = HyperparameterOptimizationFacade(
+        scenario=scenario,
+        target_function=_target,
+        model=RandomForest(configspace=cs),
+        acquisition_function=EI(),
+        initial_design=LatinHypercubeInitialDesign(
+            scenario=scenario,
+            n_configs=min(n_initial_design, n_calls),
+        ),
+    )
+
+    incumbent = smac.optimize()
+
+    # --- collect history ---------------------------------------------------
+    results: List[Dict[str, Any]] = []
+    for config in smac.runhistory.get_configs():
+        try:
+            cost = smac.runhistory.get_cost(config)
+        except Exception:
+            cost = float('inf')
+        params = dict(fixed_params)
+        for k, v in dict(config).items():
+            if k in cat_params:
+                str_choices = [str(cv) for cv in cat_params[k]]
+                try:
+                    idx = str_choices.index(str(v))
+                    params[k] = cat_params[k][idx]
+                except ValueError:
+                    params[k] = v
+            else:
+                params[k] = v
         results.append({
             'parameters': params,
-            'objective': obj_value
+            'objective': -cost if not minimize else cost,
         })
-    
-    # Sort by objective value
+
     results.sort(key=lambda x: x['objective'], reverse=not minimize)
-    
     return results
 
 

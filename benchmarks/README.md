@@ -91,7 +91,7 @@ timings below are apples-to-apples.
 
 ## Latest verified-correct results — all seven frameworks
 
-Run on 2026-04-09, Python 3.13.11, Julia 1.12.3, 50 steps per simulation,
+Run on 2026-05-09, Python 3.12, Julia 1.12.3, 50 steps per simulation,
 3 runs averaged (slowest trimmed). Apple Silicon.
 
 **Execution time — Wealth Transfer**
@@ -99,34 +99,34 @@ Run on 2026-04-09, Python 3.13.11, Julia 1.12.3, 50 steps per simulation,
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
 | Agents.jl | **1 ms** | **1 ms** | **7 ms** |
-| **AMBER (vectorized)** | 4 ms | 5 ms | 17 ms |
-| AMBER (loop) | 9 ms | 17 ms | 89 ms |
-| Melodie | 17 ms | 33 ms | 168 ms |
-| SimPy | 18 ms | 37 ms | 205 ms |
-| AgentPy | 26 ms | 51 ms | 266 ms |
-| Mesa | 35 ms | 116 ms | 2.87 s |
+| **AMBER (vectorized)** | 4 ms | 6 ms | 20 ms |
+| AMBER (loop) | 16 ms | 33 ms | 173 ms |
+| Melodie | 18 ms | 35 ms | 178 ms |
+| SimPy | 18 ms | 37 ms | 215 ms |
+| AgentPy | 26 ms | 52 ms | 262 ms |
+| Mesa | 259 ms | 1.00 s | 24.40 s |
 
 **Execution time — Random Walk**
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
 | Agents.jl | **1 ms** | **1 ms** | 7 ms |
-| **AMBER (vectorized)** | 3 ms | 2 ms | **5 ms** |
-| AMBER (loop) | 8 ms | 16 ms | 79 ms |
-| Mesa | 9 ms | 18 ms | 87 ms |
-| AgentPy | 10 ms | 20 ms | 98 ms |
-| SimPy | 20 ms | 40 ms | 209 ms |
-| Melodie | 96 ms | 190 ms | 963 ms |
+| **AMBER (vectorized)** | 2 ms | 3 ms | **6 ms** |
+| AMBER (loop) | 32 ms | 64 ms | 319 ms |
+| Mesa | 13 ms | 26 ms | 127 ms |
+| AgentPy | 14 ms | 28 ms | 137 ms |
+| SimPy | 23 ms | 47 ms | 243 ms |
+| Melodie | 101 ms | 200 ms | 1.02 s |
 
 **Execution time — SIR Epidemic**
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
-| Agents.jl | **5 ms** | **40 ms** | 892 ms |
-| **AMBER (vectorized)** | 92 ms | 141 ms | **608 ms** |
-| SimPy | 100 ms | 528 ms | 6.75 s |
-| AgentPy | 115 ms | 809 ms | 8.78 s |
-| Mesa | 188 ms | 728 ms | 9.18 s |
+| Agents.jl | **5 ms** | **40 ms** | 809 ms |
+| **AMBER (vectorized)** | 88 ms | 112 ms | **551 ms** |
+| SimPy | 120 ms | 424 ms | 5.13 s |
+| AgentPy | 188 ms | 897 ms | 11.05 s |
+| Mesa | 244 ms | 1.14 s | 17.07 s |
 | Melodie | 374 ms | 1.17 s | 11.21 s |
 | AMBER (loop) | 191 ms | 857 ms | 12.23 s |
 
@@ -136,12 +136,12 @@ AMBER vectorized; values < 1 mean it beats AMBER vectorized):**
 
 | Framework | Wealth Transfer | Random Walk | SIR Epidemic |
 |---|---|---|---|
-| Agents.jl | 0.3× (faster) | 0.7× (faster) | 0.6× (faster) |
-| AMBER (loop) | 3.6× | 8.6× | 9.4× |
-| SimPy | 8.0× | 22.1× | 5.3× |
-| Melodie | 6.9× | 103.3× | 10.3× |
-| AgentPy | 10.7× | 10.6× | 7.1× |
-| Mesa | 66.8× | 9.5× | 7.4× |
+| Agents.jl | 0.2× (faster) | 0.7× (faster) | 0.6× (faster) |
+| AMBER (loop) | 5.9× | 30.7× | 8.8× |
+| SimPy | 7.0× | 22.9× | 4.8× |
+| Melodie | 6.2× | 97.6× | 17.5× |
+| AgentPy | 9.2× | 13.2× | 10.1× |
+| Mesa | 480.1× | 12.3× | 14.7× |
 
 See [`results/scaling_chart_all.png`](results/scaling_chart_all.png) for the
 log-log scaling plot (the wider the gap at the right edge of each subplot,
@@ -153,15 +153,15 @@ the better AMBER scales).
 
 **Who wins each model at the 5000-agent point (the realistic ABM scale):**
 
-* **Wealth transfer**: Agents.jl 🥇 (7 ms), AMBER (vectorized) 🥈 (17 ms).
+* **Wealth transfer**: Agents.jl 🥇 (7 ms), AMBER (vectorized) 🥈 (20 ms).
   Julia's JIT compiler wins the microbenchmark because the per-step work
   is so small (two array updates) that Polars' per-expression overhead
-  dominates. Every other framework is 5× to 160× slower.
-* **Random walk**: AMBER (vectorized) 🥇 (5 ms), Agents.jl 🥈 (7 ms).
+  dominates. Every other framework is 5× to 1200× slower.
+* **Random walk**: AMBER (vectorized) 🥇 (6 ms), Agents.jl 🥈 (7 ms).
   Polars vectorization on two numpy ops + clamp is slightly faster than
   Julia's JIT on the same work. This is the clearest head-to-head win for
   the columnar architecture.
-* **SIR epidemic**: AMBER (vectorized) 🥇 (608 ms), Agents.jl 🥈 (892 ms).
+* **SIR epidemic**: AMBER (vectorized) 🥇 (551 ms), Agents.jl 🥈 (809 ms).
   The Polars cross-join for the O(n²) infection step is faster than the
   hand-written Julia double loop because both languages are paying for
   the same quadratic work but Polars executes it as one compiled C/Rust

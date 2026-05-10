@@ -3,6 +3,7 @@
 [![CI](https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml/badge.svg)](https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/a11to1n3/AMBER/graph/badge.svg)](https://codecov.io/gh/a11to1n3/AMBER)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
+[![PyPI version](https://img.shields.io/pypi/v/ambr.svg)](https://pypi.org/project/ambr/)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3_Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 AMBER is a Python framework for agent-based modeling that uses Polars for efficient data handling and analysis. AMBER provides a clean, robust API for creating parallel, high-performance simulations in Python.
@@ -15,7 +16,7 @@ exposes a vectorized view API (`agents.where(...)`, `agents.at[ids]`,
 Polars expressions — regardless of population size.
 
 **Benchmark against every other ABM framework we found
-— 5000 agents, 50 steps, Python 3.13.11, Julia 1.12.3, Apple Silicon.**
+— 5000 agents, 50 steps, Python 3.12, Julia 1.12.3, Apple Silicon.**
 All numbers are wall-clock, averaged over 3 runs (slowest trimmed).
 Every framework is **verified against output invariants** (wealth
 conservation, boundary clamping, S+I+R population conservation) before
@@ -24,20 +25,20 @@ Reproducer: [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.p
 
 | Framework | Language | Arch. | Wealth Transfer | Random Walk | SIR Epidemic |
 |---|---|---|---:|---:|---:|
-| **AMBER (vectorized)** | Python | Columnar (Polars) | 17 ms 🥈 | **5 ms** 🥇 | **608 ms** 🥇 |
-| Agents.jl | Julia | Object | **7 ms** 🥇 | 7 ms 🥈 | 892 ms 🥈 |
-| AMBER (loop) | Python | Object | 89 ms | 79 ms | 12.23 s |
-| Mesa | Python | Object | 2.87 s | 87 ms | 9.18 s |
-| AgentPy | Python | Object | 266 ms | 98 ms | 8.78 s |
-| SimPy | Python | Event loop | 205 ms | 209 ms | 6.75 s |
-| Melodie | Python | Hybrid | 168 ms | 963 ms | 11.21 s |
+| **AMBER (vectorized)** | Python | Columnar (Polars) | 20 ms 🥈 | **6 ms** 🥇 | **551 ms** 🥇 |
+| Agents.jl | Julia | Object | **7 ms** 🥇 | 7 ms 🥈 | 809 ms 🥈 |
+| AMBER (loop) | Python | Object | 173 ms | 319 ms | 9.36 s |
+| Mesa | Python | Object | 24.40 s | 127 ms | 17.07 s |
+| AgentPy | Python | Object | 262 ms | 137 ms | 11.05 s |
+| SimPy | Python | Event loop | 215 ms | 243 ms | 5.13 s |
+| Melodie | Python | Hybrid | 178 ms | 1.02 s | 16.21 s |
 
 **AMBER (vectorized) wins two of three models outright** (random walk
 and SIR) and comes second on wealth transfer, trailing only
 JIT-compiled Julia. **It is the fastest Python-hosted framework on
-every model at 5000 agents** and within 2.4× of Agents.jl on the one
+every model at 5000 agents** and within 3× of Agents.jl on the one
 model Julia wins — while every other Python-hosted framework is 5× to
-160× slower on the same workload.
+1200× slower on the same workload.
 
 ![Seven-framework scaling chart](benchmarks/results/scaling_chart_all.png)
 
@@ -50,52 +51,46 @@ measuring different problems across frameworks.
 
 ```python
 import ambr as am
+import numpy as np
 
-# Define a custom agent
-class MyAgent(am.Agent):
+# Define a model with the vectorized view API — no per-agent loops.
+class WealthModel(am.Model):
     def setup(self):
-        self.value = self.p.initial_value
-        
+        self.add_agents(100, wealth=np.random.randint(1, 10, size=100))
+
     def step(self):
-        self.value += self.model.random.randint(-1, 2)
-        self.record('value', self.value)
+        donors = self.agents.where(self.agents.wealth > 0)
+        donors.wealth -= 1
+        ids = self.agents.ids.to_numpy()
+        recipients = self.nprandom.choice(ids, size=len(donors))
+        self.agents.at[recipients].scatter_add(wealth=1)
+        self.record('total_wealth', int(self.agents.wealth.sum()))
 
-# Define a model
-class MyModel(am.Model):
-    def setup(self):
-        self.agents = am.AgentList(self, self.p.agents, MyAgent)
-        
-    def step(self):
-        self.agents.call('step')
-        
-    def update(self):
-        super().update()
-        self.agents.record('value')
-
-# Run a simulation
-parameters = {
-    'agents': 10,
-    'initial_value': 5,
-    'steps': 100
-}
-
-model = MyModel(parameters)
+model = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
 results = model.run()
+print(results['agents'].head(10))
 ```
 
-## ⚡ Advanced: Vectorized Updates
+> **New in 0.3.0:** Setting ``agent.wealth = 5`` on a Python Agent
+> automatically syncs to the DataFrame. You can freely mix OOP-style
+> and vectorized access without desync.
 
-For maximum performance, access the underlying `Population` manager to perform SIMD-vectorized state updates, bypassing Python loop overhead:
+## ⚡ Vectorized View API
+
+The view API compiles per-step updates to a handful of Polars expressions
+— regardless of population size:
 
 ```python
 def step(self):
-    # Create a batch update context
-    with self.population.create_batch_context() as batch:
-        # Queue updates logic (executed in Rust/Polars)
-        batch.add_update(target_ids, 'wealth', 1)
-        batch.add_update(source_ids, 'wealth', -1)
-    
-    # State is applied atomically here
+    # Bulk columnar reads/writes over the entire population
+    self.agents.x = self.agents.x + self.nprandom.uniform(-1, 1, len(self.agents))
+
+    # Filtered writes: only agents matching a condition
+    infected = self.agents.where(self.agents.status == 1)
+    infected.infection_time += 1
+
+    # scatter_add: flow-of-resources with duplicate-id safety
+    self.agents.at[[1, 1, 3]].scatter_add(wealth=1)  # agent 1 gets +2, agent 3 gets +1
 ```
 
 ## 🔬 Optimization

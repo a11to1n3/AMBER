@@ -22,11 +22,44 @@ class Environment(ABC):
     def __init__(self, model):
         """Initialize environment with reference to model."""
         self.model = model
-        if model is not None and hasattr(model, 'df'):
-            self.df = model.df
+        # Fallback private store used when model doesn't expose population.
+        self._df: Optional[pl.DataFrame] = None
+
+    @property
+    def df(self) -> pl.DataFrame:
+        """The model's current agent DataFrame (always fresh)."""
+        if self.model is not None and hasattr(self.model, 'agents_df'):
+            return self.model.agents_df
+        if self._df is not None:
+            return self._df
+        return pl.DataFrame()
+
+    @df.setter
+    def df(self, value: pl.DataFrame) -> None:
+        """Replace the model's agent DataFrame.
+
+        Routes through ``model.population.data`` when available so the
+        ``_id_version`` cache stays consistent. Falls back to writing
+        ``model.agents_df`` directly (for mock models) or a private
+        store.
+        """
+        model = self.model
+        # Check for a *real* Population manager, not a Mock attribute.
+        pop = getattr(model, 'population', None)
+        if pop is not None and hasattr(pop, 'data') and isinstance(
+            getattr(pop, 'data', None), pl.DataFrame
+        ):
+            pop.data = value
+            bump = getattr(model, '_bump_id_version', None)
+            if bump is not None:
+                bump()
+        elif model is not None and hasattr(model, 'agents_df'):
+            # Plain attribute (e.g. Mock model) — write directly.
+            object.__setattr__(model, 'agents_df', value)
+            self._df = value
         else:
-            self.df = pl.DataFrame()
-    
+            self._df = value
+
     @abstractmethod
     def get_neighbors(self, agent_id: int) -> List[int]:
         """Get neighboring agents for a given agent."""
@@ -66,18 +99,6 @@ class GridEnvironment(Environment):
             
         self.wrap = torus
         self.torus = torus  # Alias
-        
-        # Add grid-specific columns to model DataFrame if it exists
-        if hasattr(model, 'agents_df'):
-            # Check if it's a mock or real dataframe
-            if hasattr(model.agents_df, 'select'):
-                # It's a mock or real polars dataframe
-                self.df = model.agents_df
-            else:
-                # Fallback for other cases
-                self.df = pl.DataFrame()
-        else:
-            self.df = pl.DataFrame()
     
     @property
     def width(self):
@@ -306,15 +327,16 @@ class SpaceEnvironment(Environment):
         self.dimensions = len(bounds)
         self.torus = torus
         
-        # Add space-specific columns to model DataFrame if it exists
-        if hasattr(model, 'agents_df'):
-            self.df = model.agents_df
-            if 'space_position' not in self.df.columns:
-                self.df = self.df.with_columns(pl.lit(None, dtype=pl.Object).alias('space_position'))
-            if 'space_distance' not in self.df.columns:
-                self.df = self.df.with_columns(pl.lit(0.0).alias('space_distance'))
-        else:
-            self.df = pl.DataFrame()
+        # Initialise space-specific columns on the model's DataFrame if needed
+        if model is not None and hasattr(model, 'agents_df'):
+            if 'space_position' not in model.agents_df.columns:
+                self.df = model.agents_df.with_columns(
+                    pl.lit(None, dtype=pl.Object).alias('space_position')
+                )
+            if 'space_distance' not in model.agents_df.columns:
+                self.df = model.agents_df.with_columns(
+                    pl.lit(0.0).alias('space_distance')
+                )
     
     def get_neighbors(self, pos_or_agent_id, radius: float) -> List[int]:
         """Get neighboring agents within radius."""
@@ -467,15 +489,13 @@ class NetworkEnvironment(Environment):
         else:
             self.graph = nx.Graph()
         
-        # Add network-specific columns to model DataFrame if it exists
-        if hasattr(model, 'agents_df'):
-            self.df = model.agents_df
-            if 'node_id' not in self.df.columns:
-                self.df = self.df.with_columns(pl.lit(None, dtype=pl.Int64).alias('node_id'))
-            if 'network_distance' not in self.df.columns:
-                self.df = self.df.with_columns(pl.lit(0.0).alias('network_distance'))
-        else:
-            self.df = pl.DataFrame()
+        # Initialise network-specific columns on the model's DataFrame if needed
+        if model is not None and hasattr(model, 'agents_df'):
+            df = model.agents_df
+            if 'node_id' not in df.columns:
+                self.df = df.with_columns(pl.lit(None, dtype=pl.Int64).alias('node_id'))
+            if 'network_distance' not in df.columns:
+                self.df = df.with_columns(pl.lit(0.0).alias('network_distance'))
     
     @property
     def nodes(self):

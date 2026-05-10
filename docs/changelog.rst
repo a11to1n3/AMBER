@@ -6,6 +6,60 @@ All notable changes to AMBER will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[0.3.0] - 2026-05-09
+---------------------
+
+Added
+~~~~~
+- ``Agent.__setattr__`` now routes non-internal attribute writes through
+  ``model._queue_write()``, keeping Python ``Agent`` objects and the
+  columnar DataFrame in sync. Setting ``agent.wealth = 5`` automatically
+  updates the DataFrame — no more silent desync between OOP-style and
+  view-API access.
+- ``Environment.df`` is now a property that reads from and writes to
+  ``model.population.data`` (or ``model.agents_df`` for mock models),
+  eliminating DataFrame staleness in ``GridEnvironment``,
+  ``SpaceEnvironment``, and ``NetworkEnvironment``.
+- ``IntRange`` now supports ``__contains__``, ``__iter__``, and ``__len__``
+  for better ergonomics with Python's standard range semantics.
+- ``SpaceEnvironment`` initialisation no longer drops the ``space_position``
+  column when both ``space_position`` and ``space_distance`` need to be
+  created.
+
+Changed
+~~~~~~~
+- ``IntRange`` semantics are now consistently **exclusive-end**, matching
+  Python's ``range()``: ``IntRange(1, 10)`` yields values ``1..9``.
+  Previously the semantics varied across ``ParameterSpace.sample()``
+  (inclusive) and ``Sample._generate_combinations()`` (exclusive).
+- ``Model.run()`` now delegates to ``Model.run_step()``, removing 30 lines
+  of duplicated setup/step/update/finalize logic.
+- ``Model.add_agents(n, agent_class=..., **columns)`` now forwards Python
+  ``Agent`` attributes set during ``setup()`` into the batch DataFrame
+  write, so columns declared via ``self.wealth = 5`` in ``setup()``
+  appear in the population automatically.
+- ``Population._align_and_concat()`` now emits a ``UserWarning`` instead
+  of silently casting mismatched column types to ``Utf8``.
+- ``__init__.py`` namespace cleanup was removed; the aggressive module-
+  level symbol deletion no longer hides legitimately imported names.
+- Dependencies: ``setup.py`` now declares ``python_requires=">=3.9"``
+  (was ``>=3.8``, which is incompatible with ``numpy>=1.20``).
+  Python 3.8 classifier removed.
+- Test suite: ``test_population.py`` migrated from ``unittest.TestCase``
+  to ``pytest`` style, consistent with every other test file.
+
+Fixed
+~~~~~
+- ``bayesian_optimization()`` is now backed by **SMAC3** (RandomForest
+  surrogate model + Expected Improvement acquisition) instead of being
+  pure random search. Requires ``smac`` to be installed. The simple
+  ``ParameterSpace`` is automatically converted to a SMAC3
+  ``ConfigurationSpace``.
+- ``Environment.df`` setter correctly handles mock models (no longer
+  trips on ``hasattr`` returning ``True`` for auto-created Mock attrs).
+- ``SpaceEnvironment`` constructor no longer overwrites the
+  ``space_position`` column when adding ``space_distance``.
+
 [0.2.0] - 2026-04-10
 ---------------------
 

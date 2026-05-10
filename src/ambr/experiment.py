@@ -3,11 +3,25 @@ import polars as pl
 from .model import Model
 
 class IntRange:
-    """Range of integer values for parameter sampling."""
+    """Range of integer values for parameter sampling.
+
+    Semantics follow Python's ``range()``: ``start`` is inclusive,
+    ``end`` is exclusive (i.e. ``IntRange(1, 10)`` yields values
+    ``1..9``).
+    """
     
     def __init__(self, start: int, end: int):
         self.start = start
         self.end = end
+
+    def __contains__(self, value: int) -> bool:
+        return self.start <= value < self.end
+
+    def __iter__(self):
+        return iter(range(self.start, self.end))
+
+    def __len__(self) -> int:
+        return self.end - self.start
         
     def __repr__(self) -> str:
         return f"IntRange({self.start}, {self.end})"
@@ -49,15 +63,16 @@ class Sample:
         for i in range(self.n):
             combo = fixed.copy()
             
-            # Handle IntRange parameters
+            # Handle IntRange parameters (end is exclusive)
             for key, range_obj in ranges:
+                n_values = range_obj.end - range_obj.start  # e.g. 10..20 → 10 values
                 if self.n == 1:
                     # If only one sample, use middle value
-                    value = (range_obj.start + range_obj.end) // 2
+                    value = (range_obj.start + range_obj.end - 1) // 2
                 else:
-                    # Distribute evenly across range
-                    step = (range_obj.end - range_obj.start) / (self.n - 1)
-                    value = int(range_obj.start + i * step)
+                    # Distribute evenly across [start, end-1]
+                    step = (n_values - 1) / (self.n - 1)
+                    value = int(range_obj.start + round(i * step))
                 combo[key] = value
             
             # Handle list parameters (cycle through values)

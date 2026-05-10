@@ -131,40 +131,26 @@ class Model(BaseModel):
         self._finalize_step_data()
 
     def run(self, steps: Optional[int] = None) -> Dict[str, pl.DataFrame]:
-        # ... (Same run logic, omitted for brevity but preserved in practice)
-        # Using a simplified version here for cleaner file updates
         start_time = time.time()
         max_steps = steps if steps is not None else self.p.get('steps', 100)
-        
+
         if self._show_progress:
             self._start_time = start_time
             self._print_start_info(max_steps)
-            
-            self.setup()
-            self.update()
-            self._finalize_step_data()
-            
             self._print_progress(0, max_steps, force=True)
-            
-            while self.t < max_steps:
-                self.step()
-                self.update()
-                self._finalize_step_data()
+
+        # Use run_step() which handles the initial setup() call transparently.
+        while self.t < max_steps:
+            self.run_step()
+            if self._show_progress:
                 self._print_progress(self.t, max_steps)
-                
-            self.end()
+
+        self.end()
+
+        if self._show_progress:
             self._print_progress(max_steps, max_steps, force=True)
             self._print_end_info(start_time, max_steps)
-        else:
-            self.setup()
-            self.update()
-            self._finalize_step_data()
-            while self.t < max_steps:
-                self.step()
-                self.update()
-                self._finalize_step_data()
-            self.end()
-            
+
         return self._collect_results(start_time, max_steps)
 
     # --- Helper methods ---
@@ -255,17 +241,39 @@ class Model(BaseModel):
             if not self.population.data.is_empty() and 'id' in self.population.data.columns
             else 0
         )
+
+        # If an agent_class is given, create Python instances first so
+        # setup() can write extra columns via record(), then merge those
+        # columns into the batch-add call.
+        if agent_class is not None and n > 0:
+            agent_columns: Dict[str, Any] = dict(columns)
+            extras: Dict[str, list] = {}
+            for i in range(n):
+                aid = start_id + i
+                agent = agent_class(self, aid)
+                agent.setup()
+                # Forward non-internal Python attrs set in setup()
+                for k, v in vars(agent).items():
+                    if k in {"model", "id", "p"} or k.startswith("_"):
+                        continue
+                    extras.setdefault(k, []).append(v)
+                if isinstance(self.agents, AgentList):
+                    self.agents.append(agent)
+                    if self.agents.agent_type is None:
+                        self.agents.agent_type = agent_class
+            # Merge extras into columns, with explicit columns taking priority
+            for k, vals in extras.items():
+                if k not in agent_columns:
+                    agent_columns[k] = vals
+            self.population.batch_add_agents(n, step=self.t, **agent_columns)
+            self._bump_id_version()
+            return self.agents
+
         self.population.batch_add_agents(n, step=self.t, **columns)
         self._bump_id_version()
 
         if not isinstance(self.agents, AgentList):
             return self.agents  # type: ignore[return-value]
-
-        if agent_class is not None:
-            for aid in range(start_id, start_id + n):
-                self.agents.append(agent_class(self, aid))
-            if self.agents.agent_type is None:
-                self.agents.agent_type = agent_class
         return self.agents
 
     def get_agent_data(self, agent_id: Any) -> pl.DataFrame:

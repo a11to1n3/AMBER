@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-09T22:21:00.176515",
+  "generated_at": "2026-05-09T23:02:33.665234",
   "agent_counts": [
     500,
     1000,
@@ -12,432 +12,432 @@
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0087,
-      "time_per_step": 0.000174
+      "execution_time": 0.016,
+      "time_per_step": 0.00032
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0038,
-      "time_per_step": 7.7e-05
+      "execution_time": 0.0042,
+      "time_per_step": 8.4e-05
     },
     {
       "framework": "AgentPy",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.026,
-      "time_per_step": 0.000519
+      "execution_time": 0.0259,
+      "time_per_step": 0.000517
     },
     {
       "framework": "Mesa",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0352,
-      "time_per_step": 0.000703
+      "execution_time": 0.2591,
+      "time_per_step": 0.005182
     },
     {
       "framework": "SimPy",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0182,
-      "time_per_step": 0.000365
+      "execution_time": 0.0177,
+      "time_per_step": 0.000354
     },
     {
       "framework": "Melodie",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0167,
-      "time_per_step": 0.000335
+      "execution_time": 0.0176,
+      "time_per_step": 0.000352
     },
     {
       "framework": "AMBER (loop)",
       "model": "wealth_transfer",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.0172,
-      "time_per_step": 0.000344
+      "execution_time": 0.033,
+      "time_per_step": 0.000659
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "wealth_transfer",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.0052,
-      "time_per_step": 0.000104
+      "execution_time": 0.0062,
+      "time_per_step": 0.000124
     },
     {
       "framework": "AgentPy",
       "model": "wealth_transfer",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.0505,
-      "time_per_step": 0.00101
+      "execution_time": 0.0524,
+      "time_per_step": 0.001047
     },
     {
       "framework": "Mesa",
       "model": "wealth_transfer",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.1156,
-      "time_per_step": 0.002311
+      "execution_time": 1.0025,
+      "time_per_step": 0.02005
     },
     {
       "framework": "SimPy",
       "model": "wealth_transfer",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.0367,
-      "time_per_step": 0.000734
+      "execution_time": 0.0373,
+      "time_per_step": 0.000746
     },
     {
       "framework": "Melodie",
       "model": "wealth_transfer",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.0333,
-      "time_per_step": 0.000666
+      "execution_time": 0.0349,
+      "time_per_step": 0.000699
     },
     {
       "framework": "AMBER (loop)",
       "model": "wealth_transfer",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.0885,
-      "time_per_step": 0.001771
+      "execution_time": 0.1731,
+      "time_per_step": 0.003461
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "wealth_transfer",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.017,
-      "time_per_step": 0.00034
+      "execution_time": 0.0201,
+      "time_per_step": 0.000401
     },
     {
       "framework": "AgentPy",
       "model": "wealth_transfer",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.266,
-      "time_per_step": 0.00532
+      "execution_time": 0.2616,
+      "time_per_step": 0.005232
     },
     {
       "framework": "Mesa",
       "model": "wealth_transfer",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 2.8741,
-      "time_per_step": 0.057481
+      "execution_time": 24.4043,
+      "time_per_step": 0.488085
     },
     {
       "framework": "SimPy",
       "model": "wealth_transfer",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.2052,
-      "time_per_step": 0.004103
+      "execution_time": 0.2148,
+      "time_per_step": 0.004297
     },
     {
       "framework": "Melodie",
       "model": "wealth_transfer",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.1684,
-      "time_per_step": 0.003368
+      "execution_time": 0.1781,
+      "time_per_step": 0.003562
     },
     {
       "framework": "AMBER (loop)",
       "model": "random_walk",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0082,
-      "time_per_step": 0.000165
+      "execution_time": 0.0319,
+      "time_per_step": 0.000638
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "random_walk",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0028,
-      "time_per_step": 5.6e-05
+      "execution_time": 0.0024,
+      "time_per_step": 4.8e-05
     },
     {
       "framework": "AgentPy",
       "model": "random_walk",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0103,
-      "time_per_step": 0.000207
+      "execution_time": 0.0141,
+      "time_per_step": 0.000281
     },
     {
       "framework": "Mesa",
       "model": "random_walk",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0094,
-      "time_per_step": 0.000189
+      "execution_time": 0.0132,
+      "time_per_step": 0.000265
     },
     {
       "framework": "SimPy",
       "model": "random_walk",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0196,
-      "time_per_step": 0.000392
+      "execution_time": 0.0226,
+      "time_per_step": 0.000452
     },
     {
       "framework": "Melodie",
       "model": "random_walk",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.096,
-      "time_per_step": 0.00192
+      "execution_time": 0.1008,
+      "time_per_step": 0.002017
     },
     {
       "framework": "AMBER (loop)",
       "model": "random_walk",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.0165,
-      "time_per_step": 0.000329
+      "execution_time": 0.0637,
+      "time_per_step": 0.001273
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "random_walk",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.0025,
-      "time_per_step": 4.9e-05
+      "execution_time": 0.0026,
+      "time_per_step": 5.2e-05
     },
     {
       "framework": "AgentPy",
       "model": "random_walk",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.0198,
-      "time_per_step": 0.000396
+      "execution_time": 0.0276,
+      "time_per_step": 0.000551
     },
     {
       "framework": "Mesa",
       "model": "random_walk",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.0179,
-      "time_per_step": 0.000359
+      "execution_time": 0.0257,
+      "time_per_step": 0.000514
     },
     {
       "framework": "SimPy",
       "model": "random_walk",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.04,
-      "time_per_step": 0.0008
+      "execution_time": 0.0468,
+      "time_per_step": 0.000936
     },
     {
       "framework": "Melodie",
       "model": "random_walk",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.1904,
-      "time_per_step": 0.003809
+      "execution_time": 0.2005,
+      "time_per_step": 0.00401
     },
     {
       "framework": "AMBER (loop)",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.0786,
-      "time_per_step": 0.001572
+      "execution_time": 0.319,
+      "time_per_step": 0.006379
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.0049,
-      "time_per_step": 9.7e-05
+      "execution_time": 0.0059,
+      "time_per_step": 0.000117
     },
     {
       "framework": "AgentPy",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.0979,
-      "time_per_step": 0.001959
+      "execution_time": 0.1365,
+      "time_per_step": 0.002731
     },
     {
       "framework": "Mesa",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.0867,
-      "time_per_step": 0.001735
+      "execution_time": 0.1266,
+      "time_per_step": 0.002531
     },
     {
       "framework": "SimPy",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.2089,
-      "time_per_step": 0.004177
+      "execution_time": 0.2426,
+      "time_per_step": 0.004853
     },
     {
       "framework": "Melodie",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.9626,
-      "time_per_step": 0.019252
+      "execution_time": 1.0209,
+      "time_per_step": 0.020418
     },
     {
       "framework": "AMBER (loop)",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.1912,
-      "time_per_step": 0.003824
+      "execution_time": 0.185,
+      "time_per_step": 0.003701
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0918,
-      "time_per_step": 0.001836
+      "execution_time": 0.0883,
+      "time_per_step": 0.001766
     },
     {
       "framework": "AgentPy",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.1154,
-      "time_per_step": 0.002308
+      "execution_time": 0.1879,
+      "time_per_step": 0.003757
     },
     {
       "framework": "Mesa",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.1884,
-      "time_per_step": 0.003768
+      "execution_time": 0.2436,
+      "time_per_step": 0.004872
     },
     {
       "framework": "SimPy",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.1005,
-      "time_per_step": 0.002009
+      "execution_time": 0.1202,
+      "time_per_step": 0.002403
     },
     {
       "framework": "Melodie",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.3743,
-      "time_per_step": 0.007486
+      "execution_time": 0.5563,
+      "time_per_step": 0.011126
     },
     {
       "framework": "AMBER (loop)",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.857,
-      "time_per_step": 0.01714
+      "execution_time": 0.8245,
+      "time_per_step": 0.01649
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.1411,
-      "time_per_step": 0.002821
+      "execution_time": 0.1116,
+      "time_per_step": 0.002232
     },
     {
       "framework": "AgentPy",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.8085,
-      "time_per_step": 0.016171
+      "execution_time": 0.8965,
+      "time_per_step": 0.01793
     },
     {
       "framework": "Mesa",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.7281,
-      "time_per_step": 0.014561
+      "execution_time": 1.1408,
+      "time_per_step": 0.022816
     },
     {
       "framework": "SimPy",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.5284,
-      "time_per_step": 0.010569
+      "execution_time": 0.4243,
+      "time_per_step": 0.008486
     },
     {
       "framework": "Melodie",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 1.1678,
-      "time_per_step": 0.023357
+      "execution_time": 1.8664,
+      "time_per_step": 0.037327
     },
     {
       "framework": "AMBER (loop)",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 12.2332,
-      "time_per_step": 0.244665
+      "execution_time": 9.3625,
+      "time_per_step": 0.187249
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.6085,
-      "time_per_step": 0.012169
+      "execution_time": 0.551,
+      "time_per_step": 0.011021
     },
     {
       "framework": "AgentPy",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 8.7842,
-      "time_per_step": 0.175684
+      "execution_time": 11.0512,
+      "time_per_step": 0.221024
     },
     {
       "framework": "Mesa",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 9.1838,
-      "time_per_step": 0.183676
+      "execution_time": 17.0737,
+      "time_per_step": 0.341474
     },
     {
       "framework": "SimPy",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 6.75,
-      "time_per_step": 0.135001
+      "execution_time": 5.1264,
+      "time_per_step": 0.102529
     },
     {
       "framework": "Melodie",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 11.2073,
-      "time_per_step": 0.224145
+      "execution_time": 16.2144,
+      "time_per_step": 0.324288
     },
     {
       "framework": "Agents.jl",
@@ -508,8 +508,8 @@
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.892,
-      "time_per_step": 0.01784
+      "execution_time": 0.809,
+      "time_per_step": 0.01618
     }
   ]
 }

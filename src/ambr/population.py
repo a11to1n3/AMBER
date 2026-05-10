@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING, Type
+import warnings
 import polars as pl
 import numpy as np
 
@@ -71,7 +72,16 @@ class Population:
                         # Try casting new_df to self.data's type
                         new_df = new_df.with_columns(pl.col(col).cast(left_type))
                     except (pl.exceptions.ComputeError, pl.exceptions.InvalidOperationError, TypeError, ValueError):
-                        # Last resort: cast both to String
+                        # Last resort: cast both to String. This is
+                        # destructive — log a warning so the user can
+                        # pre-cast their input columns explicitly.
+                        warnings.warn(
+                            f"Column {col!r} has mismatched types "
+                            f"({left_type} vs {right_type}); falling back to "
+                            f"String. Pre-cast your columns to avoid this.",
+                            UserWarning,
+                            stacklevel=2,
+                        )
                         self.data = self.data.with_columns(pl.col(col).cast(pl.Utf8))
                         new_df = new_df.with_columns(pl.col(col).cast(pl.Utf8))
         

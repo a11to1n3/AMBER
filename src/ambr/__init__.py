@@ -56,7 +56,7 @@ from .performance import (
     HAS_NUMBA,
 )
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'
 __url__ = 'https://github.com/a11to1n3/AMBER'
@@ -94,12 +94,4 @@ __all__ = [
     'HAS_NUMBA',
 ]
 
-# Clean up namespace - remove module references
-import sys
-_current_module = sys.modules[__name__]
-for _name in list(globals().keys()):
-    if _name.startswith('_'):
-        continue
-    if _name not in __all__ and _name not in ['__version__', '__author__', '__email__', '__url__']:
-        delattr(_current_module, _name)
-del _current_module, _name 
+ 
