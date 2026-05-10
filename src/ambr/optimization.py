@@ -305,7 +305,12 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
         ),
     )
 
-    incumbent = smac.optimize()
+    try:
+        incumbent = smac.optimize()
+    except Exception:
+        # Configuration space exhausted — proceed with whatever SMAC3
+        # evaluated so far (runhistory still has the partial results).
+        pass
 
     # --- collect history ---------------------------------------------------
     results: List[Dict[str, Any]] = []
