@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="ambr",
-    version="0.2.0",
+    version="0.3.0",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
@@ -48,7 +48,7 @@ setup(
             "notebook>=6.0.0",
         ],
     },
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     author="a11to1n3",
     author_email="citation.needed@example.com",
     description="Agent-based Modeling with Blazingly Efficient Records",
@@ -60,7 +60,6 @@ setup(
         "Intended Audience :: Science/Research",
         "License :: OSI Approved :: BSD License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",

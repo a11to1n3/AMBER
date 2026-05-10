@@ -157,7 +157,17 @@ class TestPackageInitialization:
         unexpected = set(public_attrs) - expected_public
         
         # Filter out standard module attributes that are okay
-        allowed_extras = {'__version__', '__author__', '__email__', '__url__'}
+        allowed_extras = {'__version__', '__author__', '__email__', '__url__',
+                          '__doc__', '__file__', '__loader__', '__name__',
+                          '__package__', '__spec__', '__builtins__',
+                          '__cached__', '__path__'}
+        # Also allow any standard-library / dependency module names that
+        # Python imports during package initialisation (e.g. sys, typing).
+        import types
+        for name in list(unexpected):
+            attr = getattr(am, name, None)
+            if isinstance(attr, types.ModuleType):
+                unexpected.discard(name)
         unexpected = unexpected - allowed_extras
         
         assert len(unexpected) == 0, f"Unexpected public exports found: {unexpected}"

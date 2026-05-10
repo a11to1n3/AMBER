@@ -53,7 +53,7 @@ class TestParameterSpace:
             assert 'fixed_param' in sample
             
             assert sample['list_param'] in [0.1, 0.2, 0.3]
-            assert 5 <= sample['range_param'] <= 15
+            assert 5 <= sample['range_param'] < 15  # exclusive end
             assert sample['fixed_param'] == 'constant'
     
     def test_parameter_space_sample_deterministic(self):
@@ -104,7 +104,7 @@ class TestParameterSpace:
     def test_parameter_space_with_intrange_grid(self):
         """Test grid sampling with IntRange parameters."""
         parameters = {
-            'range_param': am.IntRange(10, 12),  # Will sample 10, 11, 12
+            'range_param': am.IntRange(10, 13),  # exclusive end: 10, 11, 12
             'list_param': ['a', 'b']
         }
         
