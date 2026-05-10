@@ -94,6 +94,9 @@ class _BaseView:
             return df[name]
         # Align the returned Series with the view's id order so that
         # duplicate-id scatter views still return a length-matched column.
+        # When name is "id", skip the join to avoid duplicate column error.
+        if name == "id":
+            return ids
         ids_df = pl.DataFrame([ids.rename("id")])
         return ids_df.join(df.select("id", name), on="id", how="left")[name]
 
