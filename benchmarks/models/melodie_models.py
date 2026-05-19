@@ -70,9 +70,8 @@ class WalkModel(Melodie.Model):
 
     def step(self):
         for agent in self.agent_list:
-            theta = np.random.uniform(0, 2*np.pi)
-            agent.x += agent.speed * np.cos(theta)
-            agent.y += agent.speed * np.sin(theta)
+            agent.x += np.random.uniform(-agent.speed, agent.speed)
+            agent.y += np.random.uniform(-agent.speed, agent.speed)
             # Clip
             agent.x = np.clip(agent.x, 0, 100)
             agent.y = np.clip(agent.y, 0, 100)
@@ -108,9 +107,8 @@ class SIRModel(Melodie.Model):
     def step(self):
         # Movement
         for agent in self.agent_list:
-            theta = np.random.uniform(0, 2*np.pi)
-            agent.x = np.clip(agent.x + 2.0 * np.cos(theta), 0, 100)
-            agent.y = np.clip(agent.y + 2.0 * np.sin(theta), 0, 100)
+            agent.x = np.clip(agent.x + np.random.uniform(-2.0, 2.0), 0, 100)
+            agent.y = np.clip(agent.y + np.random.uniform(-2.0, 2.0), 0, 100)
             
         # Infection (O(N^2) naive)
         infected = [a for a in self.agent_list if a.status == 1]

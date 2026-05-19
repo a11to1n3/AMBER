@@ -18,7 +18,7 @@ runs per configuration.
 
 Outputs (in ``benchmarks/results/``):
 
-  * ``benchmark_results_all.json``   — raw per-run timings
+  * ``benchmark_results_all.json``   — averaged per-configuration timings
   * ``summary_table_all.md``         — side-by-side markdown table
   * ``scaling_chart_all.png``        — log-log scaling plot per model
 
@@ -173,6 +173,7 @@ def _bench_simpy(
         "sir_epidemic": simpy_models.run_sir_benchmark,
     }
     fn = fn_map[model_name]
+    cfg = dict(MODEL_CONFIGS[model_name])
 
     def _run():
         # simpy's sir helper prints "Final Infected: .../..." — silence it.
@@ -180,7 +181,7 @@ def _bench_simpy(
         import io
 
         with contextlib.redirect_stdout(io.StringIO()):
-            fn(n=n, steps=steps)
+            fn(n=n, steps=steps, **cfg)
 
     _run()
     return _time(_run, runs)
@@ -254,13 +255,8 @@ def _bench_melodie(
 _AGENTSJL_LINE = re.compile(r"^\s*(\d+)\s+agents:\s+([\d.e+-]+)s\s*$")
 
 
-def _run_agentsjl(agent_counts: List[int], steps: int) -> Dict[Tuple[str, int], float]:
-    """Run the Agents.jl standalone script once and parse all timings.
-
-    Returns a dict keyed by (model, n) → seconds. Because Julia bears
-    JIT compilation on the first call per benchmark function, we run the
-    script twice and keep the second run's numbers.
-    """
+def _run_agentsjl(agent_counts: List[int], steps: int, runs: int) -> Dict[Tuple[str, int], float]:
+    """Run the Agents.jl standalone script once and parse averaged timings."""
     results: Dict[Tuple[str, int], float] = {}
     jl_path = MODELS_DIR / "agentsjl_models.jl"
     if not jl_path.exists():
@@ -277,11 +273,8 @@ def _run_agentsjl(agent_counts: List[int], steps: int) -> Dict[Tuple[str, int], 
     except (FileNotFoundError, subprocess.CalledProcessError):
         return results
 
-    # The Julia script accepts ``--agents`` and ``--steps`` so we can hold
-    # it to the exact same configuration as the Python frameworks. Run it
-    # twice: the first run warms Julia's JIT, the second reflects
-    # steady-state performance (which is what we compare against the
-    # Python frameworks' warm-up-then-measure protocol).
+    # The Julia script accepts ``--agents``, ``--steps``, and ``--runs`` so it
+    # uses the same warm-up and trimmed-mean protocol as Python frameworks.
     agents_arg = ",".join(str(n) for n in agent_counts)
     def _run_once() -> str:
         proc = subprocess.run(
@@ -292,6 +285,8 @@ def _run_agentsjl(agent_counts: List[int], steps: int) -> Dict[Tuple[str, int], 
                 agents_arg,
                 "--steps",
                 str(steps),
+                "--runs",
+                str(runs),
             ],
             cwd=str(MODELS_DIR),
             capture_output=True,
@@ -359,6 +354,7 @@ FRAMEWORK_COLORS = {
 def _write_json(
     results: Dict[Tuple[str, str, int], Optional[float]],
     steps: int,
+    runs: int,
     agent_counts: List[int],
     path: Path,
 ) -> None:
@@ -372,6 +368,8 @@ def _write_json(
                 "model": model,
                 "n_agents": n,
                 "n_steps": steps,
+                "runs": runs,
+                "timing": "mean with slowest sample trimmed when runs >= 3",
                 "execution_time": round(t, 4),
                 "time_per_step": round(t / steps, 6),
             }
@@ -382,6 +380,8 @@ def _write_json(
                 "generated_at": datetime.now().isoformat(),
                 "agent_counts": agent_counts,
                 "n_steps": steps,
+                "runs": runs,
+                "timing": "mean wall-clock seconds; slowest sample trimmed when runs >= 3",
                 "results": flat,
             },
             indent=2,
@@ -399,7 +399,10 @@ def _write_markdown(
             return "—"
         if val >= 1:
             return f"{val:.2f}s"
-        return f"{val * 1000:.0f}ms"
+        ms = val * 1000
+        if ms < 10:
+            return f"{ms:.1f}ms"
+        return f"{ms:.0f}ms"
 
     lines: List[str] = []
     lines.append("# Benchmark results — all frameworks")
@@ -407,7 +410,7 @@ def _write_markdown(
     lines.append(
         f"_Generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} on "
         f"`python {sys.version_info.major}.{sys.version_info.minor}`. "
-        f"Lower is better. Times are wall-clock, averaged over multiple runs._"
+        f"Lower is better. Times are wall-clock, averaged per configuration._"
     )
     lines.append("")
 
@@ -447,8 +450,8 @@ def _write_markdown(
                 if vec_t and other_t:
                     speedups.append(other_t / vec_t)
             if speedups:
-                geo = (sum(speedups) / len(speedups))  # arithmetic mean on ratios
-                cells.append(f"{geo:.1f}×")
+                mean_ratio = sum(speedups) / len(speedups)
+                cells.append(f"{mean_ratio:.1f}×")
             else:
                 cells.append("—")
         lines.append("| " + " | ".join(cells) + " |")
@@ -581,7 +584,7 @@ def main() -> None:
     # Agents.jl -------------------------------------------------------------
     if "Agents.jl" in selected_frameworks:
         print("[Agents.jl] running julia subprocess…")
-        jl_results = _run_agentsjl(agent_counts, steps)
+        jl_results = _run_agentsjl(agent_counts, steps, runs)
         for (model, n), sec in jl_results.items():
             results[("Agents.jl", model, n)] = sec
         if jl_results:
@@ -596,7 +599,7 @@ def main() -> None:
     md_path = RESULTS_DIR / "summary_table_all.md"
     chart_path = RESULTS_DIR / "scaling_chart_all.png"
 
-    _write_json(results, steps, agent_counts, json_path)
+    _write_json(results, steps, runs, agent_counts, json_path)
     print(f"  wrote {json_path.relative_to(REPO_ROOT)}")
     _write_markdown(results, agent_counts, md_path)
     print(f"  wrote {md_path.relative_to(REPO_ROOT)}")

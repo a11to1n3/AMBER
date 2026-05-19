@@ -6,7 +6,6 @@ Compatible with Mesa 3.x (AgentSet-based, no schedulers).
 """
 
 import mesa
-import random
 
 
 # =============================================================================
@@ -24,7 +23,7 @@ class MesaWealthAgent(mesa.Agent):
         if self.wealth > 0:
             # Give 1 unit to a random other agent
             all_agents = list(self.model.agents)
-            other = random.choice(all_agents)
+            other = self.model.random.choice(all_agents)
             if other != self:
                 self.wealth -= 1
                 other.wealth += 1
@@ -35,8 +34,8 @@ class MesaWealthTransfer(mesa.Model):
     Boltzmann Wealth Distribution Model (Mesa Implementation).
     """
     
-    def __init__(self, n=100, initial_wealth=1, steps=100, **kwargs):
-        super().__init__()
+    def __init__(self, n=100, initial_wealth=1, steps=100, seed=None, rng=None, **kwargs):
+        super().__init__(seed=seed, rng=rng)
         self.n = n
         self.max_steps = steps
         self._initial_wealth = initial_wealth
@@ -89,15 +88,15 @@ class MesaSIRAgent(mesa.Agent):
         super().__init__(model)
         self.status = self.STATUS_I if is_infected else self.STATUS_S
         self.infection_time = 0
-        self.x = random.uniform(0, world_size)
-        self.y = random.uniform(0, world_size)
+        self.x = self.model.random.uniform(0, world_size)
+        self.y = self.model.random.uniform(0, world_size)
         self.world_size = world_size
     
     def move(self):
         speed = self.model.movement_speed
         
-        self.x += random.uniform(-speed, speed)
-        self.y += random.uniform(-speed, speed)
+        self.x += self.model.random.uniform(-speed, speed)
+        self.y += self.model.random.uniform(-speed, speed)
         
         self.x = max(0, min(self.world_size, self.x))
         self.y = max(0, min(self.world_size, self.y))
@@ -115,7 +114,7 @@ class MesaSIRAgent(mesa.Agent):
             
             dist_sq = (self.x - other.x)**2 + (self.y - other.y)**2
             if dist_sq <= radius**2:
-                if random.random() < transmission:
+                if self.model.random.random() < transmission:
                     other.status = self.STATUS_I
                     other.infection_time = 0
     
@@ -138,8 +137,9 @@ class MesaSIRModel(mesa.Model):
     
     def __init__(self, n=100, initial_infected=5, world_size=100,
                  movement_speed=2.0, infection_radius=5.0, 
-                 transmission_rate=0.1, recovery_time=14, steps=100, **kwargs):
-        super().__init__()
+                 transmission_rate=0.1, recovery_time=14, steps=100,
+                 seed=None, rng=None, **kwargs):
+        super().__init__(seed=seed, rng=rng)
         self.n = n
         self.max_steps = steps
         self.movement_speed = movement_speed
@@ -179,15 +179,15 @@ class MesaWalkAgent(mesa.Agent):
     
     def __init__(self, model, world_size=100):
         super().__init__(model)
-        self.x = random.uniform(0, world_size)
-        self.y = random.uniform(0, world_size)
+        self.x = self.model.random.uniform(0, world_size)
+        self.y = self.model.random.uniform(0, world_size)
         self.world_size = world_size
     
     def step(self):
         speed = self.model.speed
         
-        self.x += random.uniform(-speed, speed)
-        self.y += random.uniform(-speed, speed)
+        self.x += self.model.random.uniform(-speed, speed)
+        self.y += self.model.random.uniform(-speed, speed)
         
         self.x = max(0, min(self.world_size, self.x))
         self.y = max(0, min(self.world_size, self.y))
@@ -198,8 +198,9 @@ class MesaRandomWalk(mesa.Model):
     Random Walk Model (Mesa Implementation).
     """
     
-    def __init__(self, n=100, world_size=100, speed=1.0, steps=100, **kwargs):
-        super().__init__()
+    def __init__(self, n=100, world_size=100, speed=1.0, steps=100,
+                 seed=None, rng=None, **kwargs):
+        super().__init__(seed=seed, rng=rng)
         self.n = n
         self.max_steps = steps
         self.speed = speed

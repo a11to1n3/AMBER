@@ -25,20 +25,19 @@ Reproducer: [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.p
 
 | Framework | Language | Arch. | Wealth Transfer | Random Walk | SIR Epidemic |
 |---|---|---|---:|---:|---:|
-| **AMBER (vectorized)** | Python | Columnar (Polars) | 20 ms 🥈 | **6 ms** 🥇 | **551 ms** 🥇 |
-| Agents.jl | Julia | Object | **7 ms** 🥇 | 7 ms 🥈 | 809 ms 🥈 |
-| AMBER (loop) | Python | Object | 173 ms | 319 ms | 9.36 s |
-| Mesa | Python | Object | 24.40 s | 127 ms | 17.07 s |
-| AgentPy | Python | Object | 262 ms | 137 ms | 11.05 s |
-| SimPy | Python | Event loop | 215 ms | 243 ms | 5.13 s |
-| Melodie | Python | Hybrid | 178 ms | 1.02 s | 16.21 s |
+| **AMBER (vectorized)** | Python | Columnar (Polars) | 21 ms 🥈 | 6.2 ms 🥈 | **687 ms** 🥇 |
+| Agents.jl | Julia | Object | **7.2 ms** 🥇 | **1.6 ms** 🥇 | 808 ms 🥈 |
+| AMBER (loop) | Python | Object | 171 ms | 352 ms | 10.57 s |
+| Mesa | Python | Object | 23.92 s | 141 ms | 17.97 s |
+| AgentPy | Python | Object | 272 ms | 150 ms | 11.99 s |
+| SimPy | Python | Event loop | 218 ms | 261 ms | 5.51 s |
+| Melodie | Python | Hybrid | 188 ms | 1.10 s | 21.26 s |
 
-**AMBER (vectorized) wins two of three models outright** (random walk
-and SIR) and comes second on wealth transfer, trailing only
-JIT-compiled Julia. **It is the fastest Python-hosted framework on
-every model at 5000 agents** and within 3× of Agents.jl on the one
-model Julia wins — while every other Python-hosted framework is 5× to
-1200× slower on the same workload.
+**AMBER (vectorized) is the fastest Python-hosted framework on every
+model at 5000 agents**. Against Agents.jl, it wins the SIR benchmark
+and trails the Julia implementation on wealth transfer and random walk,
+where per-step work is small enough that Julia's compiled dispatch has
+less fixed overhead.
 
 ![Seven-framework scaling chart](benchmarks/results/scaling_chart_all.png)
 

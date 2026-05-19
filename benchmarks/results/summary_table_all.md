@@ -1,51 +1,51 @@
 # Benchmark results — all frameworks
 
-_Generated 2026-05-09 23:02:33 on `python 3.12`. Lower is better. Times are wall-clock, averaged over multiple runs._
+_Generated 2026-05-19 20:19:14 on `python 3.12`. Lower is better. Times are wall-clock, averaged per configuration._
 
 ## Wealth Transfer
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
-| **AMBER (vectorized)** | 4ms | 6ms | 20ms |
-| AMBER (loop) | 16ms | 33ms | 173ms |
-| Agents.jl | 1ms | 1ms | 7ms |
-| SimPy | 18ms | 37ms | 215ms |
-| Melodie | 18ms | 35ms | 178ms |
-| AgentPy | 26ms | 52ms | 262ms |
-| Mesa | 259ms | 1.00s | 24.40s |
+| **AMBER (vectorized)** | 4.4ms | 6.4ms | 21ms |
+| AMBER (loop) | 16ms | 33ms | 171ms |
+| Agents.jl | 0.6ms | 1.4ms | 7.2ms |
+| SimPy | 18ms | 38ms | 218ms |
+| Melodie | 19ms | 36ms | 188ms |
+| AgentPy | 27ms | 54ms | 272ms |
+| Mesa | 261ms | 996ms | 23.92s |
 
 ## Random Walk
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
-| **AMBER (vectorized)** | 2ms | 3ms | 6ms |
-| AMBER (loop) | 32ms | 64ms | 319ms |
-| Agents.jl | 1ms | 1ms | 7ms |
-| SimPy | 23ms | 47ms | 243ms |
-| Melodie | 101ms | 200ms | 1.02s |
-| AgentPy | 14ms | 28ms | 137ms |
-| Mesa | 13ms | 26ms | 127ms |
+| **AMBER (vectorized)** | 2.7ms | 2.7ms | 6.2ms |
+| AMBER (loop) | 36ms | 69ms | 352ms |
+| Agents.jl | 0.1ms | 0.3ms | 1.6ms |
+| SimPy | 25ms | 48ms | 261ms |
+| Melodie | 110ms | 216ms | 1.10s |
+| AgentPy | 16ms | 31ms | 150ms |
+| Mesa | 16ms | 28ms | 141ms |
 
 ## Sir Epidemic
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
-| **AMBER (vectorized)** | 88ms | 112ms | 551ms |
-| AMBER (loop) | 185ms | 824ms | 9.36s |
-| Agents.jl | 5ms | 40ms | 809ms |
-| SimPy | 120ms | 424ms | 5.13s |
-| Melodie | 556ms | 1.87s | 16.21s |
-| AgentPy | 188ms | 897ms | 11.05s |
-| Mesa | 244ms | 1.14s | 17.07s |
+| **AMBER (vectorized)** | 95ms | 119ms | 687ms |
+| AMBER (loop) | 174ms | 817ms | 10.57s |
+| Agents.jl | 4.2ms | 36ms | 808ms |
+| SimPy | 119ms | 497ms | 5.51s |
+| Melodie | 472ms | 2.13s | 21.26s |
+| AgentPy | 163ms | 973ms | 11.99s |
+| Mesa | 250ms | 1.15s | 17.97s |
 
 ## Speedup of AMBER (vectorized) vs other frameworks
 
 | Framework | wealth_transfer | random_walk | sir_epidemic |
 |---|---|---|---|
-| AMBER (loop) | 5.9× | 30.7× | 8.8× |
-| Agents.jl | 0.2× | 0.7× | 0.6× |
-| SimPy | 7.0× | 22.9× | 4.8× |
-| Melodie | 6.2× | 97.6× | 17.5× |
-| AgentPy | 9.2× | 13.2× | 10.1× |
-| Mesa | 480.1× | 12.3× | 14.7× |
+| AMBER (loop) | 5.6× | 31.9× | 8.0× |
+| Agents.jl | 0.2× | 0.1× | 0.5× |
+| SimPy | 6.8× | 23.1× | 4.5× |
+| Melodie | 6.3× | 99.6× | 17.9× |
+| AgentPy | 9.1× | 14.0× | 9.1× |
+| Mesa | 444.4× | 13.0× | 12.8× |
 
