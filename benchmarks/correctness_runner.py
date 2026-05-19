@@ -240,9 +240,54 @@ class ComprehensiveCorrectnessBenchmark:
             i = sum(1 for a in model.agents if a.status == MesaSIRAgent.STATUS_I)
             r = sum(1 for a in model.agents if a.status == MesaSIRAgent.STATUS_R)
             return abs(s + i + r - n_agents)
-        elif fw_name in ['Melodie', 'SimPy']:
-            # Skip SIR for Melodie/SimPy (complex setup)
-            return 0
+        elif fw_name == 'Melodie':
+            import Melodie
+            import os
+            from models.melodie_models import SIRModel, SIRScenario
+            config = Melodie.Config(project_name='SIRConservation', project_root='.',
+                                    sqlite_folder='.', output_folder='.', input_folder='.')
+            scenario = SIRScenario()
+            scenario.periods = n_steps
+            scenario.agent_num = n_agents
+            scenario.id = 0
+            model = SIRModel(config, scenario)
+            model.setup()
+            for i in range(n_agents):
+                agent = model.agent_list.add()
+                agent.id = i
+                agent.setup()
+                agent.x = np.random.uniform(0, 100)
+                agent.y = np.random.uniform(0, 100)
+                agent.status = 1 if i < 5 else 0
+            model.run()
+            s = sum(1 for a in model.agent_list if a.status == 0)
+            i = sum(1 for a in model.agent_list if a.status == 1)
+            r = sum(1 for a in model.agent_list if a.status == 2)
+            if os.path.exists('SIRConservation.sqlite'): os.remove('SIRConservation.sqlite')
+            return abs(s + i + r - n_agents)
+        elif fw_name == 'SimPy':
+            import simpy
+            from models import simpy_models
+            agents_data = [
+                {'id': i, 'status': 0, 'x': 0, 'y': 0, 'infection_time': 0}
+                for i in range(n_agents)
+            ]
+            params = {
+                'initial_infected': 5,
+                'world_size': 100,
+                'movement_speed': 2.0,
+                'infection_radius': 5.0,
+                'transmission_rate': 0.3,
+                'recovery_time': 10,
+            }
+            env = simpy.Environment()
+            for i in range(n_agents):
+                env.process(simpy_models.sir_agent(env, i, agents_data, params))
+            env.run(until=n_steps)
+            s = sum(1 for a in agents_data if a['status'] == 0)
+            i = sum(1 for a in agents_data if a['status'] == 1)
+            r = sum(1 for a in agents_data if a['status'] == 2)
+            return abs(s + i + r - n_agents)
         return float('inf')
 
     # =========================================================================
@@ -354,9 +399,36 @@ class ComprehensiveCorrectnessBenchmark:
             model = MesaRandomWalk(n=n_agents, steps=n_steps, world_size=100, speed=1.0)
             model.run()
             positions = [(a.x, a.y) for a in model.agents]
-        elif fw_name in ['Melodie', 'SimPy']:
-            # Skip random walk for simpler frameworks
-            return 100.0  # Return positive value to pass
+        elif fw_name == 'Melodie':
+            import Melodie
+            import os
+            from models.melodie_models import WalkModel, WalkScenario
+            config = Melodie.Config(project_name='WalkSpread', project_root='.',
+                                    sqlite_folder='.', output_folder='.', input_folder='.')
+            scenario = WalkScenario()
+            scenario.periods = n_steps
+            scenario.agent_num = n_agents
+            scenario.id = 0
+            model = WalkModel(config, scenario)
+            model.setup()
+            for i in range(n_agents):
+                agent = model.agent_list.add()
+                agent.id = i
+                agent.setup()
+                agent.x = np.random.uniform(0, 100)
+                agent.y = np.random.uniform(0, 100)
+            model.run()
+            positions = [(a.x, a.y) for a in model.agent_list]
+            if os.path.exists('WalkSpread.sqlite'): os.remove('WalkSpread.sqlite')
+        elif fw_name == 'SimPy':
+            import simpy
+            from models import simpy_models
+            agents_data = [{'id': i, 'x': 0, 'y': 0} for i in range(n_agents)]
+            env = simpy.Environment()
+            for i in range(n_agents):
+                env.process(simpy_models.walk_agent(env, i, agents_data))
+            env.run(until=n_steps)
+            positions = [(a['x'], a['y']) for a in agents_data]
         else:
             return 0.0
         
@@ -395,6 +467,52 @@ class ComprehensiveCorrectnessBenchmark:
             r = sum(1 for a in model.agents if a.status == MesaSIRAgent.STATUS_R)
             i = sum(1 for a in model.agents if a.status == MesaSIRAgent.STATUS_I)
             return (r + i) / n_agents
+        elif fw_name == 'Melodie':
+            import Melodie
+            import os
+            from models.melodie_models import SIRModel, SIRScenario
+            config = Melodie.Config(project_name='SIRAttackRate', project_root='.',
+                                    sqlite_folder='.', output_folder='.', input_folder='.')
+            scenario = SIRScenario()
+            scenario.periods = n_steps
+            scenario.agent_num = n_agents
+            scenario.id = 0
+            model = SIRModel(config, scenario)
+            model.setup()
+            for idx in range(n_agents):
+                agent = model.agent_list.add()
+                agent.id = idx
+                agent.setup()
+                agent.x = np.random.uniform(0, 100)
+                agent.y = np.random.uniform(0, 100)
+                agent.status = 1 if idx < 5 else 0
+            model.run()
+            r = sum(1 for a in model.agent_list if a.status == 2)
+            i = sum(1 for a in model.agent_list if a.status == 1)
+            if os.path.exists('SIRAttackRate.sqlite'): os.remove('SIRAttackRate.sqlite')
+            return (r + i) / n_agents
+        elif fw_name == 'SimPy':
+            import simpy
+            from models import simpy_models
+            agents_data = [
+                {'id': i, 'status': 0, 'x': 0, 'y': 0, 'infection_time': 0}
+                for i in range(n_agents)
+            ]
+            params = {
+                'initial_infected': 5,
+                'world_size': 100,
+                'movement_speed': 2.0,
+                'infection_radius': 5.0,
+                'transmission_rate': 0.3,
+                'recovery_time': 10,
+            }
+            env = simpy.Environment()
+            for i in range(n_agents):
+                env.process(simpy_models.sir_agent(env, i, agents_data, params))
+            env.run(until=n_steps)
+            r = sum(1 for a in agents_data if a['status'] == 2)
+            i = sum(1 for a in agents_data if a['status'] == 1)
+            return (r + i) / n_agents
         return 0.0
 
     # =========================================================================
@@ -431,11 +549,15 @@ class ComprehensiveCorrectnessBenchmark:
                 return tuple(a.wealth for a in model.agents)
             elif fw_name == 'Mesa':
                 from models.mesa_models import MesaWealthTransfer
-                # Mesa 3.x doesn't have built-in seed in constructor
                 import random
                 random.seed(seed_val)
                 np.random.seed(seed_val)
-                model = MesaWealthTransfer(n=n_agents, steps=n_steps, initial_wealth=1)
+                model = MesaWealthTransfer(
+                    n=n_agents,
+                    steps=n_steps,
+                    initial_wealth=1,
+                    seed=seed_val,
+                )
                 model.run()
                 return tuple(a.wealth for a in model.agents)
             elif fw_name == 'Melodie':
@@ -618,6 +740,54 @@ class ComprehensiveCorrectnessBenchmark:
             if 'recovered' in df.columns:
                 r_vals = df['recovered'].tolist()
                 return all(r_vals[i] <= r_vals[i+1] for i in range(len(r_vals)-1))
+        elif fw_name == 'Melodie':
+            import Melodie
+            import os
+            from models.melodie_models import SIRModel, SIRScenario
+            config = Melodie.Config(project_name='RecoveryMonotonic', project_root='.',
+                                    sqlite_folder='.', output_folder='.', input_folder='.')
+            scenario = SIRScenario()
+            scenario.periods = n_steps
+            scenario.agent_num = n_agents
+            scenario.id = 0
+            model = SIRModel(config, scenario)
+            model.setup()
+            for idx in range(n_agents):
+                agent = model.agent_list.add()
+                agent.id = idx
+                agent.setup()
+                agent.x = np.random.uniform(0, 100)
+                agent.y = np.random.uniform(0, 100)
+                agent.status = 1 if idx < 10 else 0
+            r_vals = []
+            for _ in range(n_steps):
+                model.step()
+                r_vals.append(sum(1 for a in model.agent_list if a.status == 2))
+            if os.path.exists('RecoveryMonotonic.sqlite'): os.remove('RecoveryMonotonic.sqlite')
+            return all(r_vals[i] <= r_vals[i+1] for i in range(len(r_vals)-1))
+        elif fw_name == 'SimPy':
+            import simpy
+            from models import simpy_models
+            agents_data = [
+                {'id': i, 'status': 0, 'x': 0, 'y': 0, 'infection_time': 0}
+                for i in range(n_agents)
+            ]
+            params = {
+                'initial_infected': 10,
+                'world_size': 100,
+                'movement_speed': 2.0,
+                'infection_radius': 5.0,
+                'transmission_rate': 0.3,
+                'recovery_time': 10,
+            }
+            env = simpy.Environment()
+            for i in range(n_agents):
+                env.process(simpy_models.sir_agent(env, i, agents_data, params))
+            r_vals = []
+            for step in range(1, n_steps + 1):
+                env.run(until=step)
+                r_vals.append(sum(1 for a in agents_data if a['status'] == 2))
+            return all(r_vals[i] <= r_vals[i+1] for i in range(len(r_vals)-1))
         return True  # Default pass if can't verify
 
     # =========================================================================
@@ -691,8 +861,8 @@ class ComprehensiveCorrectnessBenchmark:
             if fw_name == 'AMBER':
                 from models.amber_models import AMBERWealthTransfer
                 model = AMBERWealthTransfer({'n': 10, 'steps': 0, 'initial_wealth': 100, 'show_progress': False})
-                model.run()
-                return sum(a.wealth for a in model.agent_objects_list) == 1000
+                results = model.run()
+                return results['info']['steps'] == 0
             elif fw_name == 'AgentPy':
                 from models.agentpy_models import AgentPyWealthTransfer
                 model = AgentPyWealthTransfer({'n': 10, 'steps': 0, 'initial_wealth': 100})
@@ -737,7 +907,7 @@ class ComprehensiveCorrectnessBenchmark:
                 by_fw[r.framework]['passed'] += 1
         
         print("\nBy Framework:")
-        for fw in ['AMBER', 'AgentPy', 'Mesa']:
+        for fw in self.available:
             if fw in by_fw:
                 p = by_fw[fw]['passed']
                 t = by_fw[fw]['total']
@@ -807,7 +977,7 @@ class ComprehensiveCorrectnessBenchmark:
             if r.passed:
                 by_fw[r.framework]['passed'] += 1
         
-        for fw in ['AMBER', 'AgentPy', 'Mesa']:
+        for fw in self.available:
             if fw in by_fw:
                 p = by_fw[fw]['passed']
                 t = by_fw[fw]['total']

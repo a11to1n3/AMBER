@@ -1,6 +1,7 @@
 # Agents.jl Benchmark Models (Fixed API)
 using Agents
 using Random
+using Printf
 
 # =============================================================================
 # Wealth Transfer Model (WORKS!)
@@ -40,9 +41,8 @@ end
 end
 
 function random_walk_step2!(agent, model)
-    θ = rand() * 2π
-    agent.x += agent.speed * cos(θ)
-    agent.y += agent.speed * sin(θ)
+    agent.x += agent.speed * (2rand() - 1)
+    agent.y += agent.speed * (2rand() - 1)
     # Clamp to bounds
     agent.x = clamp(agent.x, 0.0, 100.0)
     agent.y = clamp(agent.y, 0.0, 100.0)
@@ -75,9 +75,8 @@ function sir_step2!(agent, model)
     recovery = 14
     
     # Move
-    θ = rand() * 2π
-    agent.x = clamp(agent.x + speed * cos(θ), 0.0, 100.0)
-    agent.y = clamp(agent.y + speed * sin(θ), 0.0, 100.0)
+    agent.x = clamp(agent.x + speed * (2rand() - 1), 0.0, 100.0)
+    agent.y = clamp(agent.y + speed * (2rand() - 1), 0.0, 100.0)
     
     # Infection spread
     if agent.status == :I
@@ -113,7 +112,24 @@ end
 # Benchmark Runner
 # =============================================================================
 
-function run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=50)
+function _trimmed_mean(times)
+    sorted_times = sort(times)
+    if length(sorted_times) >= 3
+        sorted_times = sorted_times[1:end-1]
+    end
+    return sum(sorted_times) / length(sorted_times)
+end
+
+function _timed_mean(runner; n, steps, runs)
+    runner(; n=min(n, 100), steps=min(steps, 10))
+    times = Float64[]
+    for _ in 1:runs
+        push!(times, @elapsed runner(; n=n, steps=steps))
+    end
+    return _trimmed_mean(times)
+end
+
+function run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=50, runs=3)
     println("Agents.jl Benchmark")
     println("="^50)
 
@@ -124,12 +140,8 @@ function run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=50)
     ]
         println("\n$name:")
         for n in agent_counts
-            # Warmup (JIT compile) on a smaller run to avoid biasing the
-            # smallest measured size with compilation cost.
-            runner(; n=min(n, 100), steps=10)
-            # Timed
-            t = @elapsed runner(; n=n, steps=steps)
-            println("  $n agents: $(round(t, digits=3))s")
+            t = _timed_mean(runner; n=n, steps=steps, runs=runs)
+            @printf("  %d agents: %.6fs\n", n, t)
         end
     end
 end
@@ -139,6 +151,7 @@ end
 function _parse_args(args)
     agent_counts = [100, 500, 1000, 5000]
     steps = 50
+    runs = 3
     i = 1
     while i <= length(args)
         a = args[i]
@@ -148,13 +161,16 @@ function _parse_args(args)
         elseif a == "--agents" && i + 1 <= length(args)
             agent_counts = parse.(Int, split(args[i + 1], ','))
             i += 2
+        elseif a == "--runs" && i + 1 <= length(args)
+            runs = parse(Int, args[i + 1])
+            i += 2
         else
             i += 1
         end
     end
-    return (agent_counts, steps)
+    return (agent_counts, steps, runs)
 end
 
-let (agent_counts, steps) = _parse_args(ARGS)
-    run_benchmarks(; agent_counts=agent_counts, steps=steps)
+let (agent_counts, steps, runs) = _parse_args(ARGS)
+    run_benchmarks(; agent_counts=agent_counts, steps=steps, runs=runs)
 end

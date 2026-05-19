@@ -1,515 +1,643 @@
 {
-  "generated_at": "2026-05-09T23:02:33.665234",
+  "generated_at": "2026-05-19T20:19:14.823584",
   "agent_counts": [
     500,
     1000,
     5000
   ],
   "n_steps": 50,
+  "runs": 3,
+  "timing": "mean wall-clock seconds; slowest sample trimmed when runs >= 3",
   "results": [
     {
       "framework": "AMBER (loop)",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.016,
-      "time_per_step": 0.00032
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0165,
+      "time_per_step": 0.000329
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0042,
-      "time_per_step": 8.4e-05
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0044,
+      "time_per_step": 8.8e-05
     },
     {
       "framework": "AgentPy",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0259,
-      "time_per_step": 0.000517
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0269,
+      "time_per_step": 0.000538
     },
     {
       "framework": "Mesa",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.2591,
-      "time_per_step": 0.005182
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.2613,
+      "time_per_step": 0.005226
     },
     {
       "framework": "SimPy",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0177,
-      "time_per_step": 0.000354
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0183,
+      "time_per_step": 0.000366
     },
     {
       "framework": "Melodie",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0176,
-      "time_per_step": 0.000352
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.019,
+      "time_per_step": 0.000379
     },
     {
       "framework": "AMBER (loop)",
       "model": "wealth_transfer",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.033,
-      "time_per_step": 0.000659
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0331,
+      "time_per_step": 0.000662
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "wealth_transfer",
       "n_agents": 1000,
       "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0064,
+      "time_per_step": 0.000128
+    },
+    {
+      "framework": "AgentPy",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0536,
+      "time_per_step": 0.001073
+    },
+    {
+      "framework": "Mesa",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.9958,
+      "time_per_step": 0.019916
+    },
+    {
+      "framework": "SimPy",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0382,
+      "time_per_step": 0.000764
+    },
+    {
+      "framework": "Melodie",
+      "model": "wealth_transfer",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0361,
+      "time_per_step": 0.000722
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.1714,
+      "time_per_step": 0.003427
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0214,
+      "time_per_step": 0.000428
+    },
+    {
+      "framework": "AgentPy",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.2724,
+      "time_per_step": 0.005449
+    },
+    {
+      "framework": "Mesa",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 23.9173,
+      "time_per_step": 0.478347
+    },
+    {
+      "framework": "SimPy",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.2182,
+      "time_per_step": 0.004365
+    },
+    {
+      "framework": "Melodie",
+      "model": "wealth_transfer",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.1884,
+      "time_per_step": 0.003767
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0362,
+      "time_per_step": 0.000723
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0027,
+      "time_per_step": 5.4e-05
+    },
+    {
+      "framework": "AgentPy",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0164,
+      "time_per_step": 0.000328
+    },
+    {
+      "framework": "Mesa",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0159,
+      "time_per_step": 0.000318
+    },
+    {
+      "framework": "SimPy",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0252,
+      "time_per_step": 0.000504
+    },
+    {
+      "framework": "Melodie",
+      "model": "random_walk",
+      "n_agents": 500,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.1101,
+      "time_per_step": 0.002201
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0688,
+      "time_per_step": 0.001376
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0027,
+      "time_per_step": 5.4e-05
+    },
+    {
+      "framework": "AgentPy",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0313,
+      "time_per_step": 0.000625
+    },
+    {
+      "framework": "Mesa",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0278,
+      "time_per_step": 0.000555
+    },
+    {
+      "framework": "SimPy",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0483,
+      "time_per_step": 0.000967
+    },
+    {
+      "framework": "Melodie",
+      "model": "random_walk",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.2163,
+      "time_per_step": 0.004326
+    },
+    {
+      "framework": "AMBER (loop)",
+      "model": "random_walk",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.3524,
+      "time_per_step": 0.007049
+    },
+    {
+      "framework": "AMBER (vectorized)",
+      "model": "random_walk",
+      "n_agents": 5000,
+      "n_steps": 50,
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
       "execution_time": 0.0062,
       "time_per_step": 0.000124
     },
     {
       "framework": "AgentPy",
-      "model": "wealth_transfer",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "execution_time": 0.0524,
-      "time_per_step": 0.001047
-    },
-    {
-      "framework": "Mesa",
-      "model": "wealth_transfer",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "execution_time": 1.0025,
-      "time_per_step": 0.02005
-    },
-    {
-      "framework": "SimPy",
-      "model": "wealth_transfer",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "execution_time": 0.0373,
-      "time_per_step": 0.000746
-    },
-    {
-      "framework": "Melodie",
-      "model": "wealth_transfer",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "execution_time": 0.0349,
-      "time_per_step": 0.000699
-    },
-    {
-      "framework": "AMBER (loop)",
-      "model": "wealth_transfer",
-      "n_agents": 5000,
-      "n_steps": 50,
-      "execution_time": 0.1731,
-      "time_per_step": 0.003461
-    },
-    {
-      "framework": "AMBER (vectorized)",
-      "model": "wealth_transfer",
-      "n_agents": 5000,
-      "n_steps": 50,
-      "execution_time": 0.0201,
-      "time_per_step": 0.000401
-    },
-    {
-      "framework": "AgentPy",
-      "model": "wealth_transfer",
-      "n_agents": 5000,
-      "n_steps": 50,
-      "execution_time": 0.2616,
-      "time_per_step": 0.005232
-    },
-    {
-      "framework": "Mesa",
-      "model": "wealth_transfer",
-      "n_agents": 5000,
-      "n_steps": 50,
-      "execution_time": 24.4043,
-      "time_per_step": 0.488085
-    },
-    {
-      "framework": "SimPy",
-      "model": "wealth_transfer",
-      "n_agents": 5000,
-      "n_steps": 50,
-      "execution_time": 0.2148,
-      "time_per_step": 0.004297
-    },
-    {
-      "framework": "Melodie",
-      "model": "wealth_transfer",
-      "n_agents": 5000,
-      "n_steps": 50,
-      "execution_time": 0.1781,
-      "time_per_step": 0.003562
-    },
-    {
-      "framework": "AMBER (loop)",
-      "model": "random_walk",
-      "n_agents": 500,
-      "n_steps": 50,
-      "execution_time": 0.0319,
-      "time_per_step": 0.000638
-    },
-    {
-      "framework": "AMBER (vectorized)",
-      "model": "random_walk",
-      "n_agents": 500,
-      "n_steps": 50,
-      "execution_time": 0.0024,
-      "time_per_step": 4.8e-05
-    },
-    {
-      "framework": "AgentPy",
-      "model": "random_walk",
-      "n_agents": 500,
-      "n_steps": 50,
-      "execution_time": 0.0141,
-      "time_per_step": 0.000281
-    },
-    {
-      "framework": "Mesa",
-      "model": "random_walk",
-      "n_agents": 500,
-      "n_steps": 50,
-      "execution_time": 0.0132,
-      "time_per_step": 0.000265
-    },
-    {
-      "framework": "SimPy",
-      "model": "random_walk",
-      "n_agents": 500,
-      "n_steps": 50,
-      "execution_time": 0.0226,
-      "time_per_step": 0.000452
-    },
-    {
-      "framework": "Melodie",
-      "model": "random_walk",
-      "n_agents": 500,
-      "n_steps": 50,
-      "execution_time": 0.1008,
-      "time_per_step": 0.002017
-    },
-    {
-      "framework": "AMBER (loop)",
-      "model": "random_walk",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "execution_time": 0.0637,
-      "time_per_step": 0.001273
-    },
-    {
-      "framework": "AMBER (vectorized)",
-      "model": "random_walk",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "execution_time": 0.0026,
-      "time_per_step": 5.2e-05
-    },
-    {
-      "framework": "AgentPy",
-      "model": "random_walk",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "execution_time": 0.0276,
-      "time_per_step": 0.000551
-    },
-    {
-      "framework": "Mesa",
-      "model": "random_walk",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "execution_time": 0.0257,
-      "time_per_step": 0.000514
-    },
-    {
-      "framework": "SimPy",
-      "model": "random_walk",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "execution_time": 0.0468,
-      "time_per_step": 0.000936
-    },
-    {
-      "framework": "Melodie",
-      "model": "random_walk",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "execution_time": 0.2005,
-      "time_per_step": 0.00401
-    },
-    {
-      "framework": "AMBER (loop)",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.319,
-      "time_per_step": 0.006379
-    },
-    {
-      "framework": "AMBER (vectorized)",
-      "model": "random_walk",
-      "n_agents": 5000,
-      "n_steps": 50,
-      "execution_time": 0.0059,
-      "time_per_step": 0.000117
-    },
-    {
-      "framework": "AgentPy",
-      "model": "random_walk",
-      "n_agents": 5000,
-      "n_steps": 50,
-      "execution_time": 0.1365,
-      "time_per_step": 0.002731
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.1501,
+      "time_per_step": 0.003003
     },
     {
       "framework": "Mesa",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.1266,
-      "time_per_step": 0.002531
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.1412,
+      "time_per_step": 0.002823
     },
     {
       "framework": "SimPy",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.2426,
-      "time_per_step": 0.004853
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.2606,
+      "time_per_step": 0.005212
     },
     {
       "framework": "Melodie",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 1.0209,
-      "time_per_step": 0.020418
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 1.1037,
+      "time_per_step": 0.022075
     },
     {
       "framework": "AMBER (loop)",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.185,
-      "time_per_step": 0.003701
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.1739,
+      "time_per_step": 0.003478
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.0883,
-      "time_per_step": 0.001766
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0955,
+      "time_per_step": 0.00191
     },
     {
       "framework": "AgentPy",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.1879,
-      "time_per_step": 0.003757
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.163,
+      "time_per_step": 0.003261
     },
     {
       "framework": "Mesa",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.2436,
-      "time_per_step": 0.004872
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.2505,
+      "time_per_step": 0.005009
     },
     {
       "framework": "SimPy",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.1202,
-      "time_per_step": 0.002403
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.1193,
+      "time_per_step": 0.002385
     },
     {
       "framework": "Melodie",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.5563,
-      "time_per_step": 0.011126
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.4721,
+      "time_per_step": 0.009442
     },
     {
       "framework": "AMBER (loop)",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.8245,
-      "time_per_step": 0.01649
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.8173,
+      "time_per_step": 0.016347
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.1116,
-      "time_per_step": 0.002232
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.1187,
+      "time_per_step": 0.002374
     },
     {
       "framework": "AgentPy",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.8965,
-      "time_per_step": 0.01793
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.9733,
+      "time_per_step": 0.019465
     },
     {
       "framework": "Mesa",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 1.1408,
-      "time_per_step": 0.022816
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 1.1538,
+      "time_per_step": 0.023076
     },
     {
       "framework": "SimPy",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.4243,
-      "time_per_step": 0.008486
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.4973,
+      "time_per_step": 0.009947
     },
     {
       "framework": "Melodie",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 1.8664,
-      "time_per_step": 0.037327
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 2.1257,
+      "time_per_step": 0.042514
     },
     {
       "framework": "AMBER (loop)",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 9.3625,
-      "time_per_step": 0.187249
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 10.5683,
+      "time_per_step": 0.211366
     },
     {
       "framework": "AMBER (vectorized)",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.551,
-      "time_per_step": 0.011021
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.6871,
+      "time_per_step": 0.013742
     },
     {
       "framework": "AgentPy",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 11.0512,
-      "time_per_step": 0.221024
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 11.9927,
+      "time_per_step": 0.239854
     },
     {
       "framework": "Mesa",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 17.0737,
-      "time_per_step": 0.341474
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 17.9668,
+      "time_per_step": 0.359336
     },
     {
       "framework": "SimPy",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 5.1264,
-      "time_per_step": 0.102529
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 5.5058,
+      "time_per_step": 0.110116
     },
     {
       "framework": "Melodie",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 16.2144,
-      "time_per_step": 0.324288
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 21.2632,
+      "time_per_step": 0.425264
     },
     {
       "framework": "Agents.jl",
       "model": "wealth_transfer",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.001,
-      "time_per_step": 2e-05
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0006,
+      "time_per_step": 1.2e-05
     },
     {
       "framework": "Agents.jl",
       "model": "wealth_transfer",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.001,
-      "time_per_step": 2e-05
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0014,
+      "time_per_step": 2.8e-05
     },
     {
       "framework": "Agents.jl",
       "model": "wealth_transfer",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.007,
-      "time_per_step": 0.00014
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0072,
+      "time_per_step": 0.000145
     },
     {
       "framework": "Agents.jl",
       "model": "random_walk",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.001,
-      "time_per_step": 2e-05
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0001,
+      "time_per_step": 3e-06
     },
     {
       "framework": "Agents.jl",
       "model": "random_walk",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.001,
-      "time_per_step": 2e-05
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0003,
+      "time_per_step": 6e-06
     },
     {
       "framework": "Agents.jl",
       "model": "random_walk",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.007,
-      "time_per_step": 0.00014
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0016,
+      "time_per_step": 3.2e-05
     },
     {
       "framework": "Agents.jl",
       "model": "sir_epidemic",
       "n_agents": 500,
       "n_steps": 50,
-      "execution_time": 0.005,
-      "time_per_step": 0.0001
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0042,
+      "time_per_step": 8.3e-05
     },
     {
       "framework": "Agents.jl",
       "model": "sir_epidemic",
       "n_agents": 1000,
       "n_steps": 50,
-      "execution_time": 0.04,
-      "time_per_step": 0.0008
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.0357,
+      "time_per_step": 0.000713
     },
     {
       "framework": "Agents.jl",
       "model": "sir_epidemic",
       "n_agents": 5000,
       "n_steps": 50,
-      "execution_time": 0.809,
-      "time_per_step": 0.01618
+      "runs": 3,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.8082,
+      "time_per_step": 0.016163
     }
   ]
 }
