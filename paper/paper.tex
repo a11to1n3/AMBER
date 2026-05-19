@@ -45,7 +45,7 @@
 
 \lstset{style=pythonstyle}
 
-\title{\textbf{AMBER: Scalable Agent-Based Modelling in Python with Columnar State}}
+\title{\textbf{AMBER: A Columnar Architecture for Scalable Agent-Based Modelling in Python}}
 
 \author{Anh-Duy Pham\\
 \small University of Würzburg, Germany\\
@@ -73,15 +73,27 @@ Python is widely used for ABM in the research community, primarily through Mesa 
 
 AMBER addresses this bottleneck through two architectural choices. First, agent state is centralised in a columnar DataFrame backed by Polars \citep{polars_zenodo}, a Rust-based data processing library. Second, a \emph{view API} supports full-population, filtered, and scatter updates by compiling user-facing expressions down to a small number of Polars operations. Model code remains in Python while computational kernels execute in compiled code. A conventional object-oriented \texttt{Agent} class remains available for per-agent logic that does not vectorise.
 
-This paper makes three contributions. First, it presents a columnar state architecture for Python-hosted ABM that retains the standard model/agent interface while moving population operations into compiled columnar kernels. Second, it introduces a view abstraction that supports full-population, filtered, and id-indexed scatter updates without requiring users to manipulate the underlying DataFrame representation. Third, it provides a seven-framework benchmark suite with correctness checks that identified and corrected multiple cross-framework implementation mismatches before performance was reported.
+This paper investigates whether columnar state management can serve as a practical foundation for large-scale ABM in Python. The central question is not only whether columnar storage is faster for favourable kernels, but whether it can be integrated into a complete modelling framework without abandoning the abstractions that make Python ABM accessible.
 
-\subsection{Motivation}
+\subsection{Research Questions and Contributions}
+
+The work is organised around three research questions:
+
+\begin{itemize}
+\item \textbf{RQ1: Architectural viability.} Can columnar state management support ABM semantics while preserving familiar model, agent, and population abstractions?
+\item \textbf{RQ2: Performance characterisation.} Which workload characteristics benefit from columnar execution, and where does a Python-hosted columnar framework remain limited by call overhead or non-vectorisable logic?
+\item \textbf{RQ3: Framework completeness.} Can a columnar architecture support the surrounding infrastructure required for practical ABM work, including spatial environments, experiment management, optimisation, and compatibility with per-agent logic?
+\end{itemize}
+
+This paper makes four contributions. First, it formalises columnar state management as an architectural alternative to object-per-agent representation in Python-hosted ABM. Second, it presents AMBER, an implementation of this architecture with a view API for full-population, filtered, and id-indexed scatter updates. Third, it provides a correctness-checked benchmark suite comparing AMBER with six alternative implementations, correcting cross-framework mismatches before reporting performance. Fourth, it characterises the regimes in which columnar execution provides substantial advantages and the regimes in which compiled per-agent loops remain preferable.
+
+\subsection{Scope and Positioning}
 
 Researchers who build large ABMs often face a trade-off between accessibility and execution speed. Remaining in Python preserves the surrounding scientific workflow but inherits the interpreter-overhead ceiling of Mesa or AgentPy. Moving to Java, Julia, or GPU-oriented C++ can improve throughput, but it introduces additional language, tooling, and maintenance requirements around models that are otherwise primarily scientific artifacts.
 
 AMBER is designed for this intermediate design point: Python source code, familiar ABM abstractions, and compiled execution for population-wide operations. Models expressed in Mesa or AgentPy can be translated with limited structural change because AMBER preserves the conventional model, agent, and agent-list hierarchy. The principal modelling change is that population-wide updates are expressed as views over the population rather than loops over individual agents.
 
-\section{Related Work and Baselines}
+\section{Related Work}
 
 \subsection{Python ABM Frameworks}
 
@@ -91,7 +103,7 @@ AgentPy \citep{foramitti2021agentpy} refines Mesa's approach with improved ergon
 
 Melodie \citep{yu2023melodie} separates models into agents, environment, scenario, and calibrator components, accelerating selected execution paths through Cython compilation. ABSESpy \citep{wang2024absspy} extends Mesa with domain-specific abstractions for social-ecological systems modelling. SimPy \citep{zinoviev2024discrete} is a discrete-event simulation library rather than a dedicated ABM framework, but it is included here as a Python baseline because it is sometimes repurposed for agent simulation.
 
-\subsection{Compiled-Language ABM Frameworks}
+\subsection{Compiled and Accelerated ABM Frameworks}
 
 Repast \citep{north2013complex} and MASON \citep{luke2005mason} are mature Java-based platforms offering sophisticated scheduling, GIS integration, and checkpointing. Agents.jl \citep{datseris2024agents} leverages Julia's JIT compilation and multiple dispatch to combine scripted development with compiled execution; it is the direct non-Python performance baseline in our evaluation. FLAME GPU 2 \citep{richmond2023flame} maps agent operations onto CUDA kernels for GPU-accelerated simulation at massive scale but requires CUDA expertise and GPU-amenable model structure. NetLogo \citep{tisue2004netlogo} remains influential for its visual development environment and domain-specific language.
 
@@ -99,16 +111,23 @@ Repast \citep{north2013complex} and MASON \citep{luke2005mason} are mature Java-
 
 Columnar storage---organising data by columns rather than rows---has revolutionised analytical database systems and scientific data processing \citep{arrow2026}. Modern CPUs favour contiguous memory access, SIMD instructions process multiple values per cycle, and column operations parallelise naturally. Polars \citep{polars_zenodo}, built on Apache Arrow's columnar memory format and implemented in Rust, exposes these capabilities through a Python-accessible DataFrame API with multi-threaded execution. AMBER's contribution is applying these database-oriented techniques to the distinct access patterns of agent-based simulation and hiding them behind an ABM-native abstraction.
 
-\section{Architecture}
+\section{Architectural Design}
 \label{sec:architecture}
 
 AMBER is organised around a columnar state store, a user-facing view API, and conventional ABM components for environments, experiments, and optimisation. The design goal is to expose vectorised execution as a first-class modelling idiom while retaining the object-oriented abstractions used by existing Python ABM frameworks.
 
-\subsection{From Objects to Columns}
+\subsection{The Paradigm Shift: From Objects to Columns}
 
 Conventional ABM frameworks represent each agent as a Python object on the heap, with attributes stored in the object's \texttt{\_\_dict\_\_} and the population held as a list or dictionary of such objects. Memory access is therefore indirect: reading a single attribute across $N$ agents requires $N$ object lookups and $N$ dictionary accesses. A population-wide update such as incrementing every agent's wealth becomes $N$ bytecode-interpreted iterations, each paying Python's overhead for reference counting, type checking, and attribute access. For simple attribute updates, this interpreter overhead can dominate the model-specific computation.
 
 AMBER replaces this representation with a single Polars DataFrame in which each agent attribute occupies a contiguous typed column, and agents are identified by a sequential integer id. A population-wide read traverses one typed array; a population-wide write lowers to a vectorised Polars operation. Agent state is therefore maintained in the DataFrame as the single source of truth, while Python-level \texttt{Agent} instances, when used, act as row-oriented accessors rather than independent state containers.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{paradigm_shift.jpg}
+    \caption{State-management contrast between object-oriented ABM and AMBER's columnar representation. Object-per-agent frameworks distribute attributes across independent Python objects, whereas AMBER stores attributes as typed columns in a shared table. The columnar layout enables population-wide operations to execute as compiled array transformations.}
+    \label{fig:paradigm}
+\end{figure}
 
 \subsubsection{Columnar State Management}
 
@@ -188,15 +207,26 @@ In synchronous (simultaneous) updates, all agents act on a consistent state snap
 
 In asynchronous (sequential) updates, agents observe effects of prior agents' actions within the same time step. This mode is necessary for some model semantics but limits vectorization, as each agent's computation may depend on modifications made by previously processed agents.
 
-\subsection{Framework Components}
+\section{Framework Components}
+\label{sec:components}
 
 Beyond the core columnar architecture and view API, AMBER provides the infrastructure a full ABM workflow requires.
 
-\textbf{Spatial environments.} Grid, continuous-space, and network environments share a unified interface. Grid environments implement discrete $n$-dimensional lattices with Moore or von Neumann neighbourhoods and optional torus wrapping; agent positions are stored as integer columns in the Population DataFrame, enabling vectorised neighbour queries. Continuous-space environments provide radius-based neighbour queries and can use a \texttt{scipy.spatial.cKDTree} index for $O(\log N)$ lookups. Network environments integrate NetworkX for graph-based connectivity and ship built-in generators for Erd\H{o}s-R\'{e}nyi, Watts-Strogatz, and Barab\'{a}si-Albert topologies.
+\subsection{Spatial Environments}
 
-\textbf{Experiment management.} The \texttt{Experiment} class defines parameter spaces using \texttt{Sample} for discrete values and \texttt{IntRange} for integer ranges, generates Cartesian products over all combinations, supports configurable replication counts, and aggregates results directly into columnar form for downstream analysis. \texttt{ParallelRunner} provides multiprocessing-based parallel execution for independent simulations with near-linear speedup across CPU cores.
+Grid, continuous-space, and network environments share a unified interface. Grid environments implement discrete $n$-dimensional lattices with Moore or von Neumann neighbourhoods and optional torus wrapping; agent positions are stored as integer columns in the Population DataFrame, enabling vectorised neighbour queries. Continuous-space environments provide radius-based neighbour queries and can use a \texttt{scipy.spatial.cKDTree} index for $O(\log N)$ lookups. Network environments integrate NetworkX for graph-based connectivity and ship built-in generators for Erd\H{o}s-R\'{e}nyi, Watts-Strogatz, and Barab\'{a}si-Albert topologies.
 
-\textbf{Optimisation and calibration.} AMBER ships a hierarchy of optimisation strategies: grid search for low-dimensional discrete spaces, random search for high-dimensional exploration, Gaussian-process-based Bayesian optimisation for sample-efficient calibration, and integration with Sequential Model-based Algorithm Configuration (SMAC) for multi-fidelity and multi-objective optimisation.
+\subsection{Experiment Management}
+
+Systematic parameter exploration is central to ABM research because individual simulation trajectories are often stochastic and parameter-sensitive. The \texttt{Experiment} class defines parameter spaces using \texttt{Sample} for discrete values and \texttt{IntRange} for integer ranges, generates Cartesian products over combinations, supports configurable replication counts, and aggregates results directly into columnar form for downstream analysis. \texttt{ParallelRunner} provides multiprocessing-based parallel execution for independent simulations.
+
+\subsection{Optimisation and Calibration}
+
+Model calibration requires efficient search over parameter spaces whose evaluations may be expensive. AMBER includes grid search for low-dimensional discrete spaces, random search for high-dimensional exploration, Bayesian optimisation for sample-efficient calibration, and SMAC integration for multi-fidelity and multi-objective optimisation.
+
+\subsection{Performance Utilities}
+
+AMBER also exposes lower-level utilities for performance-critical components. The spatial index wrapper provides radius and nearest-neighbour queries for continuous-space models. Pre-built vectorised utilities implement recurring patterns such as movement updates, wealth transfers, and random displacement generation, allowing users to reuse tested kernels rather than reimplementing them inside model code.
 
 \section{Empirical Evaluation}
 \label{sec:evaluation}
@@ -362,6 +392,10 @@ Support is provided through the GitHub issue tracker at \url{https://github.com/
 The evaluation is intentionally focused on three representative kernels rather than an exhaustive catalogue of ABM workloads. The benchmark suite covers population-wide state updates, continuous-space movement, and a spatial epidemic model, but it does not yet evaluate large graph dynamics, explicit GIS workloads, long-running calibration campaigns, or distributed simulation. The reported timings are also hardware-specific: all measurements were collected on one Apple Silicon laptop and should be interpreted as relative comparisons under the stated protocol rather than universal performance constants.
 
 AMBER's columnar representation is most effective when model logic can be expressed as operations over many agents at once. Models dominated by branch-heavy per-agent reasoning, deep graph traversal, or small constant-time updates may benefit less from the columnar backend, and in some cases a compiled loop in a JIT language may remain faster. AMBER therefore complements rather than replaces compiled ABM frameworks: its primary contribution is to extend the range of model sizes that can be handled efficiently while remaining inside the Python scientific workflow.
+
+\section{Future Directions}
+
+The columnar architecture opens several directions for subsequent work. First, GPU-backed DataFrame systems such as cuDF could extend the same state representation to larger population sizes, provided that model updates can be expressed as GPU-friendly column operations. Second, static or dynamic analysis of model code could help identify agent loops that are mechanically transformable into view-based column updates. Third, integration with automatic-differentiation and probabilistic-programming tools could support gradient-informed calibration or likelihood-free inference workflows. Finally, distributed execution over partitioned columnar state could support simulations whose population or parameter-sweep scale exceeds a single workstation.
 
 \section{Conclusion}
 
