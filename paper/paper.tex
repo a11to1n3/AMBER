@@ -59,7 +59,7 @@
 \maketitle
 
 \begin{abstract}
-Agent-based models are often written in Python for accessibility, but object-per-agent execution limits the population sizes that can be explored interactively or in parameter sweeps. AMBER is a Python framework that stores agent state in a Polars-backed columnar table and exposes population operations through a compact view API. This design preserves familiar model and agent abstractions while lowering common updates to compiled column operations. Per-agent logic remains available through a buffered object-oriented path for behaviours that do not vectorise. We evaluate AMBER on wealth transfer, random walk, and spatial SIR benchmarks against Mesa, AgentPy, SimPy, Melodie, Agents.jl, and AMBER's own loop path, with correctness checks that verify comparable model outputs before timing. AMBER is the fastest Python-hosted implementation on every tested model, reaching speedups of up to 1118$\times$ over Mesa and outperforming Agents.jl on the largest SIR benchmark.
+Python is widely used for agent-based modelling because it is accessible and has a mature scientific ecosystem, but object-per-agent execution incurs interpreter overhead that restricts the population sizes feasible in interactive modelling, calibration, and parameter sweeps. This paper presents AMBER, a Python framework that stores agent state in a Polars-backed columnar table and exposes population operations through a compact view API. The framework preserves conventional model and agent abstractions while translating common population updates into compiled column operations; behaviours that do not vectorise remain expressible through a buffered object-oriented path. We evaluate AMBER on wealth transfer, random walk, and spatial SIR benchmarks against Mesa, AgentPy, SimPy, Melodie, Agents.jl, and AMBER's own loop path, using invariant checks to verify comparable model outputs before timing. Across the tested workloads, AMBER has the lowest execution time among Python-hosted implementations and achieves speedups of up to 1118$\times$ over Mesa; on the largest SIR benchmark it is also faster than the Julia-based Agents.jl implementation.
 \end{abstract}
 
 \vspace{1em}
@@ -69,27 +69,27 @@ Agent-based models are often written in Python for accessibility, but object-per
 
 Agent-based modelling (ABM) studies complex adaptive systems by simulating autonomous agents whose local interactions generate emergent macro-level phenomena \citep{abar2017agent}. The methodology is central to computational epidemiology, ecology, economics, and social simulation, where it captures agent heterogeneity, spatial structure, and adaptive behaviour in ways that aggregate equation-based models cannot.
 
-Python has become the dominant platform for ABM in the research community, primarily through Mesa \citep{masad2015mesa} and AgentPy \citep{foramitti2021agentpy}. Their accessibility has enabled widespread adoption, but both, along with most Python-hosted ABM tools, share an architectural assumption that limits scalability: each agent is a Python object, and population-wide updates are Python-level loops over those objects. For populations of thousands to tens of thousands of agents, the interpreter overhead of this pattern can dominate the cost of the model itself, constraining parameter sweeps, Monte Carlo replicates, and model complexity.
+Python is widely used for ABM in the research community, primarily through Mesa \citep{masad2015mesa} and AgentPy \citep{foramitti2021agentpy}. Their accessibility has enabled broad adoption, but both, along with most Python-hosted ABM tools, share an architectural assumption that limits scalability: each agent is a Python object, and population-wide updates are Python-level loops over those objects. For populations of thousands to tens of thousands of agents, the interpreter overhead of this pattern can exceed the cost of the model-specific computation, constraining parameter sweeps, Monte Carlo replicates, and model complexity.
 
-AMBER addresses this bottleneck through two architectural choices. First, agent state is centralised in a columnar DataFrame backed by Polars \citep{polars_zenodo}, a high-performance data processing library implemented in Rust. Second, a \emph{view API} for full-population, filtered, and scatter updates compiles user-facing expressions down to a small number of Polars operations, so users write Python while the expensive work executes in compiled code. A conventional object-oriented \texttt{Agent} class remains available for per-agent logic that does not vectorise.
+AMBER addresses this bottleneck through two architectural choices. First, agent state is centralised in a columnar DataFrame backed by Polars \citep{polars_zenodo}, a Rust-based data processing library. Second, a \emph{view API} supports full-population, filtered, and scatter updates by compiling user-facing expressions down to a small number of Polars operations. Model code remains in Python while computational kernels execute in compiled code. A conventional object-oriented \texttt{Agent} class remains available for per-agent logic that does not vectorise.
 
-This paper makes three contributions. First, it presents a columnar state architecture for Python-hosted ABM that keeps the standard model/agent interface while moving population operations into compiled columnar kernels. Second, it introduces a view abstraction that supports full-population, filtered, and id-indexed scatter updates without exposing users to low-level DataFrame plumbing. Third, it provides a seven-framework benchmark suite with correctness checks that caught and corrected multiple cross-framework implementation mismatches before performance was reported.
+This paper makes three contributions. First, it presents a columnar state architecture for Python-hosted ABM that retains the standard model/agent interface while moving population operations into compiled columnar kernels. Second, it introduces a view abstraction that supports full-population, filtered, and id-indexed scatter updates without requiring users to manipulate the underlying DataFrame representation. Third, it provides a seven-framework benchmark suite with correctness checks that identified and corrected multiple cross-framework implementation mismatches before performance was reported.
 
 \subsection{Motivation}
 
-Researchers who build large ABMs often face a trade-off between accessibility and speed. They can stay in Python and accept the interpreter-overhead ceiling of Mesa or AgentPy, or they can move to Java, Julia, or GPU-oriented C++ and absorb the cost of a second language, a different toolchain, and a narrower pool of collaborators. The first choice caps practical population sizes; the second increases the engineering burden around otherwise domain-focused models.
+Researchers who build large ABMs often face a trade-off between accessibility and execution speed. Remaining in Python preserves the surrounding scientific workflow but inherits the interpreter-overhead ceiling of Mesa or AgentPy. Moving to Java, Julia, or GPU-oriented C++ can improve throughput, but it introduces additional language, tooling, and maintenance requirements around models that are otherwise primarily scientific artifacts.
 
-AMBER targets the middle ground: Python source code, familiar ABM abstractions, and compiled execution for the population-wide operations that dominate many simulations. Models expressed in Mesa or AgentPy translate cleanly because AMBER preserves the usual model, agent, and agent-list hierarchy. The main conceptual shift is that updates are expressed as views over the population rather than loops over individual agents.
+AMBER is designed for this intermediate design point: Python source code, familiar ABM abstractions, and compiled execution for population-wide operations. Models expressed in Mesa or AgentPy can be translated with limited structural change because AMBER preserves the conventional model, agent, and agent-list hierarchy. The principal modelling change is that population-wide updates are expressed as views over the population rather than loops over individual agents.
 
 \section{Related Work and Baselines}
 
 \subsection{Python ABM Frameworks}
 
-Mesa \citep{masad2015mesa} established the dominant Python ABM pattern: agents as Python class instances organised by a scheduler. It introduced widely-adopted idioms including datacollectors for state recording and modular space classes. Its design prioritises accessibility and flexibility, making it the default teaching and prototyping framework.
+Mesa \citep{masad2015mesa} established the prevalent Python ABM pattern: agents as Python class instances organised by a scheduler. It introduced widely-adopted idioms including datacollectors for state recording and modular space classes. Its design prioritises accessibility and flexibility, making it a common teaching and prototyping framework.
 
-AgentPy \citep{foramitti2021agentpy} refines Mesa's approach with improved ergonomics, tighter Jupyter integration, and a built-in parameter-sweep \texttt{Experiment} API. Its \texttt{AgentList} exposes aggregate operations over collections, though the underlying storage is still object-per-agent.
+AgentPy \citep{foramitti2021agentpy} refines Mesa's approach with improved ergonomics, tighter Jupyter integration, and a built-in parameter-sweep API. Its \texttt{AgentList} exposes aggregate operations over collections, though the underlying storage is still object-per-agent.
 
-Melodie \citep{yu2023melodie} separates models into agents, environment, scenario, and calibrator components, accelerating hot paths through Cython compilation. ABSESpy \citep{wang2024absspy} extends Mesa with domain-specific abstractions for social-ecological systems modelling. SimPy \citep{zinoviev2024discrete} is a discrete-event simulation library: not an ABM framework per se, but included here as a high-performance Python baseline since it is sometimes repurposed for agent simulation.
+Melodie \citep{yu2023melodie} separates models into agents, environment, scenario, and calibrator components, accelerating selected execution paths through Cython compilation. ABSESpy \citep{wang2024absspy} extends Mesa with domain-specific abstractions for social-ecological systems modelling. SimPy \citep{zinoviev2024discrete} is a discrete-event simulation library rather than a dedicated ABM framework, but it is included here as a Python baseline because it is sometimes repurposed for agent simulation.
 
 \subsection{Compiled-Language ABM Frameworks}
 
@@ -102,17 +102,17 @@ Columnar storage---organising data by columns rather than rows---has revolutioni
 \section{Architecture}
 \label{sec:architecture}
 
-AMBER is organised around a columnar state store, a user-facing view API, and conventional ABM components for environments, experiments, and optimisation. The design goal is to make the fast path explicit without abandoning the object-oriented abstractions that make Python ABM code readable.
+AMBER is organised around a columnar state store, a user-facing view API, and conventional ABM components for environments, experiments, and optimisation. The design goal is to expose vectorised execution as a first-class modelling idiom while retaining the object-oriented abstractions used by existing Python ABM frameworks.
 
 \subsection{From Objects to Columns}
 
-Conventional ABM frameworks represent each agent as a Python object on the heap, with attributes stored in the object's \texttt{\_\_dict\_\_} and the population held as a list or dictionary of such objects. Memory is scattered: adjacent list entries point to distant heap addresses, and reading a single attribute across $N$ agents performs $N$ independent pointer-chase-and-hash-lookup operations. A population-wide update such as incrementing every agent's wealth becomes $N$ bytecode-interpreted iterations, each paying Python's overhead for reference counting, type checking, and dictionary access. Profiling reveals that for simple attribute updates, interpreter overhead dominates the actual computation by more than two orders of magnitude.
+Conventional ABM frameworks represent each agent as a Python object on the heap, with attributes stored in the object's \texttt{\_\_dict\_\_} and the population held as a list or dictionary of such objects. Memory access is therefore indirect: reading a single attribute across $N$ agents requires $N$ object lookups and $N$ dictionary accesses. A population-wide update such as incrementing every agent's wealth becomes $N$ bytecode-interpreted iterations, each paying Python's overhead for reference counting, type checking, and attribute access. For simple attribute updates, this interpreter overhead can dominate the model-specific computation.
 
-AMBER replaces this with a single Polars DataFrame in which each agent attribute occupies a contiguous typed column, and agents are identified by a sequential integer id. A population-wide read traverses one cache-friendly array; a population-wide write lowers to one SIMD-vectorised Polars operation. The architectural difference is not merely a performance optimisation but a shift in what it means for agent state to exist: the DataFrame is the single source of truth, and Python-level \texttt{Agent} instances (when they exist at all) are views over rows rather than containers of state.
+AMBER replaces this representation with a single Polars DataFrame in which each agent attribute occupies a contiguous typed column, and agents are identified by a sequential integer id. A population-wide read traverses one typed array; a population-wide write lowers to a vectorised Polars operation. Agent state is therefore maintained in the DataFrame as the single source of truth, while Python-level \texttt{Agent} instances, when used, act as row-oriented accessors rather than independent state containers.
 
 \subsubsection{Columnar State Management}
 
-AMBER restructures state storage fundamentally. All agent state resides in a single \texttt{Population} object that wraps a Polars DataFrame where each attribute is a column. Column data is stored in contiguous typed arrays (for example, an Int64 array for integer attributes), with rows corresponding to agents identified by sequential integer IDs.
+All agent state resides in a single \texttt{Population} object that wraps a Polars DataFrame where each attribute is a column. Column data is stored in contiguous typed arrays, with rows corresponding to agents identified by sequential integer IDs.
 
 A population-wide update becomes a single vectorized operation expressed through AMBER's \emph{view API}:
 
@@ -121,7 +121,7 @@ A population-wide update becomes a single vectorized operation expressed through
 self.agents.wealth += 10
 \end{lstlisting}
 
-This assignment invokes a single Python-to-Rust call. The left-hand side \texttt{self.agents.wealth} returns a Polars Series sourced from the population DataFrame; the arithmetic executes in compiled Rust, and the assignment lowers to one \texttt{df.with\_columns(...)} call that replaces the column in place. For subset updates, the same syntax extends naturally:
+This assignment invokes a single Python-to-Rust call. The attribute read returns a Polars Series sourced from the population DataFrame; the arithmetic executes in compiled Rust, and the assignment lowers to one \texttt{df.with\_columns(...)} call that replaces the column in place. For subset updates, the same syntax extends naturally:
 
 \begin{lstlisting}[caption={Subset-conditional update via a filtered view}]
 # Only agents with positive wealth give away one unit
@@ -129,7 +129,7 @@ donors = self.agents.where(self.agents.wealth > 0)
 donors.wealth -= 1
 \end{lstlisting}
 
-The \texttt{where} call returns a \texttt{FilteredAgentList} view keyed by the ids matching the predicate; the subsequent assignment applies the update to exactly those rows via a single hash-join against the population DataFrame. No Python-level loop is ever materialized.
+The \texttt{where} call returns a \texttt{FilteredAgentList} view keyed by the ids matching the predicate; the subsequent assignment applies the update to exactly those rows via a single hash join against the population DataFrame. The update therefore avoids a Python-level loop over individual agents.
 
 For id-indexed updates where an agent may appear multiple times (for example, scattering resources from $k$ donors to $k$ randomly chosen recipients), AMBER provides a \texttt{scatter\_add} primitive:
 
@@ -141,17 +141,17 @@ recipients = self.nprandom.choice(self.agents.ids.to_numpy(),
 self.agents.at[recipients].scatter_add(wealth=1)
 \end{lstlisting}
 
-\texttt{scatter\_add} uses a numpy \texttt{np.add.at} fast path with a cached id-to-row-position lookup, handling duplicate ids correctly (summing their contributions rather than overwriting) while still executing in a single pass over the affected rows.
+\texttt{scatter\_add} uses a numpy \texttt{np.add.at} implementation with a cached id-to-row-position lookup, handling duplicate ids correctly by summing their contributions rather than overwriting them, while executing in a single pass over the affected rows.
 
 \subsection{Performance Model}
 
-Let $T_{OOP} = N \cdot (c_{iter} + c_{dict} + c_{op})$ be the cost of a population-wide attribute update in an object-oriented framework, where $c_{iter}$ and $c_{dict}$ are Python iteration and dictionary-access overheads and $c_{op}$ is the actual operation cost. Let $T_{col} = c_{call} + (N/k) \cdot c_{op}$ be the same cost in a columnar framework, where $c_{call}$ is the fixed cost of invoking a vectorised operation and $k$ is the SIMD parallelism factor. The speedup is $S \approx k \cdot (c_{iter} + c_{dict}) / c_{op}$ for large $N$ with simple operations, predicting that the columnar approach provides its largest advantage on cheap operations applied to large populations. This prediction is confirmed empirically in Section~\ref{sec:evaluation}, where AMBER's advantage over Mesa ranges from 23$\times$ on random walk to 1118$\times$ on population-wide wealth transfer.
+Let $T_{OOP} = N \cdot (c_{iter} + c_{dict} + c_{op})$ be the cost of a population-wide attribute update in an object-oriented framework, where $c_{iter}$ and $c_{dict}$ are Python iteration and dictionary-access overheads and $c_{op}$ is the operation-specific computation. Let $T_{col} = c_{call} + (N/k) \cdot c_{op}$ be the corresponding cost in a columnar framework, where $c_{call}$ is the fixed cost of invoking a vectorised operation and $k$ is the effective SIMD parallelism factor. For large $N$ and low-arithmetic-intensity updates, the expected speedup is $S \approx k \cdot (c_{iter} + c_{dict}) / c_{op}$. The model therefore predicts that columnar execution is most beneficial when simple operations are applied to large populations. The evaluation in Section~\ref{sec:evaluation} is consistent with this prediction: AMBER's advantage over Mesa ranges from 23$\times$ on random walk to 1118$\times$ on population-wide wealth transfer.
 
 \subsubsection{Agent-Specific Operations}
 
-Not all ABM operations benefit from columnar storage. Many SIR-style infection rules, Schelling-style satisfaction checks, and graph-traversal behaviors are naturally expressed as conditional logic over each agent's local neighborhood. AMBER preserves an explicit escape hatch for these cases via the traditional \texttt{Agent} class:
+Not all ABM operations benefit equally from columnar storage. Many SIR-style infection rules, Schelling-style satisfaction checks, and graph-traversal behaviours are naturally expressed as conditional logic over each agent's local neighbourhood. AMBER preserves an explicit object-oriented path for these cases via the traditional \texttt{Agent} class:
 
-\begin{lstlisting}[caption={Per-agent logic using the OOP escape hatch}]
+\begin{lstlisting}[caption={Per-agent logic using the object-oriented path}]
 class InfectedAgent(am.Agent):
     def step(self):
         neighbors = self.get_neighbors(pl.col("status") == "S")
@@ -164,7 +164,7 @@ Per-agent \texttt{record} and \texttt{update\_data} calls still use batched stor
 
 \subsection{The View API}
 
-A naive columnar implementation would sacrifice the intuitive agent-oriented programming model. AMBER addresses this through a \emph{view API} that wraps the underlying Polars DataFrame in three view types, each honoring the same attribute protocol:
+A direct columnar implementation would expose DataFrame manipulation throughout model code. AMBER instead provides a \emph{view API} that wraps the underlying Polars DataFrame in three view types, each honouring the same attribute protocol:
 
 \begin{itemize}
 \item \textbf{Full-population views} expose every agent in the model.
@@ -172,9 +172,9 @@ A naive columnar implementation would sacrifice the intuitive agent-oriented pro
 \item \textbf{Scatter views} expose an id-indexed subset where ids may repeat, enabling duplicate-safe accumulation.
 \end{itemize}
 
-All three views share the same contract: a column attribute read returns a \texttt{pl.Series} sourced from \texttt{model.agents\_df}, and a column attribute assignment queues through the same batched flush path. The DataFrame is the single source of truth; there is no Python-attribute shadow copy, which eliminates an entire class of stale-read bugs common in object-per-agent frameworks.
+All three views share the same contract: a column attribute read returns a \texttt{pl.Series} sourced from \texttt{model.agents\_df}, and a column attribute assignment queues through the same batched flush path. The DataFrame is the single source of truth; there is no Python-attribute shadow copy, which prevents inconsistencies between object state and columnar state.
 
-Predicates accept either a boolean Polars Series or a raw Polars expression, so the full Polars expression language is available without forcing domain scientists to learn it. For example, \texttt{self.agents.wealth > 0} (a Series-returning comparison) and \texttt{pl.col("wealth") > 0} (an expression tree) are both valid arguments to \texttt{where}.
+Predicates accept either a boolean Polars Series or a raw Polars expression, so the full Polars expression language remains available without requiring every model to be written directly against the DataFrame API. For example, \texttt{self.agents.wealth > 0} (a Series-returning comparison) and \texttt{pl.col("wealth") > 0} (an expression tree) are both valid arguments to \texttt{where}.
 
 The \texttt{Model} class complements the view API with a columnar bulk-create helper, \texttt{add\_agents}, which initializes $n$ agents in a single call accepting per-column scalar broadcasts, lists, numpy arrays, or Polars Series. This removes repeated single-agent construction from large-population setup.
 
@@ -201,7 +201,7 @@ Beyond the core columnar architecture and view API, AMBER provides the infrastru
 \section{Empirical Evaluation}
 \label{sec:evaluation}
 
-We evaluate AMBER against six other agent-based modelling frameworks. The evaluation combines wall-clock timing with a correctness audit that verifies comparable model outputs before timing is interpreted.
+We evaluate AMBER against six other agent-based modelling frameworks. The evaluation combines wall-clock timing with a correctness audit that verifies comparable model outputs before performance results are interpreted.
 
 \subsection{Experimental Design}
 
@@ -211,7 +211,7 @@ We compare seven framework implementations. \textbf{AMBER (vectorized)} uses the
 
 \subsubsection{Benchmark Models}
 
-We selected three models representing distinct computational patterns. The \textbf{Wealth Transfer} model has each agent with positive wealth transfer one unit to a randomly selected other agent at each step. This workload is dominated by attribute reads and writes and represents the simplest workload profile for vectorization.
+We selected three models representing distinct computational patterns. The \textbf{Wealth Transfer} model has each agent with positive wealth transfer one unit to a randomly selected other agent at each step. This workload is dominated by attribute reads and writes and represents a low-arithmetic-intensity case for vectorization.
 
 The \textbf{SIR Epidemic} model places agents in continuous 2D space (100$\times$100) where they transition between Susceptible, Infected, and Recovered states based on contact with infected neighbors within a fixed radius (5 units), transmission probability 0.1, and recovery time 14 steps. Five agents begin in the Infected state. This workload involves all-pairs spatial distance computation (quadratic in population size) and state-transition logic.
 
@@ -219,7 +219,7 @@ The \textbf{Random Walk} model has agents move in continuous 2D space using inde
 
 \subsubsection{Correctness Verification}
 
-Runtime numbers are meaningful only if every framework is computing the same thing. Before any timing runs, we execute each framework against a dedicated correctness script, \path{benchmarks/correctness_check.py}, that checks per-model output invariants:
+Performance comparisons are valid only when the compared implementations compute equivalent models. Before any timing runs, we execute each framework against a dedicated correctness script, \path{benchmarks/correctness_check.py}, that checks per-model output invariants:
 
 \begin{itemize}
 \item \textbf{Wealth transfer}: total wealth must equal $N \cdot w_{init}$ at any step (Boltzmann conservation).
@@ -227,7 +227,7 @@ Runtime numbers are meaningful only if every framework is computing the same thi
 \item \textbf{SIR epidemic}: the cardinalities $|S| + |I| + |R|$ must equal $N$ at every step, and the initial infected count must match the configured \texttt{initial\_infected} parameter.
 \end{itemize}
 
-This audit surfaced multiple benchmark defects: SimPy's wealth-transfer helper used a race-prone event update, SimPy lacked random-walk boundary clamping, SimPy's SIR helper hardcoded every agent as initially infected, Agents.jl used a hardcoded step count, SimPy, Melodie, and Agents.jl used a different movement kernel from AMBER, AgentPy, and Mesa, and Mesa's benchmark model did not route seeded runs through Mesa's model RNG. The corrected suite now uses the same movement semantics and timing protocol across frameworks. The timings reported below reflect every framework passing the relevant invariants before timing.
+This audit identified multiple benchmark defects: SimPy's wealth-transfer helper used a race-prone event update, SimPy lacked random-walk boundary clamping, SimPy's SIR helper hardcoded every agent as initially infected, Agents.jl used a hardcoded step count, SimPy, Melodie, and Agents.jl used a different movement kernel from AMBER, AgentPy, and Mesa, and Mesa's benchmark model did not route seeded runs through Mesa's model RNG. The corrected suite uses the same movement semantics and timing protocol across frameworks. The timings reported below reflect implementations that pass the relevant invariants before measurement.
 
 \subsubsection{Variables and Measures}
 
@@ -246,13 +246,13 @@ Figure~\ref{fig:scaling} presents execution time as a function of population siz
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{../benchmarks/results/scaling_chart_all.png}
-    \caption{Execution time versus agent population size for three benchmark models, all seven frameworks. Lower is better. AMBER (vectorized) is the fastest Python-hosted implementation on every tested model; Agents.jl leads the cheap wealth-transfer and random-walk kernels, while AMBER leads the largest SIR workload.}
+    \caption{Execution time versus agent population size for three benchmark models and seven framework implementations. Lower values indicate faster execution. AMBER (vectorized) has the lowest execution time among Python-hosted implementations on every tested model; Agents.jl has the lowest execution time on the low-arithmetic-intensity wealth-transfer and random-walk kernels, while AMBER has the lowest execution time on the largest SIR workload.}
     \label{fig:scaling}
 \end{figure}
 
 \subsubsection{Execution Time}
 
-Table~\ref{tab:results} reports execution time at all three tested population sizes. Values in milliseconds unless otherwise noted; bold entries mark the fastest framework per cell.
+Table~\ref{tab:results} reports execution time at all three tested population sizes. Values are milliseconds unless otherwise noted; bold entries identify the lowest execution time for each benchmark and population size.
 
 \begin{table}[H]
 \centering
@@ -300,17 +300,17 @@ Mesa               & 1117.6$\times$ & 22.8$\times$ & 26.1$\times$ \\
 
 \subsection{Analysis}
 
-AMBER (vectorized) is the fastest Python-hosted framework on all three models and wins the largest SIR benchmark outright. Agents.jl wins the two cheaper microbenchmarks, where Julia's compiled dispatch has less fixed overhead than repeated Python-to-Polars calls. The results separate into three regimes.
+AMBER (vectorized) has the lowest execution time among Python-hosted frameworks on all three models and has the lowest execution time overall on the largest SIR benchmark. Agents.jl is faster on the two lower-cost microbenchmarks, where Julia's compiled dispatch has less fixed overhead than repeated Python-to-Polars calls. The results identify three performance regimes.
 
-\textbf{Random Walk.} Agents.jl wins at 1.6 ms vs AMBER's 6.2 ms because the per-step body is only two independent coordinate updates and a boundary clamp. There is little work for Polars to amortize, so Julia's compiled loop and low call overhead dominate. AMBER remains the fastest Python-hosted implementation, roughly 23$\times$ faster than Mesa at 5{,}000 agents.
+\textbf{Random Walk.} Agents.jl completes the 5{,}000-agent run in 1.6 ms compared with AMBER's 6.2 ms because the per-step body consists only of two independent coordinate updates and a boundary clamp. This leaves little computation over which Polars can amortize query planning and Python-to-Rust boundary costs. AMBER remains the lowest-latency Python-hosted implementation, roughly 23$\times$ faster than Mesa at 5{,}000 agents.
 
-\textbf{SIR Epidemic.} AMBER wins at 687 ms vs Agents.jl's 808 ms (1.2$\times$). The infection step is quadratic in population size because each infected agent must distance-test every susceptible agent. AMBER expresses this as a Polars cross join filtered by the squared-distance predicate, which runs as one compiled pipeline in Rust; Agents.jl does the same computation as a nested loop that the Julia compiler specializes per-call but which still processes one pair at a time at the assembly level. At 5{,}000 agents the Polars pipeline pays off; at smaller sizes Agents.jl wins because its per-call overhead is near zero.
+\textbf{SIR Epidemic.} AMBER completes the 5{,}000-agent run in 687 ms compared with 808 ms for Agents.jl (1.2$\times$ faster). The infection step is quadratic in population size because each infected agent must distance-test every susceptible agent. AMBER expresses this computation as a Polars cross join filtered by the squared-distance predicate, which runs as one compiled pipeline in Rust. Agents.jl performs the corresponding computation through specialized nested loops. At 5{,}000 agents the columnar pipeline offsets its setup cost; at smaller sizes Agents.jl benefits from lower per-call overhead.
 
-\textbf{Wealth Transfer.} Agents.jl wins at 7.2 ms vs AMBER's 21 ms (3.0$\times$). The per-step work is so small --- one array comparison, one random draw per active agent, two scatter-adds --- that Polars' per-query overhead (query planning, Python--Rust boundary crossings, metadata bookkeeping) becomes the dominant cost. Julia's compiled dispatch wins the microbenchmark because there is essentially no computation for Polars to amortize over. Notably, AMBER is still roughly $13\times$ faster than every other Python-hosted framework on this workload, and the AMBER (loop) path alone beats Mesa by a factor of 140.
+\textbf{Wealth Transfer.} Agents.jl completes the 5{,}000-agent run in 7.2 ms compared with AMBER's 21 ms (3.0$\times$ faster). The per-step work is minimal: one array comparison, one random draw per active agent, and two scatter-add operations. In this regime, Polars' per-query overhead, including query planning, Python--Rust boundary crossings, and metadata bookkeeping, becomes a substantial component of total runtime. AMBER is nevertheless roughly $13\times$ faster than every other Python-hosted framework on this workload, and the AMBER loop path alone is 140$\times$ faster than Mesa.
 
-\textbf{AMBER loop vs Mesa on wealth transfer.} Mesa's 5{,}000-agent result (23.92 s) is 1118$\times$ slower than AMBER (vectorized) and 140$\times$ slower than AMBER (loop). This gap reflects Mesa 3.x's \texttt{AgentSet.shuffle\_do} materializing the full agent list per step for shuffle-ordered activation, compounded with the scheduler's per-agent dispatch overhead. The wealth-transfer workload is an unfavorable case for this pattern because every agent acts at every step.
+\textbf{Object-oriented Python overhead.} Mesa's 5{,}000-agent wealth-transfer result (23.92 s) is 1118$\times$ slower than AMBER (vectorized) and 140$\times$ slower than AMBER (loop). This gap reflects Mesa 3.x's \texttt{AgentSet.shuffle\_do} materializing the full agent list per step for shuffle-ordered activation, compounded with scheduler-level per-agent dispatch overhead. The wealth-transfer workload stresses this pattern because every agent acts at every step.
 
-\textbf{When the Julia JIT wins.} The wealth-transfer and random-walk microbenchmarks are instructive: they establish the regime where a compiled JIT language has a structural advantage over a Python-hosted columnar framework. When the per-step work is $O(\mathrm{constant})$ per agent with little amortizable work, SIMD vectorization alone does not erase Python-to-Rust call overhead. Once the per-step computation becomes heavier, as in SIR, the columnar pipeline draws level with compiled Julia while remaining in Python.
+\textbf{Limits of the columnar approach.} The wealth-transfer and random-walk results identify a regime in which a compiled JIT language has a structural advantage over a Python-hosted columnar framework. When the per-step work is $O(\mathrm{constant})$ per agent with little amortizable computation, SIMD vectorization alone does not eliminate Python-to-Rust call overhead. As the per-step computation becomes heavier, as in SIR, the columnar pipeline becomes competitive with compiled Julia while retaining a Python modelling interface.
 
 \section{Reproducibility and Availability}
 
@@ -329,7 +329,7 @@ Continuous integration runs on Ubuntu, macOS, and Windows across Python 3.10, 3.
 
 \subsection{Benchmark Correctness}
 
-Runtime numbers are meaningful only if every framework is computing the same thing. Before any timing run, AMBER executes each framework implementation against a dedicated correctness script, \path{benchmarks/correctness_check.py}, that checks per-model output invariants:
+The benchmark suite includes a correctness stage that each framework implementation must pass before timing is considered. This stage executes each implementation against \path{benchmarks/correctness_check.py}, which checks per-model output invariants:
 
 \begin{itemize}
 \item \textbf{Wealth transfer}: total wealth must equal $N \cdot w_{init}$ at every step (Boltzmann conservation).
@@ -337,7 +337,7 @@ Runtime numbers are meaningful only if every framework is computing the same thi
 \item \textbf{SIR epidemic}: the cardinalities $|S| + |I| + |R|$ must equal $N$ at every step, and the initial infected count must match the configured parameter.
 \end{itemize}
 
-This audit surfaced multiple benchmark defects: SimPy's wealth-transfer helper used a race-prone event update, SimPy lacked random-walk boundary clamping, SimPy's SIR helper hardcoded every agent as initially infected, Agents.jl used a hardcoded step count, SimPy, Melodie, and Agents.jl used a different movement kernel from AMBER, AgentPy, and Mesa, and Mesa's benchmark model did not route seeded runs through Mesa's model RNG. The corrected evaluation in Section~\ref{sec:evaluation} reflects every framework passing the relevant invariants.
+This audit identified multiple benchmark defects: SimPy's wealth-transfer helper used a race-prone event update, SimPy lacked random-walk boundary clamping, SimPy's SIR helper hardcoded every agent as initially infected, Agents.jl used a hardcoded step count, SimPy, Melodie, and Agents.jl used a different movement kernel from AMBER, AgentPy, and Mesa, and Mesa's benchmark model did not route seeded runs through Mesa's model RNG. The corrected evaluation in Section~\ref{sec:evaluation} reflects implementations that pass the relevant invariants.
 
 \subsection{Software Availability}
 
@@ -347,19 +347,25 @@ The source repository is available at \url{https://github.com/a11to1n3/AMBER}; t
 
 \section{Discussion and Reuse Potential}
 
-AMBER is designed as a general-purpose ABM framework for three overlapping groups of users.
+AMBER is intended as a general-purpose ABM framework for three overlapping groups of users.
 
-\textbf{Domain scientists building mid-to-large-scale models.} Epidemiologists simulating disease transmission across contact networks, ecologists modelling species distributions or predator-prey dynamics, economists studying market formation or financial contagion, and social scientists investigating opinion dynamics can express their models in AMBER using the view API at population sizes comfortably in the tens of thousands. Existing Mesa or AgentPy models port with limited structural change: the \texttt{Model}/\texttt{Agent} class hierarchy is preserved, while population-wide updates move from per-agent loops to \texttt{agents.where(...)} expressions. The OOP path lets graph traversal, Schelling-style satisfaction checks, rule-based strategic behaviour, and other non-vectorised logic coexist with the vectorised core.
+\textbf{Domain scientists building mid-to-large-scale models.} AMBER is intended for epidemiological, ecological, economic, and social-simulation models whose population sizes reach the tens of thousands. Existing Mesa or AgentPy models can be ported with limited structural change: the \texttt{Model}/\texttt{Agent} class hierarchy is preserved, while population-wide updates move from per-agent loops to \texttt{agents.where(...)} expressions. The object-oriented path allows graph traversal, Schelling-style satisfaction checks, rule-based strategic behaviour, and other non-vectorised logic to coexist with the vectorised core.
 
 \textbf{Method developers extending the columnar paradigm.} The \texttt{Population} class and the view-API base class (\texttt{\_BaseView}) are documented extension points. Researchers exploring GPU offload through cuDF, cluster-scale simulation through Arrow Flight, automatic-differentiation integration, or domain-specific view types can reuse AMBER's data model without reinventing state management. The three-view taxonomy (full, filtered, scatter) also leaves room for windowed views for time-series analyses and graph-neighbourhood views for networked models.
 
-\textbf{Educators teaching ABM.} The legacy per-agent API remains supported and offers a familiar starting point for students new to agent-based thinking. Once a model is working, the same class can be migrated incrementally to the view API as an example of vectorisation and performance engineering. The documentation at \url{https://amber.readthedocs.io} provides a quickstart tutorial, walkthroughs of three canonical models, and API reference material generated from source docstrings.
+\textbf{Educators teaching ABM.} The legacy per-agent API remains supported and offers a familiar starting point for students new to agent-based modelling. Once a model is correct, the same class can be migrated incrementally to the view API as an example of vectorisation and performance engineering. The documentation at \url{https://amber.readthedocs.io} provides a quickstart tutorial, walkthroughs of three canonical models, and API reference material generated from source docstrings.
 
-Support is provided through the GitHub issue tracker at \url{https://github.com/a11to1n3/AMBER/issues}. Contributions in the form of bug reports, pull requests, and new examples are welcome; the contributing guide in the repository describes the development workflow and code-review criteria.
+Support is provided through the GitHub issue tracker at \url{https://github.com/a11to1n3/AMBER/issues}. The repository includes a contributing guide describing the development workflow, review criteria, and expectations for bug reports, pull requests, and new examples.
+
+\section{Limitations}
+
+The evaluation is intentionally focused on three representative kernels rather than an exhaustive catalogue of ABM workloads. The benchmark suite covers population-wide state updates, continuous-space movement, and a spatial epidemic model, but it does not yet evaluate large graph dynamics, explicit GIS workloads, long-running calibration campaigns, or distributed simulation. The reported timings are also hardware-specific: all measurements were collected on one Apple Silicon laptop and should be interpreted as relative comparisons under the stated protocol rather than universal performance constants.
+
+AMBER's columnar representation is most effective when model logic can be expressed as operations over many agents at once. Models dominated by branch-heavy per-agent reasoning, deep graph traversal, or small constant-time updates may benefit less from the columnar backend, and in some cases a compiled loop in a JIT language may remain faster. AMBER therefore complements rather than replaces compiled ABM frameworks: its primary contribution is to extend the range of model sizes that can be handled efficiently while remaining inside the Python scientific workflow.
 
 \section{Conclusion}
 
-AMBER shows that a Python ABM framework can retain familiar modelling abstractions while moving the dominant population operations into a compiled columnar backend. The benchmark results identify both the strengths and limits of this design: columnar execution gives large gains over object-per-agent Python frameworks and can outperform a compiled Julia baseline on heavier spatial workloads, while very small per-agent kernels remain better suited to low-overhead compiled loops. The result is a practical design point for researchers who need scalable agent-based simulation without leaving the Python ecosystem.
+AMBER demonstrates that a Python ABM framework can retain familiar modelling abstractions while moving dominant population operations into a compiled columnar backend. The benchmark results identify both the strengths and limitations of this design: columnar execution provides large speedups over object-per-agent Python frameworks and can exceed the performance of a compiled Julia baseline on heavier spatial workloads, while very small per-agent kernels remain better suited to low-overhead compiled loops. This design provides a path toward scalable agent-based simulation within the Python scientific ecosystem.
 
 \section*{Acknowledgements}
 
