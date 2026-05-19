@@ -3,6 +3,7 @@
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{hyperref}
+\hypersetup{hidelinks}
 \usepackage{graphicx}
 \usepackage{listings}
 \usepackage{xcolor}
@@ -51,7 +52,7 @@
 \small \texttt{ORCID: 0000-0003-3832-9453}
 }
 
-\date{April 2026}
+\date{May 2026}
 
 \begin{document}
 
@@ -146,7 +147,7 @@ self.agents.at[recipients].scatter_add(wealth=1)
 
 \subsection{When the Columnar Approach Wins}
 
-Let $T_{OOP} = N \cdot (c_{iter} + c_{dict} + c_{op})$ be the cost of a population-wide attribute update in an object-oriented framework, where $c_{iter}$ and $c_{dict}$ are Python iteration and dictionary-access overheads and $c_{op}$ is the actual operation cost. Let $T_{col} = c_{call} + (N/k) \cdot c_{op}$ be the same cost in a columnar framework, where $c_{call}$ is the fixed cost of invoking a vectorised operation and $k$ is the SIMD parallelism factor. The speedup is $S \approx k \cdot (c_{iter} + c_{dict}) / c_{op}$ for large $N$ with simple operations, predicting that the columnar approach provides its largest advantage on cheap operations applied to large populations. This prediction is confirmed empirically in Section~4, where AMBER's advantage over Mesa ranges from 23$\times$ on random walk to 1118$\times$ on population-wide wealth transfer.
+Let $T_{OOP} = N \cdot (c_{iter} + c_{dict} + c_{op})$ be the cost of a population-wide attribute update in an object-oriented framework, where $c_{iter}$ and $c_{dict}$ are Python iteration and dictionary-access overheads and $c_{op}$ is the actual operation cost. Let $T_{col} = c_{call} + (N/k) \cdot c_{op}$ be the same cost in a columnar framework, where $c_{call}$ is the fixed cost of invoking a vectorised operation and $k$ is the SIMD parallelism factor. The speedup is $S \approx k \cdot (c_{iter} + c_{dict}) / c_{op}$ for large $N$ with simple operations, predicting that the columnar approach provides its largest advantage on cheap operations applied to large populations. This prediction is confirmed empirically in Section~\ref{sec:evaluation}, where AMBER's advantage over Mesa ranges from 23$\times$ on random walk to 1118$\times$ on population-wide wealth transfer.
 
 \subsubsection{Agent-Specific Operations}
 
@@ -200,6 +201,7 @@ Beyond the core columnar architecture and view API, AMBER provides the infrastru
 \textbf{Optimisation and calibration.} AMBER ships a hierarchy of optimisation strategies: grid search for low-dimensional discrete spaces, random search for high-dimensional exploration, Gaussian-process-based Bayesian optimisation for sample-efficient calibration, and integration with Sequential Model-based Algorithm Configuration (SMAC) for multi-fidelity and multi-objective optimisation.
 
 \section{(3) Empirical Evaluation}
+\label{sec:evaluation}
 
 We evaluate AMBER against six other agent-based modeling frameworks through systematic benchmarking with a dedicated correctness audit that verifies all framework implementations compute equivalent models before timing.
 
@@ -215,11 +217,11 @@ We selected three models representing different computational patterns. The \tex
 
 The \textbf{SIR Epidemic} model places agents in continuous 2D space (100$\times$100) where they transition between Susceptible, Infected, and Recovered states based on contact with infected neighbors within a fixed radius (5 units), transmission probability 0.1, and recovery time 14 steps. Five agents begin in the Infected state. This workload involves all-pairs spatial distance computation (quadratic in population size) and state-transition logic.
 
-The \textbf{Random Walk} model has agents move in continuous 2D space according to random velocity vectors with boundary clamping. This tests position update kernels that are fully vectorizable.
+The \textbf{Random Walk} model has agents move in continuous 2D space using independent uniformly sampled $x$ and $y$ displacements with boundary clamping. This tests position update kernels that are fully vectorizable.
 
 \subsubsection{Correctness Verification}
 
-Runtime numbers are meaningful only if every framework is computing the same thing. Before any timing runs, we execute each framework against a dedicated correctness script (\texttt{benchmarks/correctness\_check.py}) that checks per-model output invariants:
+Runtime numbers are meaningful only if every framework is computing the same thing. Before any timing runs, we execute each framework against a dedicated correctness script, \path{benchmarks/correctness_check.py}, that checks per-model output invariants:
 
 \begin{itemize}
 \item \textbf{Wealth transfer}: total wealth must equal $N \cdot w_{init}$ at any step (Boltzmann conservation).
@@ -227,7 +229,7 @@ Runtime numbers are meaningful only if every framework is computing the same thi
 \item \textbf{SIR epidemic}: the cardinalities $|S| + |I| + |R|$ must equal $N$ at every step, and the initial infected count must match the configured \texttt{initial\_infected} parameter.
 \end{itemize}
 
-This audit surfaced four distinct correctness bugs in the checked-in benchmark implementations of SimPy (wealth race condition, missing boundary clamp, hardcoded 100\%-infected SIR initial condition) and Agents.jl (hardcoded step count mismatch). A later review also aligned SimPy, Melodie, and Agents.jl on the same independent x/y movement kernel used by AMBER, AgentPy, and Mesa, and made the Agents.jl row use the same trimmed-mean run protocol as the Python rows. The timings reported below reflect every framework passing every invariant.
+This audit surfaced multiple benchmark defects: SimPy's wealth-transfer helper used a race-prone event update, SimPy lacked random-walk boundary clamping, SimPy's SIR helper hardcoded every agent as initially infected, Agents.jl used a hardcoded step count, SimPy, Melodie, and Agents.jl used a different movement kernel from AMBER, AgentPy, and Mesa, and Mesa's benchmark model did not route seeded runs through Mesa's model RNG. The corrected suite now uses the same movement semantics and timing protocol across frameworks. The timings reported below reflect every framework passing the relevant invariants before timing.
 
 \subsubsection{Independent and Dependent Variables}
 
@@ -245,8 +247,8 @@ Figure~\ref{fig:scaling} presents execution time as a function of population siz
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{scaling_chart.png}
-    \caption{Execution time versus agent population size for three benchmark models, all seven frameworks. Lower is better. AMBER (vectorized) and Agents.jl track each other closely on every model; every other framework trails significantly.}
+    \includegraphics[width=\textwidth]{../benchmarks/results/scaling_chart_all.png}
+    \caption{Execution time versus agent population size for three benchmark models, all seven frameworks. Lower is better. AMBER (vectorized) is the fastest Python-hosted implementation on every tested model; Agents.jl leads the cheap wealth-transfer and random-walk kernels, while AMBER leads the largest SIR workload.}
     \label{fig:scaling}
 \end{figure}
 
@@ -316,20 +318,20 @@ AMBER (vectorized) is the fastest Python-hosted framework on all three models an
 
 \subsection{Testing}
 
-AMBER maintains an automated test suite of 230 unit and integration tests executed on every push to the \texttt{main} and \texttt{dev} branches via GitHub Actions. Line coverage of the source package is 73\%. Tests are organised into:
+AMBER maintains an automated test suite of 245 unit and integration tests executed on every push to the \texttt{main} and \texttt{dev} branches via GitHub Actions. Coverage is tracked in CI, and tests are organised into:
 
 \begin{itemize}
-\item \textbf{Unit tests} (\texttt{tests/test\_\{agent,model,sequences,population,base\}.py}) covering the view API's attribute read/write protocol, the write-buffer flush semantics, \texttt{add\_agents} bulk creation, filtered and scatter view construction, and all legacy list-style compatibility surfaces.
-\item \textbf{Environment tests} (\texttt{tests/test\_environments.py}) covering grid, continuous-space, and network environments, including a regression guard for a torus-wrap neighbour-deduplication bug fixed as part of this release.
-\item \textbf{Integration tests} (\texttt{tests/test\_integration.py}) covering end-to-end simulation workflows. The file deliberately keeps two class suites: \texttt{TestFullSimulationWorkflows} exercises the legacy per-agent loop path as a backwards-compatibility regression guard, while \texttt{TestVectorizedWorkflows} exercises the view API idiom.
-\item \textbf{Optimisation tests} (\texttt{tests/test\_optimization.py}) covering the grid-, random-, Bayesian-, and SMAC-based calibration paths.
+\item \textbf{Unit tests} (\path{tests/test_agent.py}, \path{tests/test_model.py}, \path{tests/test_sequences.py}, \path{tests/test_population.py}, and \path{tests/test_base.py}) covering the view API's attribute read/write protocol, the write-buffer flush semantics, \texttt{add\_agents} bulk creation, filtered and scatter view construction, and all legacy list-style compatibility surfaces.
+\item \textbf{Environment tests} (\path{tests/test_environments.py}) covering grid, continuous-space, and network environments, including a regression guard for a torus-wrap neighbour-deduplication bug fixed as part of this release.
+\item \textbf{Integration tests} (\path{tests/test_integration.py}) covering end-to-end simulation workflows. The file deliberately keeps two class suites: \texttt{TestFullSimulationWorkflows} exercises the legacy per-agent loop path as a backwards-compatibility regression guard, while \texttt{TestVectorizedWorkflows} exercises the view API idiom.
+\item \textbf{Optimisation tests} (\path{tests/test_optimization.py}) covering the grid-, random-, Bayesian-, and SMAC-based calibration paths.
 \end{itemize}
 
 Continuous integration runs on Ubuntu, macOS, and Windows across Python 3.10, 3.11, and 3.12. The documentation is built with Sphinx under \texttt{-W --keep-going} (warnings treated as errors) as part of the release workflow.
 
 \subsection{Correctness of Benchmark Implementations}
 
-Runtime numbers are meaningful only if every framework is computing the same thing. Before any timing run, AMBER executes each framework implementation against a dedicated correctness script (\texttt{benchmarks/correctness\_check.py}) that checks per-model output invariants:
+Runtime numbers are meaningful only if every framework is computing the same thing. Before any timing run, AMBER executes each framework implementation against a dedicated correctness script, \path{benchmarks/correctness_check.py}, that checks per-model output invariants:
 
 \begin{itemize}
 \item \textbf{Wealth transfer}: total wealth must equal $N \cdot w_{init}$ at every step (Boltzmann conservation).
@@ -337,7 +339,7 @@ Runtime numbers are meaningful only if every framework is computing the same thi
 \item \textbf{SIR epidemic}: the cardinalities $|S| + |I| + |R|$ must equal $N$ at every step, and the initial infected count must match the configured parameter.
 \end{itemize}
 
-This audit surfaced four correctness bugs in the checked-in benchmark implementations---three in SimPy (wealth race condition, missing boundary clamp, hardcoded 100\%-infected SIR initial condition) and one in Agents.jl (hardcoded step count mismatch). A later review also aligned the random-walk/SIR movement kernel across SimPy, Melodie, Agents.jl, AMBER, AgentPy, and Mesa, and made the Agents.jl row use the same trimmed-mean run protocol as the Python rows. The evaluation in Section~(3) reflects every framework passing every invariant.
+This audit surfaced multiple benchmark defects: SimPy's wealth-transfer helper used a race-prone event update, SimPy lacked random-walk boundary clamping, SimPy's SIR helper hardcoded every agent as initially infected, Agents.jl used a hardcoded step count, SimPy, Melodie, and Agents.jl used a different movement kernel from AMBER, AgentPy, and Mesa, and Mesa's benchmark model did not route seeded runs through Mesa's model RNG. The corrected evaluation in Section~\ref{sec:evaluation} reflects every framework passing the relevant invariants.
 
 \section{(5) Availability}
 
@@ -364,9 +366,9 @@ Anh-Duy Pham (University of W\"{u}rzburg) is the primary author and maintainer. 
 \subsection{Software Location}
 
 \begin{description}
-\item[Code repository.] Name: AMBER. Identifier: \url{https://github.com/a11to1n3/AMBER}. Licence: BSD 3-Clause. Date published: 2024. Version published at time of writing: \texttt{v0.2.0}.
+\item[Code repository.] Name: AMBER. Identifier: \url{https://github.com/a11to1n3/AMBER}. Licence: BSD 3-Clause. Date published: 2024. Version published at time of writing: \texttt{v0.3.1}.
 
-\item[Archive.] Name: Zenodo. Identifier: \texttt{10.5281/zenodo.XXXXXXX} (to be minted on acceptance via the GitHub--Zenodo integration). Licence: BSD 3-Clause. Publisher: Anh-Duy Pham. Version published: \texttt{v0.2.0}. Date published: April 2026.
+\item[Archive.] Name: Zenodo. Identifier: \texttt{10.5281/zenodo.XXXXXXX} (to be minted on acceptance via the GitHub--Zenodo integration). Licence: BSD 3-Clause. Publisher: Anh-Duy Pham. Version published: \texttt{v0.3.1}. Date published: May 2026.
 \end{description}
 
 \subsection{Language}
