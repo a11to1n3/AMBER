@@ -7,7 +7,6 @@ To use it for ABM, we treat each agent as a process that waits for 1 tick.
 import time
 import simpy
 import random
-import math
 import sys
 
 # =============================================================================
@@ -26,10 +25,10 @@ def wealth_agent(env, agent_id, agents_list):
 
         yield env.timeout(1)
 
-def run_wealth_benchmark(n=100, steps=100):
+def run_wealth_benchmark(n=100, steps=100, initial_wealth=1):
     env = simpy.Environment()
     # Shared state
-    agents_data = [{'id': i, 'wealth': 1} for i in range(n)]
+    agents_data = [{'id': i, 'wealth': initial_wealth} for i in range(n)]
     
     # Start processes
     for i in range(n):
@@ -41,17 +40,17 @@ def run_wealth_benchmark(n=100, steps=100):
 # Random Walk
 # =============================================================================
 
-def walk_agent(env, agent_id, agents_list):
+def walk_agent(env, agent_id, agents_list, params=None):
     """Random Walk Agent Process."""
-    world_size = 100.0
+    params = params or {}
+    world_size = params.get('world_size', 100.0)
     x = random.uniform(0, world_size)
     y = random.uniform(0, world_size)
-    speed = 1.0
+    speed = params.get('speed', 1.0)
 
     while True:
-        theta = random.uniform(0, 2 * math.pi)
-        x += speed * math.cos(theta)
-        y += speed * math.sin(theta)
+        x += random.uniform(-speed, speed)
+        y += random.uniform(-speed, speed)
         # Clamp to world bounds (parity with AMBER/AgentPy/Mesa/Melodie).
         x = max(0.0, min(world_size, x))
         y = max(0.0, min(world_size, y))
@@ -61,12 +60,13 @@ def walk_agent(env, agent_id, agents_list):
 
         yield env.timeout(1)
 
-def run_walk_benchmark(n=100, steps=100):
+def run_walk_benchmark(n=100, steps=100, world_size=100.0, speed=1.0):
     env = simpy.Environment()
     agents_data = [{'id': i, 'x': 0, 'y': 0} for i in range(n)]
+    params = {'world_size': world_size, 'speed': speed}
     
     for i in range(n):
-        env.process(walk_agent(env, i, agents_data))
+        env.process(walk_agent(env, i, agents_data, params))
         
     env.run(until=steps)
 
@@ -94,9 +94,8 @@ def sir_agent(env, agent_id, agents_list, params):
 
     while True:
         # Move + clamp (parity with the other frameworks)
-        theta = random.uniform(0, 2 * math.pi)
-        x = max(0.0, min(world_size, x + speed * math.cos(theta)))
-        y = max(0.0, min(world_size, y + speed * math.sin(theta)))
+        x = max(0.0, min(world_size, x + random.uniform(-speed, speed)))
+        y = max(0.0, min(world_size, y + random.uniform(-speed, speed)))
         agents_list[agent_id]['x'] = x
         agents_list[agent_id]['y'] = y
 
@@ -120,10 +119,26 @@ def sir_agent(env, agent_id, agents_list, params):
 
         yield env.timeout(1)
 
-def run_sir_benchmark(n=100, steps=100):
+def run_sir_benchmark(
+    n=100,
+    steps=100,
+    initial_infected=5,
+    world_size=100.0,
+    movement_speed=2.0,
+    infection_radius=5.0,
+    transmission_rate=0.1,
+    recovery_time=14,
+):
     env = simpy.Environment()
     agents_data = [{'id': i, 'status': 0, 'x': 0, 'y': 0, 'infection_time': 0} for i in range(n)]
-    params = {}
+    params = {
+        'initial_infected': initial_infected,
+        'world_size': world_size,
+        'movement_speed': movement_speed,
+        'infection_radius': infection_radius,
+        'transmission_rate': transmission_rate,
+        'recovery_time': recovery_time,
+    }
     
     for i in range(n):
         env.process(sir_agent(env, i, agents_data, params))

@@ -4,479 +4,359 @@
     "model": "wealth_transfer",
     "n_agents": 500,
     "n_steps": 50,
-    "execution_time": 0.0329,
-    "peak_memory_mb": 0.14,
-    "time_per_step": 0.000658,
-    "timestamp": "2026-04-09T21:05:24.733327"
-  },
-  {
-    "framework": "AMBER (vectorized)",
-    "model": "wealth_transfer",
-    "n_agents": 500,
-    "n_steps": 50,
-    "execution_time": 0.0592,
-    "peak_memory_mb": 0.08,
-    "time_per_step": 0.001184,
-    "timestamp": "2026-04-09T21:05:24.902874"
-  },
-  {
-    "framework": "AgentPy",
-    "model": "wealth_transfer",
-    "n_agents": 500,
-    "n_steps": 50,
-    "execution_time": 0.1034,
-    "peak_memory_mb": 0.17,
-    "time_per_step": 0.002068,
-    "timestamp": "2026-04-09T21:05:25.160874"
-  },
-  {
-    "framework": "Mesa",
-    "model": "wealth_transfer",
-    "n_agents": 500,
-    "n_steps": 50,
-    "execution_time": 0.0845,
-    "peak_memory_mb": 0.12,
-    "time_per_step": 0.00169,
-    "timestamp": "2026-04-09T21:05:25.379867"
-  },
-  {
-    "framework": "AMBER",
-    "model": "wealth_transfer",
-    "n_agents": 1000,
-    "n_steps": 50,
-    "execution_time": 0.0766,
-    "peak_memory_mb": 0.21,
-    "time_per_step": 0.001532,
-    "timestamp": "2026-04-09T21:05:25.584079"
-  },
-  {
-    "framework": "AMBER (vectorized)",
-    "model": "wealth_transfer",
-    "n_agents": 1000,
-    "n_steps": 50,
-    "execution_time": 0.149,
-    "peak_memory_mb": 0.12,
-    "time_per_step": 0.00298,
-    "timestamp": "2026-04-09T21:05:25.931002"
-  },
-  {
-    "framework": "AgentPy",
-    "model": "wealth_transfer",
-    "n_agents": 1000,
-    "n_steps": 50,
-    "execution_time": 0.2072,
-    "peak_memory_mb": 0.31,
-    "time_per_step": 0.004143,
-    "timestamp": "2026-04-09T21:05:26.392455"
-  },
-  {
-    "framework": "Mesa",
-    "model": "wealth_transfer",
-    "n_agents": 1000,
-    "n_steps": 50,
-    "execution_time": 0.2312,
-    "peak_memory_mb": 0.23,
-    "time_per_step": 0.004622,
-    "timestamp": "2026-04-09T21:05:26.906852"
-  },
-  {
-    "framework": "AMBER",
-    "model": "wealth_transfer",
-    "n_agents": 5000,
-    "n_steps": 50,
-    "execution_time": 0.4624,
-    "peak_memory_mb": 0.93,
-    "time_per_step": 0.009249,
-    "timestamp": "2026-04-09T21:05:27.885958"
-  },
-  {
-    "framework": "AMBER (vectorized)",
-    "model": "wealth_transfer",
-    "n_agents": 5000,
-    "n_steps": 50,
-    "execution_time": 0.8744,
-    "peak_memory_mb": 0.61,
-    "time_per_step": 0.017486,
-    "timestamp": "2026-04-09T21:05:29.680282"
-  },
-  {
-    "framework": "AgentPy",
-    "model": "wealth_transfer",
-    "n_agents": 5000,
-    "n_steps": 50,
-    "execution_time": 1.0861,
-    "peak_memory_mb": 1.48,
-    "time_per_step": 0.021723,
-    "timestamp": "2026-04-09T21:05:31.899284"
-  },
-  {
-    "framework": "Mesa",
-    "model": "wealth_transfer",
-    "n_agents": 5000,
-    "n_steps": 50,
-    "execution_time": 3.4362,
-    "peak_memory_mb": 1.03,
-    "time_per_step": 0.068724,
-    "timestamp": "2026-04-09T21:05:38.819824"
-  },
-  {
-    "framework": "AMBER",
-    "model": "wealth_transfer",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 0.9572,
-    "peak_memory_mb": 1.85,
-    "time_per_step": 0.019144,
-    "timestamp": "2026-04-09T21:05:40.782413"
-  },
-  {
-    "framework": "AMBER (vectorized)",
-    "model": "wealth_transfer",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 1.8047,
-    "peak_memory_mb": 1.22,
-    "time_per_step": 0.036094,
-    "timestamp": "2026-04-09T21:05:44.438603"
-  },
-  {
-    "framework": "AgentPy",
-    "model": "wealth_transfer",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 2.2306,
-    "peak_memory_mb": 2.94,
-    "time_per_step": 0.044612,
-    "timestamp": "2026-04-09T21:05:48.946871"
-  },
-  {
-    "framework": "Mesa",
-    "model": "wealth_transfer",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 12.5574,
-    "peak_memory_mb": 2.05,
-    "time_per_step": 0.25115,
-    "timestamp": "2026-04-09T21:06:14.110849"
-  },
-  {
-    "framework": "AMBER",
-    "model": "sir_epidemic",
-    "n_agents": 500,
-    "n_steps": 50,
-    "execution_time": 1.0096,
-    "peak_memory_mb": 0.14,
-    "time_per_step": 0.020191,
-    "timestamp": "2026-04-09T21:06:16.177784"
-  },
-  {
-    "framework": "AMBER (vectorized)",
-    "model": "sir_epidemic",
-    "n_agents": 500,
-    "n_steps": 50,
-    "execution_time": 0.1629,
-    "peak_memory_mb": 0.12,
-    "time_per_step": 0.00326,
-    "timestamp": "2026-04-09T21:06:16.550759"
-  },
-  {
-    "framework": "AgentPy",
-    "model": "sir_epidemic",
-    "n_agents": 500,
-    "n_steps": 50,
-    "execution_time": 0.8722,
-    "peak_memory_mb": 0.2,
-    "time_per_step": 0.017444,
-    "timestamp": "2026-04-09T21:06:18.345451"
-  },
-  {
-    "framework": "Mesa",
-    "model": "sir_epidemic",
-    "n_agents": 500,
-    "n_steps": 50,
-    "execution_time": 0.9922,
-    "peak_memory_mb": 0.16,
-    "time_per_step": 0.019844,
-    "timestamp": "2026-04-09T21:06:20.375933"
-  },
-  {
-    "framework": "AMBER",
-    "model": "sir_epidemic",
-    "n_agents": 1000,
-    "n_steps": 50,
-    "execution_time": 3.767,
-    "peak_memory_mb": 0.26,
-    "time_per_step": 0.07534,
-    "timestamp": "2026-04-09T21:06:27.963426"
-  },
-  {
-    "framework": "AMBER (vectorized)",
-    "model": "sir_epidemic",
-    "n_agents": 1000,
-    "n_steps": 50,
-    "execution_time": 0.1982,
-    "peak_memory_mb": 0.24,
-    "time_per_step": 0.003965,
-    "timestamp": "2026-04-09T21:06:28.411652"
-  },
-  {
-    "framework": "AgentPy",
-    "model": "sir_epidemic",
-    "n_agents": 1000,
-    "n_steps": 50,
-    "execution_time": 3.8522,
-    "peak_memory_mb": 0.38,
-    "time_per_step": 0.077044,
-    "timestamp": "2026-04-09T21:06:36.169275"
-  },
-  {
-    "framework": "Mesa",
-    "model": "sir_epidemic",
-    "n_agents": 1000,
-    "n_steps": 50,
-    "execution_time": 3.1411,
-    "peak_memory_mb": 0.3,
-    "time_per_step": 0.062822,
-    "timestamp": "2026-04-09T21:06:42.497558"
-  },
-  {
-    "framework": "AMBER",
-    "model": "sir_epidemic",
-    "n_agents": 5000,
-    "n_steps": 50,
-    "execution_time": 26.3128,
-    "peak_memory_mb": 1.19,
-    "time_per_step": 0.526256,
-    "timestamp": "2026-04-09T21:07:35.168964"
-  },
-  {
-    "framework": "AMBER (vectorized)",
-    "model": "sir_epidemic",
-    "n_agents": 5000,
-    "n_steps": 50,
-    "execution_time": 0.8116,
-    "peak_memory_mb": 1.18,
-    "time_per_step": 0.016232,
-    "timestamp": "2026-04-09T21:07:36.845731"
-  },
-  {
-    "framework": "AgentPy",
-    "model": "sir_epidemic",
-    "n_agents": 5000,
-    "n_steps": 50,
-    "execution_time": 25.1141,
-    "peak_memory_mb": 1.8,
-    "time_per_step": 0.502282,
-    "timestamp": "2026-04-09T21:08:27.118046"
-  },
-  {
-    "framework": "Mesa",
-    "model": "sir_epidemic",
-    "n_agents": 5000,
-    "n_steps": 50,
-    "execution_time": 24.899,
-    "peak_memory_mb": 1.4,
-    "time_per_step": 0.49798,
-    "timestamp": "2026-04-09T21:09:16.969269"
-  },
-  {
-    "framework": "AMBER",
-    "model": "sir_epidemic",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 68.3446,
-    "peak_memory_mb": 2.36,
-    "time_per_step": 1.366892,
-    "timestamp": "2026-04-09T21:11:33.712801"
-  },
-  {
-    "framework": "AMBER (vectorized)",
-    "model": "sir_epidemic",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 2.4192,
-    "peak_memory_mb": 2.36,
-    "time_per_step": 0.048384,
-    "timestamp": "2026-04-09T21:11:38.595644"
-  },
-  {
-    "framework": "AgentPy",
-    "model": "sir_epidemic",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 64.5323,
-    "peak_memory_mb": 3.6,
-    "time_per_step": 1.290646,
-    "timestamp": "2026-04-09T21:13:47.719085"
-  },
-  {
-    "framework": "Mesa",
-    "model": "sir_epidemic",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 63.2921,
-    "peak_memory_mb": 2.78,
-    "time_per_step": 1.265842,
-    "timestamp": "2026-04-09T21:15:54.360458"
-  },
-  {
-    "framework": "AMBER",
-    "model": "random_walk",
-    "n_agents": 500,
-    "n_steps": 50,
-    "execution_time": 0.0262,
+    "execution_time": 0.0495,
     "peak_memory_mb": 0.13,
-    "time_per_step": 0.000523,
-    "timestamp": "2026-04-09T21:15:54.450942"
+    "time_per_step": 0.00099,
+    "timestamp": "2026-05-19T20:19:59.250316"
   },
   {
     "framework": "AMBER (vectorized)",
-    "model": "random_walk",
+    "model": "wealth_transfer",
     "n_agents": 500,
     "n_steps": 50,
-    "execution_time": 0.008,
+    "execution_time": 0.0548,
     "peak_memory_mb": 0.08,
-    "time_per_step": 0.00016,
-    "timestamp": "2026-04-09T21:15:54.499426"
+    "time_per_step": 0.001096,
+    "timestamp": "2026-05-19T20:19:59.576556"
   },
   {
     "framework": "AgentPy",
-    "model": "random_walk",
+    "model": "wealth_transfer",
     "n_agents": 500,
     "n_steps": 50,
-    "execution_time": 0.0368,
-    "peak_memory_mb": 0.2,
-    "time_per_step": 0.000736,
-    "timestamp": "2026-04-09T21:15:54.606101"
+    "execution_time": 0.091,
+    "peak_memory_mb": 0.17,
+    "time_per_step": 0.001822,
+    "timestamp": "2026-05-19T20:19:59.983555"
   },
   {
     "framework": "Mesa",
-    "model": "random_walk",
+    "model": "wealth_transfer",
     "n_agents": 500,
     "n_steps": 50,
-    "execution_time": 0.0284,
-    "peak_memory_mb": 0.15,
-    "time_per_step": 0.000567,
-    "timestamp": "2026-04-09T21:15:54.696795"
+    "execution_time": 0.3221,
+    "peak_memory_mb": 0.21,
+    "time_per_step": 0.006442,
+    "timestamp": "2026-05-19T20:20:01.081022"
   },
   {
     "framework": "AMBER",
-    "model": "random_walk",
+    "model": "wealth_transfer",
     "n_agents": 1000,
     "n_steps": 50,
-    "execution_time": 0.0524,
+    "execution_time": 0.1062,
     "peak_memory_mb": 0.24,
-    "time_per_step": 0.001047,
-    "timestamp": "2026-04-09T21:15:54.838632"
+    "time_per_step": 0.002124,
+    "timestamp": "2026-05-19T20:20:01.533442"
   },
   {
     "framework": "AMBER (vectorized)",
-    "model": "random_walk",
+    "model": "wealth_transfer",
     "n_agents": 1000,
     "n_steps": 50,
-    "execution_time": 0.009,
+    "execution_time": 0.1251,
+    "peak_memory_mb": 0.12,
+    "time_per_step": 0.002503,
+    "timestamp": "2026-05-19T20:20:02.040906"
+  },
+  {
+    "framework": "AgentPy",
+    "model": "wealth_transfer",
+    "n_agents": 1000,
+    "n_steps": 50,
+    "execution_time": 0.1869,
+    "peak_memory_mb": 0.3,
+    "time_per_step": 0.003738,
+    "timestamp": "2026-05-19T20:20:02.735070"
+  },
+  {
+    "framework": "Mesa",
+    "model": "wealth_transfer",
+    "n_agents": 1000,
+    "n_steps": 50,
+    "execution_time": 1.0896,
+    "peak_memory_mb": 0.41,
+    "time_per_step": 0.021792,
+    "timestamp": "2026-05-19T20:20:06.150251"
+  },
+  {
+    "framework": "AMBER",
+    "model": "wealth_transfer",
+    "n_agents": 5000,
+    "n_steps": 50,
+    "execution_time": 0.5862,
+    "peak_memory_mb": 1.04,
+    "time_per_step": 0.011724,
+    "timestamp": "2026-05-19T20:20:08.042173"
+  },
+  {
+    "framework": "AMBER (vectorized)",
+    "model": "wealth_transfer",
+    "n_agents": 5000,
+    "n_steps": 50,
+    "execution_time": 0.7094,
+    "peak_memory_mb": 0.55,
+    "time_per_step": 0.014188,
+    "timestamp": "2026-05-19T20:20:10.301272"
+  },
+  {
+    "framework": "AgentPy",
+    "model": "wealth_transfer",
+    "n_agents": 5000,
+    "n_steps": 50,
+    "execution_time": 0.9652,
+    "peak_memory_mb": 1.47,
+    "time_per_step": 0.019306,
+    "timestamp": "2026-05-19T20:20:13.338320"
+  },
+  {
+    "framework": "Mesa",
+    "model": "wealth_transfer",
+    "n_agents": 5000,
+    "n_steps": 50,
+    "execution_time": 24.8637,
+    "peak_memory_mb": 1.88,
+    "time_per_step": 0.497274,
+    "timestamp": "2026-05-19T20:21:28.706646"
+  },
+  {
+    "framework": "AMBER",
+    "model": "sir_epidemic",
+    "n_agents": 500,
+    "n_steps": 50,
+    "execution_time": 0.9477,
+    "peak_memory_mb": 0.21,
+    "time_per_step": 0.018954,
+    "timestamp": "2026-05-19T20:21:31.852357"
+  },
+  {
+    "framework": "AMBER (vectorized)",
+    "model": "sir_epidemic",
+    "n_agents": 500,
+    "n_steps": 50,
+    "execution_time": 0.1765,
+    "peak_memory_mb": 0.11,
+    "time_per_step": 0.00353,
+    "timestamp": "2026-05-19T20:21:32.562410"
+  },
+  {
+    "framework": "AgentPy",
+    "model": "sir_epidemic",
+    "n_agents": 500,
+    "n_steps": 50,
+    "execution_time": 1.066,
+    "peak_memory_mb": 0.2,
+    "time_per_step": 0.02132,
+    "timestamp": "2026-05-19T20:21:36.046202"
+  },
+  {
+    "framework": "Mesa",
+    "model": "sir_epidemic",
+    "n_agents": 500,
+    "n_steps": 50,
+    "execution_time": 0.9495,
+    "peak_memory_mb": 0.25,
+    "time_per_step": 0.018991,
+    "timestamp": "2026-05-19T20:21:39.183528"
+  },
+  {
+    "framework": "AMBER",
+    "model": "sir_epidemic",
+    "n_agents": 1000,
+    "n_steps": 50,
+    "execution_time": 3.5979,
+    "peak_memory_mb": 0.4,
+    "time_per_step": 0.071959,
+    "timestamp": "2026-05-19T20:21:50.606237"
+  },
+  {
+    "framework": "AMBER (vectorized)",
+    "model": "sir_epidemic",
+    "n_agents": 1000,
+    "n_steps": 50,
+    "execution_time": 0.1999,
+    "peak_memory_mb": 0.21,
+    "time_per_step": 0.003998,
+    "timestamp": "2026-05-19T20:21:51.362559"
+  },
+  {
+    "framework": "AgentPy",
+    "model": "sir_epidemic",
+    "n_agents": 1000,
+    "n_steps": 50,
+    "execution_time": 3.7047,
+    "peak_memory_mb": 0.37,
+    "time_per_step": 0.074094,
+    "timestamp": "2026-05-19T20:22:03.241128"
+  },
+  {
+    "framework": "Mesa",
+    "model": "sir_epidemic",
+    "n_agents": 1000,
+    "n_steps": 50,
+    "execution_time": 3.6072,
+    "peak_memory_mb": 0.48,
+    "time_per_step": 0.072144,
+    "timestamp": "2026-05-19T20:22:14.345975"
+  },
+  {
+    "framework": "AMBER",
+    "model": "sir_epidemic",
+    "n_agents": 5000,
+    "n_steps": 50,
+    "execution_time": 24.5858,
+    "peak_memory_mb": 1.75,
+    "time_per_step": 0.491716,
+    "timestamp": "2026-05-19T20:23:36.944079"
+  },
+  {
+    "framework": "AMBER (vectorized)",
+    "model": "sir_epidemic",
+    "n_agents": 5000,
+    "n_steps": 50,
+    "execution_time": 0.8324,
+    "peak_memory_mb": 1.0,
+    "time_per_step": 0.016648,
+    "timestamp": "2026-05-19T20:23:39.889037"
+  },
+  {
+    "framework": "AgentPy",
+    "model": "sir_epidemic",
+    "n_agents": 5000,
+    "n_steps": 50,
+    "execution_time": 26.1654,
+    "peak_memory_mb": 1.77,
+    "time_per_step": 0.523308,
+    "timestamp": "2026-05-19T20:25:01.796541"
+  },
+  {
+    "framework": "Mesa",
+    "model": "sir_epidemic",
+    "n_agents": 5000,
+    "n_steps": 50,
+    "execution_time": 32.5684,
+    "peak_memory_mb": 2.24,
+    "time_per_step": 0.651368,
+    "timestamp": "2026-05-19T20:26:44.426173"
+  },
+  {
+    "framework": "AMBER",
+    "model": "random_walk",
+    "n_agents": 500,
+    "n_steps": 50,
+    "execution_time": 0.133,
     "peak_memory_mb": 0.16,
-    "time_per_step": 0.000181,
-    "timestamp": "2026-04-09T21:15:54.898350"
+    "time_per_step": 0.002662,
+    "timestamp": "2026-05-19T20:26:44.980025"
+  },
+  {
+    "framework": "AMBER (vectorized)",
+    "model": "random_walk",
+    "n_agents": 500,
+    "n_steps": 50,
+    "execution_time": 0.0085,
+    "peak_memory_mb": 0.07,
+    "time_per_step": 0.000172,
+    "timestamp": "2026-05-19T20:26:45.157551"
+  },
+  {
+    "framework": "AgentPy",
+    "model": "random_walk",
+    "n_agents": 500,
+    "n_steps": 50,
+    "execution_time": 0.0742,
+    "peak_memory_mb": 0.19,
+    "time_per_step": 0.001484,
+    "timestamp": "2026-05-19T20:26:45.529711"
+  },
+  {
+    "framework": "Mesa",
+    "model": "random_walk",
+    "n_agents": 500,
+    "n_steps": 50,
+    "execution_time": 0.0678,
+    "peak_memory_mb": 0.24,
+    "time_per_step": 0.001356,
+    "timestamp": "2026-05-19T20:26:45.881942"
+  },
+  {
+    "framework": "AMBER",
+    "model": "random_walk",
+    "n_agents": 1000,
+    "n_steps": 50,
+    "execution_time": 0.2672,
+    "peak_memory_mb": 0.31,
+    "time_per_step": 0.005343,
+    "timestamp": "2026-05-19T20:26:46.838686"
+  },
+  {
+    "framework": "AMBER (vectorized)",
+    "model": "random_walk",
+    "n_agents": 1000,
+    "n_steps": 50,
+    "execution_time": 0.0092,
+    "peak_memory_mb": 0.13,
+    "time_per_step": 0.000184,
+    "timestamp": "2026-05-19T20:26:47.017686"
   },
   {
     "framework": "AgentPy",
     "model": "random_walk",
     "n_agents": 1000,
     "n_steps": 50,
-    "execution_time": 0.0726,
+    "execution_time": 0.1501,
     "peak_memory_mb": 0.36,
-    "time_per_step": 0.001452,
-    "timestamp": "2026-04-09T21:15:55.080963"
+    "time_per_step": 0.003002,
+    "timestamp": "2026-05-19T20:26:47.625328"
   },
   {
     "framework": "Mesa",
     "model": "random_walk",
     "n_agents": 1000,
     "n_steps": 50,
-    "execution_time": 0.0556,
-    "peak_memory_mb": 0.28,
-    "time_per_step": 0.001113,
-    "timestamp": "2026-04-09T21:15:55.228586"
+    "execution_time": 0.1322,
+    "peak_memory_mb": 0.46,
+    "time_per_step": 0.002642,
+    "timestamp": "2026-05-19T20:26:48.173610"
   },
   {
     "framework": "AMBER",
     "model": "random_walk",
     "n_agents": 5000,
     "n_steps": 50,
-    "execution_time": 0.2544,
-    "peak_memory_mb": 1.11,
-    "time_per_step": 0.005088,
-    "timestamp": "2026-04-09T21:15:55.775219"
+    "execution_time": 1.3414,
+    "peak_memory_mb": 1.36,
+    "time_per_step": 0.026828,
+    "timestamp": "2026-05-19T20:26:52.370754"
   },
   {
     "framework": "AMBER (vectorized)",
     "model": "random_walk",
     "n_agents": 5000,
     "n_steps": 50,
-    "execution_time": 0.0164,
-    "peak_memory_mb": 0.8,
-    "time_per_step": 0.00033,
-    "timestamp": "2026-04-09T21:15:55.843991"
+    "execution_time": 0.0159,
+    "peak_memory_mb": 0.62,
+    "time_per_step": 0.000318,
+    "timestamp": "2026-05-19T20:26:52.577472"
   },
   {
     "framework": "AgentPy",
     "model": "random_walk",
     "n_agents": 5000,
     "n_steps": 50,
-    "execution_time": 0.3529,
-    "peak_memory_mb": 1.73,
-    "time_per_step": 0.007057,
-    "timestamp": "2026-04-09T21:15:56.587344"
+    "execution_time": 0.7691,
+    "peak_memory_mb": 1.69,
+    "time_per_step": 0.015382,
+    "timestamp": "2026-05-19T20:26:55.049502"
   },
   {
     "framework": "Mesa",
     "model": "random_walk",
     "n_agents": 5000,
     "n_steps": 50,
-    "execution_time": 0.2666,
-    "peak_memory_mb": 1.28,
-    "time_per_step": 0.005332,
-    "timestamp": "2026-04-09T21:15:57.160940"
-  },
-  {
-    "framework": "AMBER",
-    "model": "random_walk",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 0.5038,
-    "peak_memory_mb": 2.21,
-    "time_per_step": 0.010078,
-    "timestamp": "2026-04-09T21:15:58.213844"
-  },
-  {
-    "framework": "AMBER (vectorized)",
-    "model": "random_walk",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 0.0253,
-    "peak_memory_mb": 1.6,
-    "time_per_step": 0.000504,
-    "timestamp": "2026-04-09T21:15:58.301397"
-  },
-  {
-    "framework": "AgentPy",
-    "model": "random_walk",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 0.6977,
-    "peak_memory_mb": 3.45,
-    "time_per_step": 0.013954,
-    "timestamp": "2026-04-09T21:15:59.738022"
-  },
-  {
-    "framework": "Mesa",
-    "model": "random_walk",
-    "n_agents": 10000,
-    "n_steps": 50,
-    "execution_time": 0.5304,
-    "peak_memory_mb": 2.55,
-    "time_per_step": 0.010607,
-    "timestamp": "2026-04-09T21:16:00.844126"
+    "execution_time": 0.677,
+    "peak_memory_mb": 2.17,
+    "time_per_step": 0.01354,
+    "timestamp": "2026-05-19T20:26:57.244861"
   }
 ]

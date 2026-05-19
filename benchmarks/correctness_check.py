@@ -508,9 +508,8 @@ println("WEALTH $total_w $mean_w $max_w $zeros_w")
 # Random walk
 @agent struct WkA(NoSpaceAgent); x::Float64; y::Float64; end
 function walk_step!(a, m)
-    θ = rand() * 2π
-    a.x = clamp(a.x + cos(θ), 0.0, {WORLD_SIZE}.0)
-    a.y = clamp(a.y + sin(θ), 0.0, {WORLD_SIZE}.0)
+    a.x = clamp(a.x + (2rand() - 1), 0.0, {WORLD_SIZE}.0)
+    a.y = clamp(a.y + (2rand() - 1), 0.0, {WORLD_SIZE}.0)
 end
 mwk = StandardABM(WkA; agent_step! = walk_step!)
 for _ in 1:{N}; add_agent!(mwk, rand()*{WORLD_SIZE}, rand()*{WORLD_SIZE}); end
@@ -527,9 +526,8 @@ println("WALK $mean_x $mean_y $min_x $max_x $min_y $max_y $oob")
 # SIR
 @agent struct SA(NoSpaceAgent); x::Float64; y::Float64; status::Symbol; infection_time::Int; end
 function sir_step!(a, m)
-    θ = rand() * 2π
-    a.x = clamp(a.x + 2.0*cos(θ), 0.0, {WORLD_SIZE}.0)
-    a.y = clamp(a.y + 2.0*sin(θ), 0.0, {WORLD_SIZE}.0)
+    a.x = clamp(a.x + 2.0*(2rand() - 1), 0.0, {WORLD_SIZE}.0)
+    a.y = clamp(a.y + 2.0*(2rand() - 1), 0.0, {WORLD_SIZE}.0)
     if a.status == :I
         for o in allagents(m)
             if o.status == :S

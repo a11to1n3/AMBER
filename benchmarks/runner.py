@@ -232,15 +232,19 @@ class BenchmarkRunner:
                             run_results.append(result)
                     
                     if run_results:
-                        # Average the results
+                        # Average the results, trimming the slowest run when
+                        # enough samples are available to match the master runner.
+                        timed_results = sorted(run_results, key=lambda r: r.execution_time)
+                        if len(timed_results) >= 3:
+                            timed_results = timed_results[:-1]
                         avg_result = BenchmarkResult(
                             framework=framework,
                             model=model_name,
                             n_agents=n_agents,
                             n_steps=n_steps,
-                            execution_time=round(np.mean([r.execution_time for r in run_results]), 4),
-                            peak_memory_mb=round(np.mean([r.peak_memory_mb for r in run_results]), 2),
-                            time_per_step=round(np.mean([r.time_per_step for r in run_results]), 6),
+                            execution_time=round(np.mean([r.execution_time for r in timed_results]), 4),
+                            peak_memory_mb=round(np.mean([r.peak_memory_mb for r in timed_results]), 2),
+                            time_per_step=round(np.mean([r.time_per_step for r in timed_results]), 6),
                             timestamp=datetime.now().isoformat()
                         )
                         self.results.append(avg_result)
@@ -293,7 +297,8 @@ class BenchmarkRunner:
             headers = ["Agents"] + list(self.frameworks.keys())
             rows = []
             
-            for n_agents in self.AGENT_COUNTS:
+            agent_counts = sorted({r.n_agents for r in self.results if r.model == model_name})
+            for n_agents in agent_counts:
                 key = (model_name, n_agents)
                 if key not in summary:
                     continue
@@ -319,7 +324,7 @@ class BenchmarkRunner:
             md_content += "### Peak Memory (MB)\n\n"
             rows = []
             
-            for n_agents in self.AGENT_COUNTS:
+            for n_agents in agent_counts:
                 key = (model_name, n_agents)
                 if key not in summary:
                     continue
@@ -362,22 +367,25 @@ class BenchmarkRunner:
                 summary[key] = {}
             summary[key][r.framework] = r.execution_time
         
-        # Calculate relative speedups
-        speedups = {'AMBER_vs_AgentPy': [], 'AMBER_vs_Mesa': []}
+        # Calculate relative speedups against the vectorized AMBER path when available.
+        baseline = 'AMBER (vectorized)' if any(
+            r.framework == 'AMBER (vectorized)' for r in self.results
+        ) else 'AMBER'
+        speedups = {'AgentPy': [], 'Mesa': [], 'AMBER': []}
         
         for key, times in summary.items():
-            if 'AMBER' in times and 'AgentPy' in times:
-                speedups['AMBER_vs_AgentPy'].append(times['AgentPy'] / times['AMBER'])
-            if 'AMBER' in times and 'Mesa' in times:
-                speedups['AMBER_vs_Mesa'].append(times['Mesa'] / times['AMBER'])
+            if baseline not in times:
+                continue
+            for framework in speedups:
+                if framework != baseline and framework in times:
+                    speedups[framework].append(times[framework] / times[baseline])
         
         content = ""
-        if speedups['AMBER_vs_AgentPy']:
-            avg = np.mean(speedups['AMBER_vs_AgentPy'])
-            content += f"- **AMBER vs AgentPy**: {avg:.2f}x {'faster' if avg > 1 else 'slower'}\n"
-        if speedups['AMBER_vs_Mesa']:
-            avg = np.mean(speedups['AMBER_vs_Mesa'])
-            content += f"- **AMBER vs Mesa**: {avg:.2f}x {'faster' if avg > 1 else 'slower'}\n"
+        for framework, ratios in speedups.items():
+            if not ratios:
+                continue
+            avg = np.mean(ratios)
+            content += f"- **{baseline} vs {framework}**: {avg:.2f}x {'faster' if avg > 1 else 'slower'}\n"
         
         return content or "No comparison data available.\n"
     
@@ -390,7 +398,12 @@ class BenchmarkRunner:
         if n_models == 1:
             axes = [axes]
         
-        colors = {'AMBER': '#2563eb', 'AgentPy': '#dc2626', 'Mesa': '#16a34a'}
+        colors = {
+            'AMBER': '#60a5fa',
+            'AMBER (vectorized)': '#2563eb',
+            'AgentPy': '#dc2626',
+            'Mesa': '#16a34a',
+        }
         
         for idx, model_name in enumerate(self.MODEL_CONFIGS.keys()):
             ax = axes[idx]
