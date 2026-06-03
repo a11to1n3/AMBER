@@ -18,7 +18,7 @@ test-slow:  ## Run only slow tests
 	pytest -m "slow"
 
 test-coverage:  ## Run tests with coverage report
-	pytest --cov=src/amber --cov-report=html --cov-report=term-missing
+	pytest --cov=src/ambr --cov-report=html --cov-report=term-missing
 
 test-unit:  ## Run only unit tests
 	pytest -m "unit"
@@ -36,9 +36,12 @@ clean:  ## Clean up generated files
 	rm -rf .pytest_cache
 	rm -rf htmlcov
 	rm -rf .coverage
+	rm -rf .coverage.*
+	rm -rf .!*.coverage
 	rm -rf coverage.xml
 	rm -rf dist
 	rm -rf build
+	rm -rf src/*.egg-info
 	rm -rf *.egg-info
 	find . -type d -name __pycache__ -delete
 	find . -type f -name "*.pyc" -delete
@@ -59,4 +62,4 @@ docs:  ## Generate documentation (if applicable)
 check-all: lint type-check test  ## Run all checks (lint, type-check, test)
 
 dev-install:  ## Install in development mode with all dependencies
-	pip install -e ".[dev]" 
+	pip install -e ".[dev]"
