@@ -35,7 +35,8 @@ coverage.xml
 docs/_build/
 docs/api/
 
-# LaTeX / JOSS paper build artifacts
+# Paper drafts and generated artifacts
+paper/
 paper/*.aux
 paper/*.bbl
 paper/*.blg

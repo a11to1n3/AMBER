@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-19T20:19:14.823584",
+  "generated_at": "2026-06-03T09:20:49.619504",
   "agent_counts": [
     500,
     1000,
@@ -8,6 +8,7 @@
   "n_steps": 50,
   "runs": 3,
   "timing": "mean wall-clock seconds; slowest sample trimmed when runs >= 3",
+  "raw_samples_available": "Python-hosted frameworks include raw per-run samples; Agents.jl currently reports aggregate means from its subprocess.",
   "results": [
     {
       "framework": "AMBER (loop)",
@@ -16,8 +17,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0165,
-      "time_per_step": 0.000329
+      "execution_time": 0.016541,
+      "time_per_step": 0.00033082,
+      "raw_samples": [
+        0.016672209,
+        0.016566416,
+        0.016515584
+      ],
+      "trimmed_samples": [
+        0.016515584,
+        0.016566416
+      ],
+      "median": 0.016566416,
+      "stdev": 7.9903e-05,
+      "min": 0.016515584,
+      "max": 0.016672209,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (vectorized)",
@@ -26,8 +42,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0044,
-      "time_per_step": 8.8e-05
+      "execution_time": 0.004432,
+      "time_per_step": 8.8644e-05,
+      "raw_samples": [
+        0.004656542,
+        0.004209375,
+        0.004655
+      ],
+      "trimmed_samples": [
+        0.004209375,
+        0.004655
+      ],
+      "median": 0.004655,
+      "stdev": 0.000257728,
+      "min": 0.004209375,
+      "max": 0.004656542,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AgentPy",
@@ -36,8 +67,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0269,
-      "time_per_step": 0.000538
+      "execution_time": 0.026543,
+      "time_per_step": 0.00053087,
+      "raw_samples": [
+        0.026631292,
+        0.026542833,
+        0.026544125
+      ],
+      "trimmed_samples": [
+        0.026542833,
+        0.026544125
+      ],
+      "median": 0.026544125,
+      "stdev": 5.0703e-05,
+      "min": 0.026542833,
+      "max": 0.026631292,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Mesa",
@@ -46,8 +92,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.2613,
-      "time_per_step": 0.005226
+      "execution_time": 0.260843,
+      "time_per_step": 0.00521687,
+      "raw_samples": [
+        0.264955792,
+        0.258268833,
+        0.263418167
+      ],
+      "trimmed_samples": [
+        0.258268833,
+        0.263418167
+      ],
+      "median": 0.263418167,
+      "stdev": 0.00350227,
+      "min": 0.258268833,
+      "max": 0.264955792,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "SimPy",
@@ -56,8 +117,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0183,
-      "time_per_step": 0.000366
+      "execution_time": 0.017817,
+      "time_per_step": 0.000356337,
+      "raw_samples": [
+        0.017805125,
+        0.018144458,
+        0.017828542
+      ],
+      "trimmed_samples": [
+        0.017805125,
+        0.017828542
+      ],
+      "median": 0.017828542,
+      "stdev": 0.000189516,
+      "min": 0.017805125,
+      "max": 0.018144458,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Melodie",
@@ -66,8 +142,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.019,
-      "time_per_step": 0.000379
+      "execution_time": 0.018497,
+      "time_per_step": 0.00036994,
+      "raw_samples": [
+        0.017772,
+        0.019221959,
+        0.019460167
+      ],
+      "trimmed_samples": [
+        0.017772,
+        0.019221959
+      ],
+      "median": 0.019221959,
+      "stdev": 0.000913695,
+      "min": 0.017772,
+      "max": 0.019460167,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (loop)",
@@ -76,8 +167,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0331,
-      "time_per_step": 0.000662
+      "execution_time": 0.033586,
+      "time_per_step": 0.00067173,
+      "raw_samples": [
+        0.033805875,
+        0.033738166,
+        0.033434792
+      ],
+      "trimmed_samples": [
+        0.033434792,
+        0.033738166
+      ],
+      "median": 0.033738166,
+      "stdev": 0.00019762,
+      "min": 0.033434792,
+      "max": 0.033805875,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (vectorized)",
@@ -86,8 +192,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0064,
-      "time_per_step": 0.000128
+      "execution_time": 0.006254,
+      "time_per_step": 0.000125089,
+      "raw_samples": [
+        0.00616875,
+        0.006410416,
+        0.006340125
+      ],
+      "trimmed_samples": [
+        0.00616875,
+        0.006340125
+      ],
+      "median": 0.006340125,
+      "stdev": 0.000124307,
+      "min": 0.00616875,
+      "max": 0.006410416,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AgentPy",
@@ -96,8 +217,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0536,
-      "time_per_step": 0.001073
+      "execution_time": 0.060283,
+      "time_per_step": 0.001205656,
+      "raw_samples": [
+        0.060091459,
+        0.062750167,
+        0.060474125
+      ],
+      "trimmed_samples": [
+        0.060091459,
+        0.060474125
+      ],
+      "median": 0.060474125,
+      "stdev": 0.001437331,
+      "min": 0.060091459,
+      "max": 0.062750167,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Mesa",
@@ -106,8 +242,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.9958,
-      "time_per_step": 0.019916
+      "execution_time": 1.032217,
+      "time_per_step": 0.020644334,
+      "raw_samples": [
+        1.032515208,
+        1.031918208,
+        1.050200458
+      ],
+      "trimmed_samples": [
+        1.031918208,
+        1.032515208
+      ],
+      "median": 1.032515208,
+      "stdev": 0.010387213,
+      "min": 1.031918208,
+      "max": 1.050200458,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "SimPy",
@@ -116,8 +267,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0382,
-      "time_per_step": 0.000764
+      "execution_time": 0.040675,
+      "time_per_step": 0.000813502,
+      "raw_samples": [
+        0.041718833,
+        0.040639917,
+        0.040710291
+      ],
+      "trimmed_samples": [
+        0.040639917,
+        0.040710291
+      ],
+      "median": 0.040710291,
+      "stdev": 0.000603624,
+      "min": 0.040639917,
+      "max": 0.041718833,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Melodie",
@@ -126,8 +292,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0361,
-      "time_per_step": 0.000722
+      "execution_time": 0.038023,
+      "time_per_step": 0.000760457,
+      "raw_samples": [
+        0.038350667,
+        0.038261584,
+        0.037784166
+      ],
+      "trimmed_samples": [
+        0.037784166,
+        0.038261584
+      ],
+      "median": 0.038261584,
+      "stdev": 0.000304628,
+      "min": 0.037784166,
+      "max": 0.038350667,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (loop)",
@@ -136,8 +317,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.1714,
-      "time_per_step": 0.003427
+      "execution_time": 0.1866,
+      "time_per_step": 0.003732006,
+      "raw_samples": [
+        0.187347333,
+        0.186341042,
+        0.186859542
+      ],
+      "trimmed_samples": [
+        0.186341042,
+        0.186859542
+      ],
+      "median": 0.186859542,
+      "stdev": 0.000503224,
+      "min": 0.186341042,
+      "max": 0.187347333,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (vectorized)",
@@ -146,8 +342,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0214,
-      "time_per_step": 0.000428
+      "execution_time": 0.019757,
+      "time_per_step": 0.00039513,
+      "raw_samples": [
+        0.020575084,
+        0.020049792,
+        0.01946325
+      ],
+      "trimmed_samples": [
+        0.01946325,
+        0.020049792
+      ],
+      "median": 0.020049792,
+      "stdev": 0.000556198,
+      "min": 0.01946325,
+      "max": 0.020575084,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AgentPy",
@@ -156,8 +367,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.2724,
-      "time_per_step": 0.005449
+      "execution_time": 0.278536,
+      "time_per_step": 0.005570718,
+      "raw_samples": [
+        0.27971125,
+        0.282887125,
+        0.277360583
+      ],
+      "trimmed_samples": [
+        0.277360583,
+        0.27971125
+      ],
+      "median": 0.27971125,
+      "stdev": 0.00277352,
+      "min": 0.277360583,
+      "max": 0.282887125,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Mesa",
@@ -166,8 +392,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 23.9173,
-      "time_per_step": 0.478347
+      "execution_time": 25.88852,
+      "time_per_step": 0.517770401,
+      "raw_samples": [
+        25.794520083,
+        25.98252,
+        26.567995959
+      ],
+      "trimmed_samples": [
+        25.794520083,
+        25.98252
+      ],
+      "median": 25.98252,
+      "stdev": 0.403400338,
+      "min": 25.794520083,
+      "max": 26.567995959,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "SimPy",
@@ -176,8 +417,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.2182,
-      "time_per_step": 0.004365
+      "execution_time": 0.241382,
+      "time_per_step": 0.00482764,
+      "raw_samples": [
+        0.232876375,
+        0.40020425,
+        0.249887625
+      ],
+      "trimmed_samples": [
+        0.232876375,
+        0.249887625
+      ],
+      "median": 0.249887625,
+      "stdev": 0.09208971,
+      "min": 0.232876375,
+      "max": 0.40020425,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Melodie",
@@ -186,8 +442,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.1884,
-      "time_per_step": 0.003767
+      "execution_time": 0.206743,
+      "time_per_step": 0.004134866,
+      "raw_samples": [
+        0.22804825,
+        0.205158333,
+        0.208328291
+      ],
+      "trimmed_samples": [
+        0.205158333,
+        0.208328291
+      ],
+      "median": 0.208328291,
+      "stdev": 0.012402108,
+      "min": 0.205158333,
+      "max": 0.22804825,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (loop)",
@@ -196,8 +467,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0362,
-      "time_per_step": 0.000723
+      "execution_time": 0.040526,
+      "time_per_step": 0.000810522,
+      "raw_samples": [
+        0.040426,
+        0.040626167,
+        0.109586875
+      ],
+      "trimmed_samples": [
+        0.040426,
+        0.040626167
+      ],
+      "median": 0.040626167,
+      "stdev": 0.039872392,
+      "min": 0.040426,
+      "max": 0.109586875,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (vectorized)",
@@ -206,8 +492,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0027,
-      "time_per_step": 5.4e-05
+      "execution_time": 0.002867,
+      "time_per_step": 5.7341e-05,
+      "raw_samples": [
+        0.002833125,
+        0.002967375,
+        0.002900958
+      ],
+      "trimmed_samples": [
+        0.002833125,
+        0.002900958
+      ],
+      "median": 0.002900958,
+      "stdev": 6.7126e-05,
+      "min": 0.002833125,
+      "max": 0.002967375,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AgentPy",
@@ -216,8 +517,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0164,
-      "time_per_step": 0.000328
+      "execution_time": 0.016906,
+      "time_per_step": 0.000338117,
+      "raw_samples": [
+        0.016459583,
+        0.017387333,
+        0.017352125
+      ],
+      "trimmed_samples": [
+        0.016459583,
+        0.017352125
+      ],
+      "median": 0.017352125,
+      "stdev": 0.000525768,
+      "min": 0.016459583,
+      "max": 0.017387333,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Mesa",
@@ -226,8 +542,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0159,
-      "time_per_step": 0.000318
+      "execution_time": 0.014465,
+      "time_per_step": 0.000289295,
+      "raw_samples": [
+        0.0143915,
+        0.014538042,
+        0.014701083
+      ],
+      "trimmed_samples": [
+        0.0143915,
+        0.014538042
+      ],
+      "median": 0.014538042,
+      "stdev": 0.000154865,
+      "min": 0.0143915,
+      "max": 0.014701083,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "SimPy",
@@ -236,8 +567,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0252,
-      "time_per_step": 0.000504
+      "execution_time": 0.024366,
+      "time_per_step": 0.000487327,
+      "raw_samples": [
+        0.02472925,
+        0.025241125,
+        0.024003458
+      ],
+      "trimmed_samples": [
+        0.024003458,
+        0.02472925
+      ],
+      "median": 0.02472925,
+      "stdev": 0.000621907,
+      "min": 0.024003458,
+      "max": 0.025241125,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Melodie",
@@ -246,8 +592,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.1101,
-      "time_per_step": 0.002201
+      "execution_time": 0.111739,
+      "time_per_step": 0.002234783,
+      "raw_samples": [
+        0.119996792,
+        0.114354208,
+        0.109124084
+      ],
+      "trimmed_samples": [
+        0.109124084,
+        0.114354208
+      ],
+      "median": 0.114354208,
+      "stdev": 0.005437658,
+      "min": 0.109124084,
+      "max": 0.119996792,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (loop)",
@@ -256,8 +617,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0688,
-      "time_per_step": 0.001376
+      "execution_time": 0.08009,
+      "time_per_step": 0.0016018,
+      "raw_samples": [
+        0.079480708,
+        0.08069925,
+        0.083929583
+      ],
+      "trimmed_samples": [
+        0.079480708,
+        0.08069925
+      ],
+      "median": 0.08069925,
+      "stdev": 0.002298999,
+      "min": 0.079480708,
+      "max": 0.083929583,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (vectorized)",
@@ -266,8 +642,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0027,
-      "time_per_step": 5.4e-05
+      "execution_time": 0.003446,
+      "time_per_step": 6.891e-05,
+      "raw_samples": [
+        0.003421709,
+        0.003469334,
+        0.003527291
+      ],
+      "trimmed_samples": [
+        0.003421709,
+        0.003469334
+      ],
+      "median": 0.003469334,
+      "stdev": 5.2875e-05,
+      "min": 0.003421709,
+      "max": 0.003527291,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AgentPy",
@@ -276,8 +667,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0313,
-      "time_per_step": 0.000625
+      "execution_time": 0.033189,
+      "time_per_step": 0.000663788,
+      "raw_samples": [
+        0.034004208,
+        0.034427167,
+        0.032374625
+      ],
+      "trimmed_samples": [
+        0.032374625,
+        0.034004208
+      ],
+      "median": 0.034004208,
+      "stdev": 0.001083771,
+      "min": 0.032374625,
+      "max": 0.034427167,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Mesa",
@@ -286,8 +692,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0278,
-      "time_per_step": 0.000555
+      "execution_time": 0.028897,
+      "time_per_step": 0.000577931,
+      "raw_samples": [
+        0.029276417,
+        0.028516709,
+        0.0305755
+      ],
+      "trimmed_samples": [
+        0.028516709,
+        0.029276417
+      ],
+      "median": 0.029276417,
+      "stdev": 0.001041105,
+      "min": 0.028516709,
+      "max": 0.0305755,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "SimPy",
@@ -296,8 +717,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0483,
-      "time_per_step": 0.000967
+      "execution_time": 0.051154,
+      "time_per_step": 0.001023073,
+      "raw_samples": [
+        0.051690792,
+        0.0506165,
+        0.053557875
+      ],
+      "trimmed_samples": [
+        0.0506165,
+        0.051690792
+      ],
+      "median": 0.051690792,
+      "stdev": 0.001488388,
+      "min": 0.0506165,
+      "max": 0.053557875,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Melodie",
@@ -306,8 +742,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.2163,
-      "time_per_step": 0.004326
+      "execution_time": 0.253451,
+      "time_per_step": 0.005069011,
+      "raw_samples": [
+        0.254894833,
+        0.255539125,
+        0.25200625
+      ],
+      "trimmed_samples": [
+        0.25200625,
+        0.254894833
+      ],
+      "median": 0.254894833,
+      "stdev": 0.001881499,
+      "min": 0.25200625,
+      "max": 0.255539125,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (loop)",
@@ -316,8 +767,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.3524,
-      "time_per_step": 0.007049
+      "execution_time": 0.388525,
+      "time_per_step": 0.007770508,
+      "raw_samples": [
+        0.403160459,
+        0.385729584,
+        0.39132125
+      ],
+      "trimmed_samples": [
+        0.385729584,
+        0.39132125
+      ],
+      "median": 0.39132125,
+      "stdev": 0.008900085,
+      "min": 0.385729584,
+      "max": 0.403160459,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (vectorized)",
@@ -326,8 +792,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0062,
-      "time_per_step": 0.000124
+      "execution_time": 0.00537,
+      "time_per_step": 0.000107404,
+      "raw_samples": [
+        0.005424291,
+        0.005325,
+        0.005415417
+      ],
+      "trimmed_samples": [
+        0.005325,
+        0.005415417
+      ],
+      "median": 0.005415417,
+      "stdev": 5.4943e-05,
+      "min": 0.005325,
+      "max": 0.005424291,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AgentPy",
@@ -336,8 +817,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.1501,
-      "time_per_step": 0.003003
+      "execution_time": 0.169262,
+      "time_per_step": 0.003385232,
+      "raw_samples": [
+        0.171914208,
+        0.166609041,
+        0.229365083
+      ],
+      "trimmed_samples": [
+        0.166609041,
+        0.171914208
+      ],
+      "median": 0.171914208,
+      "stdev": 0.034801984,
+      "min": 0.166609041,
+      "max": 0.229365083,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Mesa",
@@ -346,8 +842,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.1412,
-      "time_per_step": 0.002823
+      "execution_time": 0.146729,
+      "time_per_step": 0.002934575,
+      "raw_samples": [
+        0.145563041,
+        0.147894458,
+        0.15273625
+      ],
+      "trimmed_samples": [
+        0.145563041,
+        0.147894458
+      ],
+      "median": 0.147894458,
+      "stdev": 0.003659084,
+      "min": 0.145563041,
+      "max": 0.15273625,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "SimPy",
@@ -356,8 +867,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.2606,
-      "time_per_step": 0.005212
+      "execution_time": 0.313549,
+      "time_per_step": 0.006270988,
+      "raw_samples": [
+        0.346058542,
+        0.28104025,
+        0.3807815
+      ],
+      "trimmed_samples": [
+        0.28104025,
+        0.346058542
+      ],
+      "median": 0.346058542,
+      "stdev": 0.050631642,
+      "min": 0.28104025,
+      "max": 0.3807815,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Melodie",
@@ -366,8 +892,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 1.1037,
-      "time_per_step": 0.022075
+      "execution_time": 1.192734,
+      "time_per_step": 0.023854674,
+      "raw_samples": [
+        1.186699584,
+        1.198767834,
+        1.21752675
+      ],
+      "trimmed_samples": [
+        1.186699584,
+        1.198767834
+      ],
+      "median": 1.198767834,
+      "stdev": 0.015534123,
+      "min": 1.186699584,
+      "max": 1.21752675,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (loop)",
@@ -376,8 +917,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.1739,
-      "time_per_step": 0.003478
+      "execution_time": 0.157261,
+      "time_per_step": 0.003145227,
+      "raw_samples": [
+        0.157034541,
+        0.166021834,
+        0.157488166
+      ],
+      "trimmed_samples": [
+        0.157034541,
+        0.157488166
+      ],
+      "median": 0.157488166,
+      "stdev": 0.005062949,
+      "min": 0.157034541,
+      "max": 0.166021834,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (vectorized)",
@@ -386,8 +942,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0955,
-      "time_per_step": 0.00191
+      "execution_time": 0.095559,
+      "time_per_step": 0.001911176,
+      "raw_samples": [
+        0.10139375,
+        0.096757917,
+        0.094359666
+      ],
+      "trimmed_samples": [
+        0.094359666,
+        0.096757917
+      ],
+      "median": 0.096757917,
+      "stdev": 0.003575866,
+      "min": 0.094359666,
+      "max": 0.10139375,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AgentPy",
@@ -396,8 +967,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.163,
-      "time_per_step": 0.003261
+      "execution_time": 0.22677,
+      "time_per_step": 0.004535397,
+      "raw_samples": [
+        0.240908708,
+        0.229902792,
+        0.223636875
+      ],
+      "trimmed_samples": [
+        0.223636875,
+        0.229902792
+      ],
+      "median": 0.229902792,
+      "stdev": 0.008743646,
+      "min": 0.223636875,
+      "max": 0.240908708,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Mesa",
@@ -406,8 +992,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.2505,
-      "time_per_step": 0.005009
+      "execution_time": 0.307304,
+      "time_per_step": 0.006146084,
+      "raw_samples": [
+        0.314501125,
+        0.3031035,
+        0.311504875
+      ],
+      "trimmed_samples": [
+        0.3031035,
+        0.311504875
+      ],
+      "median": 0.311504875,
+      "stdev": 0.00590856,
+      "min": 0.3031035,
+      "max": 0.314501125,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "SimPy",
@@ -416,8 +1017,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.1193,
-      "time_per_step": 0.002385
+      "execution_time": 0.120947,
+      "time_per_step": 0.002418949,
+      "raw_samples": [
+        0.122156125,
+        0.119738792,
+        0.125224667
+      ],
+      "trimmed_samples": [
+        0.119738792,
+        0.122156125
+      ],
+      "median": 0.122156125,
+      "stdev": 0.002749372,
+      "min": 0.119738792,
+      "max": 0.125224667,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Melodie",
@@ -426,8 +1042,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.4721,
-      "time_per_step": 0.009442
+      "execution_time": 0.676255,
+      "time_per_step": 0.01352511,
+      "raw_samples": [
+        0.678988916,
+        0.690285,
+        0.673522084
+      ],
+      "trimmed_samples": [
+        0.673522084,
+        0.678988916
+      ],
+      "median": 0.678988916,
+      "stdev": 0.008548715,
+      "min": 0.673522084,
+      "max": 0.690285,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (loop)",
@@ -436,8 +1067,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.8173,
-      "time_per_step": 0.016347
+      "execution_time": 0.970183,
+      "time_per_step": 0.019403664,
+      "raw_samples": [
+        0.970443916,
+        0.9699225,
+        0.971536083
+      ],
+      "trimmed_samples": [
+        0.9699225,
+        0.970443916
+      ],
+      "median": 0.970443916,
+      "stdev": 0.000823443,
+      "min": 0.9699225,
+      "max": 0.971536083,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (vectorized)",
@@ -446,8 +1092,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.1187,
-      "time_per_step": 0.002374
+      "execution_time": 0.134231,
+      "time_per_step": 0.00268463,
+      "raw_samples": [
+        0.135658584,
+        0.139253,
+        0.132804375
+      ],
+      "trimmed_samples": [
+        0.132804375,
+        0.135658584
+      ],
+      "median": 0.135658584,
+      "stdev": 0.003231385,
+      "min": 0.132804375,
+      "max": 0.139253,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AgentPy",
@@ -456,8 +1117,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.9733,
-      "time_per_step": 0.019465
+      "execution_time": 0.974687,
+      "time_per_step": 0.01949375,
+      "raw_samples": [
+        0.983447292,
+        0.965927667,
+        1.08793975
+      ],
+      "trimmed_samples": [
+        0.965927667,
+        0.983447292
+      ],
+      "median": 0.983447292,
+      "stdev": 0.065970397,
+      "min": 0.965927667,
+      "max": 1.08793975,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Mesa",
@@ -466,8 +1142,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 1.1538,
-      "time_per_step": 0.023076
+      "execution_time": 1.476236,
+      "time_per_step": 0.029524719,
+      "raw_samples": [
+        1.41537,
+        1.613560166,
+        1.537101875
+      ],
+      "trimmed_samples": [
+        1.41537,
+        1.537101875
+      ],
+      "median": 1.537101875,
+      "stdev": 0.099953207,
+      "min": 1.41537,
+      "max": 1.613560166,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "SimPy",
@@ -476,8 +1167,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.4973,
-      "time_per_step": 0.009947
+      "execution_time": 0.488375,
+      "time_per_step": 0.0097675,
+      "raw_samples": [
+        0.458757125,
+        0.518631625,
+        0.517992875
+      ],
+      "trimmed_samples": [
+        0.458757125,
+        0.517992875
+      ],
+      "median": 0.517992875,
+      "stdev": 0.034385651,
+      "min": 0.458757125,
+      "max": 0.518631625,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Melodie",
@@ -486,8 +1192,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 2.1257,
-      "time_per_step": 0.042514
+      "execution_time": 2.168905,
+      "time_per_step": 0.043378105,
+      "raw_samples": [
+        2.161551209,
+        2.245632834,
+        2.17625925
+      ],
+      "trimmed_samples": [
+        2.161551209,
+        2.17625925
+      ],
+      "median": 2.17625925,
+      "stdev": 0.044904974,
+      "min": 2.161551209,
+      "max": 2.245632834,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (loop)",
@@ -496,8 +1217,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 10.5683,
-      "time_per_step": 0.211366
+      "execution_time": 10.16408,
+      "time_per_step": 0.2032816,
+      "raw_samples": [
+        11.365886541,
+        10.417863792,
+        9.910296167
+      ],
+      "trimmed_samples": [
+        9.910296167,
+        10.417863792
+      ],
+      "median": 10.417863792,
+      "stdev": 0.738818354,
+      "min": 9.910296167,
+      "max": 11.365886541,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AMBER (vectorized)",
@@ -506,8 +1242,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.6871,
-      "time_per_step": 0.013742
+      "execution_time": 0.57776,
+      "time_per_step": 0.011555193,
+      "raw_samples": [
+        0.590967833,
+        0.5645515,
+        0.947330166
+      ],
+      "trimmed_samples": [
+        0.5645515,
+        0.590967833
+      ],
+      "median": 0.590967833,
+      "stdev": 0.213780044,
+      "min": 0.5645515,
+      "max": 0.947330166,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "AgentPy",
@@ -516,8 +1267,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 11.9927,
-      "time_per_step": 0.239854
+      "execution_time": 11.2699,
+      "time_per_step": 0.225397994,
+      "raw_samples": [
+        11.269856584,
+        11.269942792,
+        11.287793625
+      ],
+      "trimmed_samples": [
+        11.269856584,
+        11.269942792
+      ],
+      "median": 11.269942792,
+      "stdev": 0.010331159,
+      "min": 11.269856584,
+      "max": 11.287793625,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Mesa",
@@ -526,8 +1292,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 17.9668,
-      "time_per_step": 0.359336
+      "execution_time": 18.794541,
+      "time_per_step": 0.375890815,
+      "raw_samples": [
+        18.927607375,
+        18.661474166,
+        19.047809667
+      ],
+      "trimmed_samples": [
+        18.661474166,
+        18.927607375
+      ],
+      "median": 18.927607375,
+      "stdev": 0.197707948,
+      "min": 18.661474166,
+      "max": 19.047809667,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "SimPy",
@@ -536,8 +1317,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 5.5058,
-      "time_per_step": 0.110116
+      "execution_time": 5.455303,
+      "time_per_step": 0.10910605,
+      "raw_samples": [
+        5.607037417,
+        5.303567625,
+        5.641359334
+      ],
+      "trimmed_samples": [
+        5.303567625,
+        5.607037417
+      ],
+      "median": 5.607037417,
+      "stdev": 0.185909991,
+      "min": 5.303567625,
+      "max": 5.641359334,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Melodie",
@@ -546,8 +1342,23 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 21.2632,
-      "time_per_step": 0.425264
+      "execution_time": 22.834021,
+      "time_per_step": 0.456680412,
+      "raw_samples": [
+        23.110541708,
+        22.875021167,
+        22.79302
+      ],
+      "trimmed_samples": [
+        22.79302,
+        22.875021167
+      ],
+      "median": 22.875021167,
+      "stdev": 0.164830292,
+      "min": 22.79302,
+      "max": 23.110541708,
+      "trimmed": 1,
+      "notes": null
     },
     {
       "framework": "Agents.jl",
@@ -556,8 +1367,16 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0006,
-      "time_per_step": 1.2e-05
+      "execution_time": 0.000522,
+      "time_per_step": 1.044e-05,
+      "raw_samples": [],
+      "trimmed_samples": [],
+      "median": 0.000522,
+      "stdev": null,
+      "min": null,
+      "max": null,
+      "trimmed": null,
+      "notes": "Agents.jl subprocess reports only trimmed aggregate timing."
     },
     {
       "framework": "Agents.jl",
@@ -566,8 +1385,16 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0014,
-      "time_per_step": 2.8e-05
+      "execution_time": 0.00124,
+      "time_per_step": 2.48e-05,
+      "raw_samples": [],
+      "trimmed_samples": [],
+      "median": 0.00124,
+      "stdev": null,
+      "min": null,
+      "max": null,
+      "trimmed": null,
+      "notes": "Agents.jl subprocess reports only trimmed aggregate timing."
     },
     {
       "framework": "Agents.jl",
@@ -576,8 +1403,16 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0072,
-      "time_per_step": 0.000145
+      "execution_time": 0.007356,
+      "time_per_step": 0.00014712,
+      "raw_samples": [],
+      "trimmed_samples": [],
+      "median": 0.007356,
+      "stdev": null,
+      "min": null,
+      "max": null,
+      "trimmed": null,
+      "notes": "Agents.jl subprocess reports only trimmed aggregate timing."
     },
     {
       "framework": "Agents.jl",
@@ -586,8 +1421,16 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0001,
-      "time_per_step": 3e-06
+      "execution_time": 0.000144,
+      "time_per_step": 2.88e-06,
+      "raw_samples": [],
+      "trimmed_samples": [],
+      "median": 0.000144,
+      "stdev": null,
+      "min": null,
+      "max": null,
+      "trimmed": null,
+      "notes": "Agents.jl subprocess reports only trimmed aggregate timing."
     },
     {
       "framework": "Agents.jl",
@@ -596,8 +1439,16 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0003,
-      "time_per_step": 6e-06
+      "execution_time": 0.000302,
+      "time_per_step": 6.04e-06,
+      "raw_samples": [],
+      "trimmed_samples": [],
+      "median": 0.000302,
+      "stdev": null,
+      "min": null,
+      "max": null,
+      "trimmed": null,
+      "notes": "Agents.jl subprocess reports only trimmed aggregate timing."
     },
     {
       "framework": "Agents.jl",
@@ -606,8 +1457,16 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0016,
-      "time_per_step": 3.2e-05
+      "execution_time": 0.001645,
+      "time_per_step": 3.29e-05,
+      "raw_samples": [],
+      "trimmed_samples": [],
+      "median": 0.001645,
+      "stdev": null,
+      "min": null,
+      "max": null,
+      "trimmed": null,
+      "notes": "Agents.jl subprocess reports only trimmed aggregate timing."
     },
     {
       "framework": "Agents.jl",
@@ -616,8 +1475,16 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0042,
-      "time_per_step": 8.3e-05
+      "execution_time": 0.004404,
+      "time_per_step": 8.808e-05,
+      "raw_samples": [],
+      "trimmed_samples": [],
+      "median": 0.004404,
+      "stdev": null,
+      "min": null,
+      "max": null,
+      "trimmed": null,
+      "notes": "Agents.jl subprocess reports only trimmed aggregate timing."
     },
     {
       "framework": "Agents.jl",
@@ -626,8 +1493,16 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.0357,
-      "time_per_step": 0.000713
+      "execution_time": 0.037367,
+      "time_per_step": 0.00074734,
+      "raw_samples": [],
+      "trimmed_samples": [],
+      "median": 0.037367,
+      "stdev": null,
+      "min": null,
+      "max": null,
+      "trimmed": null,
+      "notes": "Agents.jl subprocess reports only trimmed aggregate timing."
     },
     {
       "framework": "Agents.jl",
@@ -636,8 +1511,16 @@
       "n_steps": 50,
       "runs": 3,
       "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.8082,
-      "time_per_step": 0.016163
+      "execution_time": 0.812002,
+      "time_per_step": 0.01624004,
+      "raw_samples": [],
+      "trimmed_samples": [],
+      "median": 0.812002,
+      "stdev": null,
+      "min": null,
+      "max": null,
+      "trimmed": null,
+      "notes": "Agents.jl subprocess reports only trimmed aggregate timing."
     }
   ]
 }

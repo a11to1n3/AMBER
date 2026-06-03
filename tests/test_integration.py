@@ -627,10 +627,7 @@ class TestVectorizedWorkflows:
                 self.agents.at[all_ids].scatter_add(wealth=1)
                 self.agents.at[all_ids].scatter_add(wealth=1)
 
-        # steps=2 ensures step() is called at least once (Model.run only
-        # enters the step loop while ``t < max_steps``; the initial
-        # setup/update pair advances t to 1).
-        m = ScatterModel({"steps": 2, "seed": 0, "show_progress": False})
+        m = ScatterModel({"steps": 1, "seed": 0, "show_progress": False})
         m.run()
         assert m.agents.wealth.to_list() == [2] * 10
 
@@ -656,6 +653,6 @@ class TestVectorizedWorkflows:
                 rest = self_m.agents.where(pl.col("id") > 0)
                 rest.tag = "rest"
 
-        m = M({"steps": 2, "seed": 0, "show_progress": False})
+        m = M({"steps": 1, "seed": 0, "show_progress": False})
         m.run()
         assert m.agents.tag.to_list() == ["first", "rest", "rest", "rest", "rest"]

@@ -1,5 +1,10 @@
 # Benchmark Results
 
+> Legacy four-framework output from `benchmarks/runner.py`, retained for
+> historical memory comparisons. For the corrected seven-framework benchmark
+> used by the README and paper, use `summary_table_all.md` and
+> `benchmark_results_all.json`.
+
 Generated: 2026-05-19 20:26:57
 
 ## Wealth Transfer
@@ -20,7 +25,7 @@ Generated: 2026-05-19 20:26:57
 |     1000 |     0.2 |                  0.1 |       0.3 |    0.4 |
 |     5000 |     1   |                  0.6 |       1.5 |    1.9 |
 
-## Sir Epidemic
+## SIR Epidemic
 
 ### Execution Time (seconds)
 

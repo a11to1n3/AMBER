@@ -91,49 +91,53 @@ SimPy, Melodie, and Agents.jl now use the same independent x/y displacement
 as AMBER, AgentPy, and Mesa. Agents.jl now also uses the same run count and
 slowest-sample trim protocol as the Python frameworks.
 
-After these fixes, **every framework passes every invariant**, so the timings
-below are apples-to-apples.
+After these fixes, every framework passes the structural invariants used for
+timing admission. The SIR benchmark still has a documented update-ordering
+caveat: AMBER (vectorized) and Melodie use a synchronous infection phase,
+while the other implementations use sequential/asynchronous infection. Treat
+the SIR timings as a comparison of the same spatial epidemic workload class,
+not as proof of identical stochastic trajectories.
 
 ## Latest verified-correct results — all seven frameworks
 
-Run on 2026-05-19, Python 3.12.7, Julia 1.12.3, 50 steps per simulation,
-3 runs averaged (slowest trimmed). Apple Silicon.
+Run on 2026-06-03, Python 3.12.7, Julia 1.12.3, 50 executed steps per
+simulation, seeded runs, 3 runs averaged (slowest trimmed). Apple Silicon.
 
 **Execution time — Wealth Transfer**
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
-| Agents.jl | **0.6 ms** | **1.4 ms** | **7.2 ms** |
-| **AMBER (vectorized)** | 4.4 ms | 6.4 ms | 21 ms |
-| AMBER (loop) | 16 ms | 33 ms | 171 ms |
-| SimPy | 18 ms | 38 ms | 218 ms |
-| Melodie | 19 ms | 36 ms | 188 ms |
-| AgentPy | 27 ms | 54 ms | 272 ms |
-| Mesa | 261 ms | 996 ms | 23.92 s |
+| Agents.jl | **0.5 ms** | **1.2 ms** | **7.4 ms** |
+| AMBER (vectorized) | 4.4 ms | 6.3 ms | 20 ms |
+| AMBER (loop) | 17 ms | 34 ms | 187 ms |
+| SimPy | 18 ms | 41 ms | 241 ms |
+| Melodie | 18 ms | 38 ms | 207 ms |
+| AgentPy | 27 ms | 60 ms | 279 ms |
+| Mesa | 261 ms | 1.03 s | 25.89 s |
 
 **Execution time — Random Walk**
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
 | Agents.jl | **0.1 ms** | **0.3 ms** | **1.6 ms** |
-| **AMBER (vectorized)** | 2.7 ms | 2.7 ms | 6.2 ms |
-| Mesa | 16 ms | 28 ms | 141 ms |
-| AgentPy | 16 ms | 31 ms | 150 ms |
-| SimPy | 25 ms | 48 ms | 261 ms |
-| AMBER (loop) | 36 ms | 69 ms | 352 ms |
-| Melodie | 110 ms | 216 ms | 1.10 s |
+| AMBER (vectorized) | 2.9 ms | 3.4 ms | 5.4 ms |
+| Mesa | 14 ms | 29 ms | 147 ms |
+| AgentPy | 17 ms | 33 ms | 169 ms |
+| SimPy | 24 ms | 51 ms | 314 ms |
+| AMBER (loop) | 41 ms | 80 ms | 389 ms |
+| Melodie | 112 ms | 253 ms | 1.19 s |
 
 **Execution time — SIR Epidemic**
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
-| Agents.jl | **4.2 ms** | **36 ms** | 808 ms |
-| **AMBER (vectorized)** | 95 ms | 119 ms | **687 ms** |
-| SimPy | 119 ms | 497 ms | 5.51 s |
-| AgentPy | 163 ms | 973 ms | 11.99 s |
-| AMBER (loop) | 174 ms | 817 ms | 10.57 s |
-| Mesa | 250 ms | 1.15 s | 17.97 s |
-| Melodie | 472 ms | 2.13 s | 21.26 s |
+| Agents.jl | **4.4 ms** | **37 ms** | 812 ms |
+| AMBER (vectorized) | 96 ms | 134 ms | **578 ms** |
+| SimPy | 121 ms | 488 ms | 5.46 s |
+| AgentPy | 227 ms | 975 ms | 11.27 s |
+| AMBER (loop) | 157 ms | 970 ms | 10.16 s |
+| Mesa | 307 ms | 1.48 s | 18.79 s |
+| Melodie | 676 ms | 2.17 s | 22.83 s |
 
 **Ratio of each framework's time to `AMBER (vectorized)`, averaged across
 all three agent counts above (lower means that framework is closer to
@@ -141,12 +145,12 @@ AMBER vectorized; values < 1 mean it beats AMBER vectorized):**
 
 | Framework | Wealth Transfer | Random Walk | SIR Epidemic |
 |---|---|---|---|
-| Agents.jl | 0.2× (faster) | 0.1× (faster) | 0.5× (faster on average) |
-| AMBER (loop) | 5.6× | 31.9× | 8.0× |
-| SimPy | 6.8× | 23.1× | 4.5× |
-| Melodie | 6.3× | 99.6× | 17.9× |
-| AgentPy | 9.1× | 14.0× | 9.1× |
-| Mesa | 444.4× | 13.0× | 12.8× |
+| Agents.jl | 0.2× (faster) | 0.1× (faster) | 0.6× (faster on average) |
+| AMBER (loop) | 6.2× | 36.6× | 8.8× |
+| SimPy | 7.6× | 27.2× | 4.8× |
+| Melodie | 6.9× | 111.5× | 20.9× |
+| AgentPy | 9.9× | 15.7× | 9.7× |
+| Mesa | 511.4× | 13.6× | 15.6× |
 
 See [`results/scaling_chart_all.png`](results/scaling_chart_all.png) for the
 log-log scaling plot (the wider the gap at the right edge of each subplot,
@@ -158,15 +162,16 @@ the better AMBER scales).
 
 **Who wins each model at the 5000-agent point (the realistic ABM scale):**
 
-* **Wealth transfer**: Agents.jl wins (7.2 ms), AMBER (vectorized) is the
-  fastest Python-hosted implementation (21 ms).
+* **Wealth transfer**: Agents.jl wins (7.4 ms), AMBER (vectorized) is the
+  fastest Python-hosted implementation (20 ms).
   Julia's JIT compiler wins the microbenchmark because the per-step work
   is so small (two array updates) that Polars' per-expression overhead
-  dominates. Every other framework is roughly 9× to 1118× slower.
+  dominates. Every other Python-hosted implementation is roughly 9× to
+  1310× slower.
 * **Random walk**: Agents.jl wins (1.6 ms), AMBER (vectorized) is the
-  fastest Python-hosted implementation (6.2 ms).
-* **SIR epidemic**: AMBER (vectorized) wins (687 ms), Agents.jl is close
-  behind (808 ms).
+  fastest Python-hosted implementation (5.4 ms).
+* **SIR epidemic**: AMBER (vectorized) wins (578 ms), Agents.jl is close
+  behind (812 ms).
   The Polars cross-join for the O(n²) infection step is faster than the
   hand-written Julia double loop because both languages are paying for
   the same quadratic work but Polars executes it as one compiled C/Rust
@@ -183,12 +188,9 @@ infected/susceptible sets at the start of the step, then applies all
 infection events simultaneously. The other frameworks (including AMBER
 loop) use **asynchronous / sequential** update — a newly infected agent
 can already infect its own neighbours later in the same step. Both are
-valid SIR discretizations; the sync variant produces slightly slower
-epidemic spread (more S, fewer R) at any snapshot time. This is visible
-in the `correctness_check.py` output and is **not a bug**, just a
-convention difference.
-
-## Reproducing these numbers
+valid SIR discretizations; the convention difference is why the correctness
+audit checks population conservation and parameter routing rather than
+claiming identical trajectories.
 
 ## Reproducing these numbers
 
