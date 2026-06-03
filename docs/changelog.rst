@@ -6,6 +6,48 @@ All notable changes to AMBER will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[0.3.3] - 2026-06-03
+---------------------
+
+Changed
+~~~~~~~
+- Package metadata now lives in ``pyproject.toml`` and builds through the
+  standard PEP 517/518 Python packaging flow.
+- ``setup.py`` is kept as a compatibility shim for older editable-install
+  tooling.
+- Wheel and source distributions now include package URLs and keyword
+  metadata.
+
+Fixed
+~~~~~
+- Removed tracked coverage artifacts from the repository.
+- Tightened source-distribution hygiene so local paper drafts, caches, and
+  coverage files stay out of release artifacts.
+- Corrected the ``Makefile`` coverage target to use the ``src/ambr`` package
+  path.
+
+[0.3.2] - 2026-06-03
+---------------------
+
+Fixed
+~~~~~
+- ``Model.run()`` and ``Model.run_step()`` now execute exactly the requested
+  number of model steps after setup.
+- Benchmark helpers now validate structural correctness before timing wealth
+  transfer, random walk, and SIR runs.
+- Agents.jl benchmark parameters are routed through the master runner instead
+  of hardcoded step counts.
+
+Changed
+~~~~~~~
+- Regenerated all-framework benchmark results with seeded timing,
+  slowest-sample trimming, and documented SIR update-ordering caveats.
+- Preserved raw per-run timing samples for Python-hosted frameworks in the
+  benchmark JSON.
+- Updated README benchmark tables and installation docs for the current Python
+  support floor.
+- Stopped tracking draft paper files in the package repository.
+
 [0.3.0] - 2026-05-09
 ---------------------
 
@@ -236,7 +278,7 @@ Changed
 Technical Details
 ~~~~~~~~~~~~~~~~~
 - **Dependencies**: Polars, NumPy, NetworkX, Matplotlib, Seaborn
-- **Python Support**: 3.8+
+- **Python Support**: 3.9+
 - **Testing**: pytest with comprehensive coverage
 - **Documentation**: Sphinx with ReadTheDocs theme
-- **CI/CD**: GitHub Actions with multi-OS and multi-Python testing 
+- **CI/CD**: GitHub Actions with multi-OS and multi-Python testing

@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.3.3 - 2026-06-03
+
+### Changed
+
+- Move package metadata to `pyproject.toml` so AMBER builds through the
+  standard PEP 517/518 Python packaging flow.
+- Keep `setup.py` as a compatibility shim for older editable-install tooling.
+- Add package URLs and keyword metadata for cleaner wheel and source
+  distributions.
+
+### Fixed
+
+- Remove tracked coverage artifacts from the repository.
+- Tighten source-distribution hygiene so local paper drafts, caches, and
+  coverage files stay out of release artifacts.
+- Correct the `Makefile` coverage target to use the `src/ambr` package path.
+
 ## v0.3.2 - 2026-06-03
 
 ### Fixed
