@@ -27,6 +27,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import subprocess
@@ -36,6 +37,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 warnings.filterwarnings("ignore")
+logging.getLogger("agentpy").disabled = True
+logging.disable(logging.INFO)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BENCH_DIR = Path(__file__).resolve().parent
@@ -51,6 +54,7 @@ STEPS = 50
 INITIAL_WEALTH = 1
 INITIAL_INFECTED = 5
 WORLD_SIZE = 100
+SEED = 42
 
 
 def _fmt(v: Any) -> str:
@@ -84,7 +88,7 @@ def wealth_amber_loop() -> Dict[str, Any]:
     from models.amber_models import AMBERWealthTransfer
 
     m = AMBERWealthTransfer(
-        {"n": N, "steps": STEPS, "initial_wealth": INITIAL_WEALTH, "show_progress": False}
+        {"n": N, "steps": STEPS, "initial_wealth": INITIAL_WEALTH, "show_progress": False, "seed": SEED}
     )
     m.run()
     wealths = [a.wealth for a in m.agent_objects_list]
@@ -100,7 +104,7 @@ def wealth_amber_vec() -> Dict[str, Any]:
     from models.amber_models import AMBERVectorizedWealthTransfer
 
     m = AMBERVectorizedWealthTransfer(
-        {"n": N, "steps": STEPS, "initial_wealth": INITIAL_WEALTH, "show_progress": False}
+        {"n": N, "steps": STEPS, "initial_wealth": INITIAL_WEALTH, "show_progress": False, "seed": SEED}
     )
     m.run()
     wealth = m.agents.wealth.to_numpy()
@@ -113,12 +117,16 @@ def wealth_amber_vec() -> Dict[str, Any]:
 
 
 def wealth_agentpy() -> Dict[str, Any]:
+    import contextlib
+    import io
+
     from models.agentpy_models import AgentPyWealthTransfer
 
     m = AgentPyWealthTransfer(
-        {"n": N, "steps": STEPS, "initial_wealth": INITIAL_WEALTH}
+        {"n": N, "steps": STEPS, "initial_wealth": INITIAL_WEALTH, "seed": SEED}
     )
-    m.run()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        m.run(display=False)
     wealths = [a.wealth for a in m.agents]
     return {
         "total": sum(wealths),
@@ -131,7 +139,7 @@ def wealth_agentpy() -> Dict[str, Any]:
 def wealth_mesa() -> Dict[str, Any]:
     from models.mesa_models import MesaWealthTransfer
 
-    m = MesaWealthTransfer(n=N, steps=STEPS, initial_wealth=INITIAL_WEALTH)
+    m = MesaWealthTransfer(n=N, steps=STEPS, initial_wealth=INITIAL_WEALTH, seed=SEED)
     m.run()
     wealths = [a.wealth for a in m.agents]
     return {
@@ -145,10 +153,12 @@ def wealth_mesa() -> Dict[str, Any]:
 def wealth_simpy() -> Dict[str, Any]:
     import contextlib
     import io
+    import random
 
     import simpy
     from models import simpy_models
 
+    random.seed(SEED)
     # Inline the standalone runner so we can recover the agents_data at the end.
     env = simpy.Environment()
     agents_data = [{"id": i, "wealth": INITIAL_WEALTH} for i in range(N)]
@@ -169,6 +179,7 @@ def wealth_melodie() -> Dict[str, Any]:
     import numpy as np
     from models import melodie_models as mm
 
+    np.random.seed(SEED)
     sqlite_path = Path("MelodieBenchmark.sqlite")
     if sqlite_path.exists():
         sqlite_path.unlink()
@@ -211,7 +222,7 @@ def walk_amber_loop() -> Dict[str, Any]:
     from models.amber_models import AMBERRandomWalk
 
     m = AMBERRandomWalk(
-        {"n": N, "steps": STEPS, "world_size": WORLD_SIZE, "speed": 1.0, "show_progress": False}
+        {"n": N, "steps": STEPS, "world_size": WORLD_SIZE, "speed": 1.0, "show_progress": False, "seed": SEED}
     )
     m.run()
     xs = [a.x for a in m.agent_objects_list]
@@ -223,7 +234,7 @@ def walk_amber_vec() -> Dict[str, Any]:
     from models.amber_models import AMBERVectorizedRandomWalk
 
     m = AMBERVectorizedRandomWalk(
-        {"n": N, "steps": STEPS, "world_size": WORLD_SIZE, "speed": 1.0, "show_progress": False}
+        {"n": N, "steps": STEPS, "world_size": WORLD_SIZE, "speed": 1.0, "show_progress": False, "seed": SEED}
     )
     m.run()
     xs = m.agents.x.to_numpy().tolist()
@@ -232,10 +243,14 @@ def walk_amber_vec() -> Dict[str, Any]:
 
 
 def walk_agentpy() -> Dict[str, Any]:
+    import contextlib
+    import io
+
     from models.agentpy_models import AgentPyRandomWalk
 
-    m = AgentPyRandomWalk({"n": N, "steps": STEPS, "world_size": WORLD_SIZE, "speed": 1.0})
-    m.run()
+    m = AgentPyRandomWalk({"n": N, "steps": STEPS, "world_size": WORLD_SIZE, "speed": 1.0, "seed": SEED})
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        m.run(display=False)
     xs = [a.x for a in m.agents]
     ys = [a.y for a in m.agents]
     return _walk_stats(xs, ys)
@@ -244,7 +259,7 @@ def walk_agentpy() -> Dict[str, Any]:
 def walk_mesa() -> Dict[str, Any]:
     from models.mesa_models import MesaRandomWalk
 
-    m = MesaRandomWalk(n=N, steps=STEPS, world_size=WORLD_SIZE, speed=1.0)
+    m = MesaRandomWalk(n=N, steps=STEPS, world_size=WORLD_SIZE, speed=1.0, seed=SEED)
     m.run()
     xs = [a.x for a in m.agents]
     ys = [a.y for a in m.agents]
@@ -254,10 +269,12 @@ def walk_mesa() -> Dict[str, Any]:
 def walk_simpy() -> Dict[str, Any]:
     import contextlib
     import io
+    import random
 
     import simpy
     from models import simpy_models
 
+    random.seed(SEED)
     env = simpy.Environment()
     agents_data = [{"id": i, "x": 0, "y": 0} for i in range(N)]
     for i in range(N):
@@ -273,6 +290,7 @@ def walk_melodie() -> Dict[str, Any]:
     import numpy as np
     from models import melodie_models as mm
 
+    np.random.seed(SEED)
     sqlite_path = Path("MelodieBenchmark.sqlite")
     if sqlite_path.exists():
         sqlite_path.unlink()
@@ -339,6 +357,7 @@ def sir_amber_loop() -> Dict[str, Any]:
             "transmission_rate": 0.1,
             "recovery_time": 14,
             "show_progress": False,
+            "seed": SEED,
         }
     )
     m.run()
@@ -362,6 +381,7 @@ def sir_amber_vec() -> Dict[str, Any]:
             "transmission_rate": 0.1,
             "recovery_time": 14,
             "show_progress": False,
+            "seed": SEED,
         }
     )
     m.run()
@@ -375,6 +395,9 @@ def sir_amber_vec() -> Dict[str, Any]:
 
 
 def sir_agentpy() -> Dict[str, Any]:
+    import contextlib
+    import io
+
     from models.agentpy_models import AgentPySIRModel, APSIRAgent
 
     m = AgentPySIRModel(
@@ -387,9 +410,11 @@ def sir_agentpy() -> Dict[str, Any]:
             "infection_radius": 5.0,
             "transmission_rate": 0.1,
             "recovery_time": 14,
+            "seed": SEED,
         }
     )
-    m.run()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        m.run(display=False)
     s = sum(1 for a in m.agents if a.status == APSIRAgent.STATUS_S)
     i = sum(1 for a in m.agents if a.status == APSIRAgent.STATUS_I)
     r = sum(1 for a in m.agents if a.status == APSIRAgent.STATUS_R)
@@ -408,6 +433,7 @@ def sir_mesa() -> Dict[str, Any]:
         infection_radius=5.0,
         transmission_rate=0.1,
         recovery_time=14,
+        seed=SEED,
     )
     m.run()
     s = sum(1 for a in m.agents if a.status == MesaSIRAgent.STATUS_S)
@@ -419,10 +445,12 @@ def sir_mesa() -> Dict[str, Any]:
 def sir_simpy() -> Dict[str, Any]:
     import contextlib
     import io
+    import random
 
     import simpy
     from models import simpy_models
 
+    random.seed(SEED)
     env = simpy.Environment()
     agents_data = [
         {"id": i, "status": 0, "x": 0, "y": 0, "infection_time": 0} for i in range(N)
@@ -441,6 +469,7 @@ def sir_melodie() -> Dict[str, Any]:
     import numpy as np
     from models import melodie_models as mm
 
+    np.random.seed(SEED)
     sqlite_path = Path("MelodieBenchmark.sqlite")
     if sqlite_path.exists():
         sqlite_path.unlink()

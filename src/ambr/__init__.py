@@ -56,7 +56,7 @@ from .performance import (
     HAS_NUMBA,
 )
 
-__version__ = '0.3.1'
+__version__ = '0.3.2'
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'
 __url__ = 'https://github.com/a11to1n3/AMBER'
@@ -93,5 +93,3 @@ __all__ = [
     'HAS_SCIPY',
     'HAS_NUMBA',
 ]
-
- 

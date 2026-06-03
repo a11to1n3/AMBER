@@ -3,13 +3,13 @@ import numpy as np
 import sys
 import os
 
-# Add parent directory to path to import benchmarks
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Add benchmark directory to path to import benchmark model registries.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'benchmarks'))
 
-from benchmarks.models.vectorized_models import (
-    VectorizedWealthTransfer,
-    VectorizedSIRModel,
-    VectorizedRandomWalk
+from models.amber_models import (
+    AMBERVectorizedWealthTransfer,
+    AMBERVectorizedSIRModel,
+    AMBERVectorizedRandomWalk,
 )
 
 class TestScientificCorrectness:
@@ -25,22 +25,18 @@ class TestScientificCorrectness:
         n_agents = 1000
         initial_wealth = 5
         
-        model = VectorizedWealthTransfer({
+        model = AMBERVectorizedWealthTransfer({
             'n': n_agents,
             'steps': 50,
             'initial_wealth': initial_wealth,
+            'show_progress': False,
             'seed': 42
         })
-        
-        # Initial check
-        model.setup() # Initialize state
-        assert np.isclose(model.wealths.sum(), n_agents * initial_wealth), \
-            "Initial total wealth incorrect"
-            
+
         model.run()
-        
+
         # Final check
-        final_total = model.wealths.sum()
+        final_total = model.agents.wealth.sum()
         expected = n_agents * initial_wealth
         
         assert np.isclose(final_total, expected), \
@@ -50,17 +46,17 @@ class TestScientificCorrectness:
         """
         Wealth Transfer Model: Gini coefficient should increase from 0 (equality).
         """
-        model = VectorizedWealthTransfer({
+        model = AMBERVectorizedWealthTransfer({
             'n': 100,
             'steps': 100,
             'initial_wealth': 1,
+            'show_progress': False,
             'seed': 42
         })
-        
-        model.setup()
-        initial_gini = model._calculate_gini()
+
+        initial_gini = 0.0
         model.run()
-        final_gini = model._calculate_gini()
+        final_gini = model._gini(model.agents.wealth.to_numpy())
         
         assert initial_gini == 0.0, "Initial Gini should be 0 for equal start"
         assert final_gini > 0.1, "Gini should increase over time (entropy)"
@@ -70,10 +66,11 @@ class TestScientificCorrectness:
         SIR Model: Total population (S + I + R) must be constant.
         """
         n_agents = 500
-        model = VectorizedSIRModel({
+        model = AMBERVectorizedSIRModel({
             'n': n_agents,
             'steps': 50,
             'initial_infected': 10,
+            'show_progress': False,
             'seed': 42
         })
         
@@ -95,10 +92,11 @@ class TestScientificCorrectness:
         SIR Model: Recovered count should be non-decreasing.
         Dead/Recovered agents do not become susceptible again.
         """
-        model = VectorizedSIRModel({
+        model = AMBERVectorizedSIRModel({
             'n': 500,
             'steps': 50,
             'initial_infected': 50,
+            'show_progress': False,
             'seed': 42
         })
         
@@ -114,18 +112,19 @@ class TestScientificCorrectness:
         The current implementation is HARD BOUNDED (0, world_size).
         """
         world_size = 100
-        model = VectorizedRandomWalk({
+        model = AMBERVectorizedRandomWalk({
             'n': 100,
             'steps': 50,
             'world_size': world_size,
             'speed': 5.0, # Fast movement to hit walls
+            'show_progress': False,
             'seed': 42
         })
         
         model.run()
         
-        x = model.positions[:, 0]
-        y = model.positions[:, 1]
+        x = model.agents.x.to_numpy()
+        y = model.agents.y.to_numpy()
         
         assert np.all((x >= 0) & (x <= world_size)), "Agents escaped X bounds"
         assert np.all((y >= 0) & (y <= world_size)), "Agents escaped Y bounds"

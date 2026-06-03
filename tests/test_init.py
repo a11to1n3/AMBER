@@ -275,7 +275,7 @@ class TestPackageIntegration:
         # Create parameter space
         space = am.ParameterSpace({
             'x': am.IntRange(0, 6),
-            'steps': 2  # Need at least 2 steps for data recording to work
+            'steps': 1
         })
         
         # Test grid search
@@ -312,4 +312,4 @@ class TestPackageIntegration:
         G = nx.Graph()
         G.add_edges_from([(0, 1), (1, 2)])
         network = am.NetworkEnvironment(mock_model, G)
-        assert len(network.nodes) == 3 
+        assert len(network.nodes) == 3
