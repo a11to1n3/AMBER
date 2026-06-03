@@ -4,7 +4,7 @@ Installation
 Requirements
 ------------
 
-AMBER requires Python 3.8 or higher and the following dependencies:
+AMBER requires Python 3.9 or higher and the following dependencies:
 
 * **polars** >= 0.20.0 - High-performance DataFrame library
 * **numpy** >= 1.20.0 - Numerical computing
@@ -105,4 +105,4 @@ If you encounter issues:
 1. Check the `GitHub Issues <https://github.com/a11to1n3/AMBER/issues>`_
 2. Read the documentation thoroughly
 3. Ask questions in the community forums
-4. Report bugs with minimal reproducible examples 
+4. Report bugs with minimal reproducible examples

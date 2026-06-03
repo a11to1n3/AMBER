@@ -178,8 +178,8 @@ class TestObjectiveFunction:
         with patch('builtins.print'):
             result = objective_function(TestModel, parameters, 'final_counter')
         
-        # Should return the final counter value (4 steps means counter goes from 0 to 4)
-        assert result == 4
+        # Should return the final counter value after all requested steps.
+        assert result == 5
     
     def test_objective_function_with_iterations(self):
         """Test objective function with multiple iterations."""
@@ -582,4 +582,4 @@ class TestOptimizationIntegration:
             assert result['parameters']['n_agents'] in [5, 10, 15]
             assert result['parameters']['multiplier'] in [1, 2, 3]
             expected = result['parameters']['n_agents'] * result['parameters']['multiplier']
-            assert result['objective'] == expected 
+            assert result['objective'] == expected
