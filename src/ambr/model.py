@@ -137,14 +137,15 @@ class Model(BaseModel):
             
     def end(self): pass
 
-    def run_step(self) -> None:
-        """Execute a single simulation step. The first call also runs ``setup``."""
-        if not getattr(self, "_step_loop_started", False):
+    def _ensure_setup(self) -> None:
+        """Run model setup once before simulation steps execute."""
+        if not getattr(self, "_setup_done", False):
             self.setup()
-            self.update()
-            self._finalize_step_data()
-            self._step_loop_started = True
-            return
+            self._setup_done = True
+
+    def run_step(self) -> None:
+        """Execute one simulation step. The first call also runs ``setup``."""
+        self._ensure_setup()
         self.step()
         self.update()
         self._finalize_step_data()
@@ -158,7 +159,9 @@ class Model(BaseModel):
             self._print_start_info(max_steps)
             self._print_progress(0, max_steps, force=True)
 
-        # Use run_step() which handles the initial setup() call transparently.
+        self._ensure_setup()
+
+        # Use run_step() to execute exactly one model step per loop iteration.
         while self.t < max_steps:
             self.run_step()
             if self._show_progress:
@@ -315,4 +318,3 @@ class Model(BaseModel):
 
     def _print_progress(self, current_step: int, total_steps: int, force: bool = False):
         pass
- 

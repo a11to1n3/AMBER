@@ -13,6 +13,7 @@ Usage:
 import sys
 import os
 import json
+import logging
 import time
 import tracemalloc
 import argparse
@@ -26,6 +27,8 @@ from dataclasses import dataclass, asdict
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 import numpy as np
+logging.getLogger("agentpy").disabled = True
+logging.disable(logging.INFO)
 
 # Try to import tabulate for nice tables
 try:
@@ -79,6 +82,11 @@ class BenchmarkRunner:
             'world_size': 100,
             'speed': 1.0,
         }
+    }
+    MODEL_LABELS = {
+        'wealth_transfer': 'Wealth Transfer',
+        'sir_epidemic': 'SIR Epidemic',
+        'random_walk': 'Random Walk',
     }
     
     def __init__(self, results_dir: str = None):
@@ -135,6 +143,7 @@ class BenchmarkRunner:
         config = self.MODEL_CONFIGS.get(model_name, {}).copy()
         config['n'] = n_agents
         config['steps'] = n_steps
+        config['seed'] = 42
         
         # Start memory tracking
         tracemalloc.start()
@@ -146,9 +155,18 @@ class BenchmarkRunner:
             # AMBER and AgentPy accept dict, Mesa accepts kwargs
             if framework == 'Mesa':
                 model = model_class(**config)
+            elif framework == 'AgentPy':
+                import contextlib
+                import io
+
+                model = model_class(config)
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    model.run(display=False)
+                model = None
             else:  # AMBER and AgentPy
                 model = model_class(config)
-            model.run()
+            if model is not None:
+                model.run()
         except Exception as e:
             tracemalloc.stop()
             print(f"  ❌ Error: {e}")
@@ -290,7 +308,7 @@ class BenchmarkRunner:
         md_content += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         
         for model_name in self.MODEL_CONFIGS.keys():
-            md_content += f"## {model_name.replace('_', ' ').title()}\n\n"
+            md_content += f"## {self.MODEL_LABELS[model_name]}\n\n"
             
             # Execution time table
             md_content += "### Execution Time (seconds)\n\n"
@@ -418,7 +436,7 @@ class BenchmarkRunner:
             
             ax.set_xlabel('Number of Agents')
             ax.set_ylabel('Execution Time (s)')
-            ax.set_title(model_name.replace('_', ' ').title())
+            ax.set_title(self.MODEL_LABELS[model_name])
             ax.legend()
             ax.grid(True, alpha=0.3)
             ax.set_xscale('log')

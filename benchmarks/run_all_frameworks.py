@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Master benchmark runner: all six frameworks side by side.
+"""Master benchmark runner: seven framework implementations side by side.
 
 Produces a single reproducer for the headline performance table that
-compares AMBER against every ABM framework the README / paper reference:
+compares AMBER against the ABM/simulation frameworks referenced in the
+README and paper:
 
   * AMBER (loop)        — per-agent Python loops (``benchmarks/models/amber_models.py``)
   * AMBER (vectorized)  — view API (same file, the new classes)
@@ -33,8 +34,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
+import statistics
 import subprocess
 import sys
 import time
@@ -45,6 +48,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 warnings.filterwarnings("ignore")
+logging.getLogger("agentpy").disabled = True
+logging.disable(logging.INFO)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BENCH_DIR = Path(__file__).resolve().parent
@@ -68,23 +73,44 @@ MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
         "recovery_time": 14,
     },
 }
+MODEL_LABELS: Dict[str, str] = {
+    "wealth_transfer": "Wealth Transfer",
+    "random_walk": "Random Walk",
+    "sir_epidemic": "SIR Epidemic",
+}
+DEFAULT_SEED = 42
 
 # --------------------------------------------------------------------------- #
 # Timing primitives
 # --------------------------------------------------------------------------- #
 
-def _time(callable_: Callable[[], None], runs: int) -> float:
-    """Run ``callable_`` ``runs`` times and return the mean wall-clock time."""
-    ts: List[float] = []
+TimingSummary = Dict[str, Any]
+
+
+def _time(callable_: Callable[[], None], runs: int) -> TimingSummary:
+    """Run ``callable_`` ``runs`` times and return raw and trimmed timings."""
+    samples: List[float] = []
     for _ in range(runs):
         t0 = time.perf_counter()
         callable_()
-        ts.append(time.perf_counter() - t0)
-    ts.sort()
+        samples.append(time.perf_counter() - t0)
+
+    sorted_samples = sorted(samples)
     # Trim the slowest run when we have >= 3 samples; noise is asymmetric.
-    if len(ts) >= 3:
-        ts = ts[:-1]
-    return sum(ts) / len(ts)
+    trimmed_samples = sorted_samples[:-1] if len(sorted_samples) >= 3 else sorted_samples
+    mean = sum(trimmed_samples) / len(trimmed_samples)
+    stdev = statistics.stdev(samples) if len(samples) > 1 else 0.0
+    return {
+        "mean": mean,
+        "samples": samples,
+        "sorted_samples": sorted_samples,
+        "trimmed_samples": trimmed_samples,
+        "median": statistics.median(samples),
+        "stdev": stdev,
+        "min": min(samples),
+        "max": max(samples),
+        "trimmed": len(samples) - len(trimmed_samples),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -97,12 +123,12 @@ def _bench_amber(
     steps: int,
     runs: int,
     variant: str,  # "loop" or "vectorized"
-) -> Optional[float]:
+) -> Optional[TimingSummary]:
     from models.amber_models import AMBER_MODELS, AMBER_VECTORIZED_MODELS
 
     registry = AMBER_MODELS if variant == "loop" else AMBER_VECTORIZED_MODELS
     cls = registry[model_name]
-    cfg = {"n": n, "steps": steps, "show_progress": False}
+    cfg = {"n": n, "steps": steps, "show_progress": False, "seed": DEFAULT_SEED}
     cfg.update(MODEL_CONFIGS[model_name])
 
     def _run():
@@ -118,17 +144,21 @@ def _bench_amber(
 
 def _bench_agentpy(
     model_name: str, n: int, steps: int, runs: int
-) -> Optional[float]:
+) -> Optional[TimingSummary]:
     try:
         from models.agentpy_models import AGENTPY_MODELS
     except ImportError:
         return None
     cls = AGENTPY_MODELS[model_name]
-    cfg = {"n": n, "steps": steps}
+    cfg = {"n": n, "steps": steps, "seed": DEFAULT_SEED}
     cfg.update(MODEL_CONFIGS[model_name])
 
     def _run():
-        cls(cfg).run()
+        import contextlib
+        import io
+
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            cls(cfg).run(display=False)
 
     _run()
     return _time(_run, runs)
@@ -140,13 +170,13 @@ def _bench_agentpy(
 
 def _bench_mesa(
     model_name: str, n: int, steps: int, runs: int
-) -> Optional[float]:
+) -> Optional[TimingSummary]:
     try:
         from models.mesa_models import MESA_MODELS
     except ImportError:
         return None
     cls = MESA_MODELS[model_name]
-    cfg = {"n": n, "steps": steps}
+    cfg = {"n": n, "steps": steps, "seed": DEFAULT_SEED}
     cfg.update(MODEL_CONFIGS[model_name])
 
     def _run():
@@ -162,7 +192,7 @@ def _bench_mesa(
 
 def _bench_simpy(
     model_name: str, n: int, steps: int, runs: int
-) -> Optional[float]:
+) -> Optional[TimingSummary]:
     try:
         from models import simpy_models
     except ImportError:
@@ -179,7 +209,9 @@ def _bench_simpy(
         # simpy's sir helper prints "Final Infected: .../..." — silence it.
         import contextlib
         import io
+        import random
 
+        random.seed(DEFAULT_SEED)
         with contextlib.redirect_stdout(io.StringIO()):
             fn(n=n, steps=steps, **cfg)
 
@@ -193,7 +225,7 @@ def _bench_simpy(
 
 def _bench_melodie(
     model_name: str, n: int, steps: int, runs: int
-) -> Optional[float]:
+) -> Optional[TimingSummary]:
     try:
         import numpy as np
         import Melodie  # noqa: F401  (surface probe)
@@ -217,6 +249,7 @@ def _bench_melodie(
     model_cls, scenario_cls = scenario_map[model_name]
 
     def _run_once():
+        np.random.seed(DEFAULT_SEED)
         sqlite_path = Path("MelodieBenchmark.sqlite")
         if sqlite_path.exists():
             sqlite_path.unlink()
@@ -353,15 +386,20 @@ FRAMEWORK_COLORS = {
 
 def _write_json(
     results: Dict[Tuple[str, str, int], Optional[float]],
+    timing_details: Dict[Tuple[str, str, int], TimingSummary],
     steps: int,
     runs: int,
     agent_counts: List[int],
     path: Path,
 ) -> None:
+    def _round_or_none(value: Any, ndigits: int = 9) -> Optional[float]:
+        return round(value, ndigits) if isinstance(value, (int, float)) else None
+
     flat = []
     for (framework, model, n), t in results.items():
         if t is None:
             continue
+        detail = timing_details.get((framework, model, n), {})
         flat.append(
             {
                 "framework": framework,
@@ -370,8 +408,16 @@ def _write_json(
                 "n_steps": steps,
                 "runs": runs,
                 "timing": "mean with slowest sample trimmed when runs >= 3",
-                "execution_time": round(t, 4),
-                "time_per_step": round(t / steps, 6),
+                "execution_time": round(t, 6),
+                "time_per_step": round(t / steps, 9),
+                "raw_samples": [round(x, 9) for x in detail.get("samples", [])],
+                "trimmed_samples": [round(x, 9) for x in detail.get("trimmed_samples", [])],
+                "median": _round_or_none(detail.get("median")),
+                "stdev": _round_or_none(detail.get("stdev")),
+                "min": _round_or_none(detail.get("min")),
+                "max": _round_or_none(detail.get("max")),
+                "trimmed": detail.get("trimmed"),
+                "notes": detail.get("notes"),
             }
         )
     path.write_text(
@@ -382,6 +428,7 @@ def _write_json(
                 "n_steps": steps,
                 "runs": runs,
                 "timing": "mean wall-clock seconds; slowest sample trimmed when runs >= 3",
+                "raw_samples_available": "Python-hosted frameworks include raw per-run samples; Agents.jl currently reports aggregate means from its subprocess.",
                 "results": flat,
             },
             indent=2,
@@ -415,22 +462,32 @@ def _write_markdown(
     lines.append("")
 
     for model in MODEL_CONFIGS:
-        pretty = model.replace("_", " ").title()
+        pretty = MODEL_LABELS[model]
         lines.append(f"## {pretty}")
         lines.append("")
         header = ["Framework"] + [str(n) for n in agent_counts]
         lines.append("| " + " | ".join(header) + " |")
         lines.append("|" + "|".join(["---"] * len(header)) + "|")
+        best_by_n = {
+            n: min(
+                t
+                for framework in FRAMEWORK_ORDER
+                if (t := results.get((framework, model, n))) is not None
+            )
+            for n in agent_counts
+            if any(results.get((framework, model, n)) is not None for framework in FRAMEWORK_ORDER)
+        }
         for framework in FRAMEWORK_ORDER:
-            row_vals = [
-                _cell(results.get((framework, model, n))) for n in agent_counts
-            ]
+            row_vals = []
+            for n in agent_counts:
+                val = results.get((framework, model, n))
+                cell = _cell(val)
+                if val is not None and val == best_by_n.get(n):
+                    cell = f"**{cell}**"
+                row_vals.append(cell)
             if all(v == "—" for v in row_vals):
                 continue
-            label = framework
-            if framework == "AMBER (vectorized)":
-                label = "**AMBER (vectorized)**"
-            lines.append("| " + label + " | " + " | ".join(row_vals) + " |")
+            lines.append("| " + framework + " | " + " | ".join(row_vals) + " |")
         lines.append("")
 
     # Speedup summary (AMBER vectorized baseline)
@@ -501,7 +558,7 @@ def _write_chart(
         ax.set_yscale("log")
         ax.set_xlabel("Number of agents")
         ax.set_ylabel("Execution time (s)")
-        ax.set_title(model.replace("_", " ").title())
+        ax.set_title(MODEL_LABELS[model])
         ax.grid(True, alpha=0.3, which="both")
         ax.legend(fontsize=8, loc="best")
 
@@ -549,9 +606,10 @@ def main() -> None:
     print()
 
     results: Dict[Tuple[str, str, int], Optional[float]] = {}
+    timing_details: Dict[Tuple[str, str, int], TimingSummary] = {}
 
     # Python-hosted frameworks ----------------------------------------------
-    py_frameworks: List[Tuple[str, Callable[..., Optional[float]]]] = []
+    py_frameworks: List[Tuple[str, Callable[..., Optional[TimingSummary]]]] = []
     if "AMBER (loop)" in selected_frameworks:
         py_frameworks.append(("AMBER (loop)", lambda m, n, s, r: _bench_amber(m, n, s, r, "loop")))
     if "AMBER (vectorized)" in selected_frameworks:
@@ -571,11 +629,14 @@ def main() -> None:
             print(f"  n={n}")
             for framework, fn in py_frameworks:
                 try:
-                    t = fn(model, n, steps, runs)
+                    summary = fn(model, n, steps, runs)
                 except Exception as e:
                     print(f"    {framework:22s} ERROR  ({type(e).__name__}: {e})")
-                    t = None
+                    summary = None
+                t = summary["mean"] if summary is not None else None
                 results[(framework, model, n)] = t
+                if summary is not None:
+                    timing_details[(framework, model, n)] = summary
                 if t is not None:
                     print(f"    {framework:22s} {t * 1000:>9.1f} ms")
                 else:
@@ -587,6 +648,17 @@ def main() -> None:
         jl_results = _run_agentsjl(agent_counts, steps, runs)
         for (model, n), sec in jl_results.items():
             results[("Agents.jl", model, n)] = sec
+            timing_details[("Agents.jl", model, n)] = {
+                "mean": sec,
+                "samples": [],
+                "trimmed_samples": [],
+                "median": sec,
+                "stdev": None,
+                "min": None,
+                "max": None,
+                "trimmed": None,
+                "notes": "Agents.jl subprocess reports only trimmed aggregate timing.",
+            }
         if jl_results:
             for (model, n), sec in sorted(jl_results.items()):
                 print(f"    Agents.jl  {model:<16s} n={n:<6d}  {sec * 1000:>9.1f} ms")
@@ -599,7 +671,7 @@ def main() -> None:
     md_path = RESULTS_DIR / "summary_table_all.md"
     chart_path = RESULTS_DIR / "scaling_chart_all.png"
 
-    _write_json(results, steps, runs, agent_counts, json_path)
+    _write_json(results, timing_details, steps, runs, agent_counts, json_path)
     print(f"  wrote {json_path.relative_to(REPO_ROOT)}")
     _write_markdown(results, agent_counts, md_path)
     print(f"  wrote {md_path.relative_to(REPO_ROOT)}")

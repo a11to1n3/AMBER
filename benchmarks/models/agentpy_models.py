@@ -6,7 +6,6 @@ AgentPy uses self.p for parameter access.
 """
 
 import agentpy as ap
-import random
 
 
 # =============================================================================
@@ -72,8 +71,8 @@ class APSIRAgent(ap.Agent):
         self.status = self.STATUS_S
         self.infection_time = 0
         world_size = self.model.p.get('world_size', 100)
-        self.x = random.uniform(0, world_size)
-        self.y = random.uniform(0, world_size)
+        self.x = self.model.random.uniform(0, world_size)
+        self.y = self.model.random.uniform(0, world_size)
         
         # Initial infections - use agent index from model
         if self.id < self.model.p.get('initial_infected', 5):
@@ -83,8 +82,8 @@ class APSIRAgent(ap.Agent):
         speed = self.model.p.get('movement_speed', 2.0)
         world_size = self.model.p.get('world_size', 100)
         
-        self.x += random.uniform(-speed, speed)
-        self.y += random.uniform(-speed, speed)
+        self.x += self.model.random.uniform(-speed, speed)
+        self.y += self.model.random.uniform(-speed, speed)
         
         self.x = max(0, min(world_size, self.x))
         self.y = max(0, min(world_size, self.y))
@@ -102,7 +101,7 @@ class APSIRAgent(ap.Agent):
             
             dist_sq = (self.x - other.x)**2 + (self.y - other.y)**2
             if dist_sq <= radius**2:
-                if random.random() < transmission:
+                if self.model.random.random() < transmission:
                     other.status = self.STATUS_I
                     other.infection_time = 0
     
@@ -148,15 +147,15 @@ class APWalkAgent(ap.Agent):
     
     def setup(self):
         world_size = self.model.p.get('world_size', 100)
-        self.x = random.uniform(0, world_size)
-        self.y = random.uniform(0, world_size)
+        self.x = self.model.random.uniform(0, world_size)
+        self.y = self.model.random.uniform(0, world_size)
     
     def step(self):
         speed = self.model.p.get('speed', 1.0)
         world_size = self.model.p.get('world_size', 100)
         
-        self.x += random.uniform(-speed, speed)
-        self.y += random.uniform(-speed, speed)
+        self.x += self.model.random.uniform(-speed, speed)
+        self.y += self.model.random.uniform(-speed, speed)
         
         self.x = max(0, min(world_size, self.x))
         self.y = max(0, min(world_size, self.y))

@@ -285,11 +285,11 @@ class TestModelGetAgentDataAndRunStep:
 
         m = M({"show_progress": False})
         m.run_step()
-        assert calls == {"setup": 1, "step": 0}
-        assert m.t == 1  # update() ran once
+        assert calls == {"setup": 1, "step": 1}
+        assert m.t == 1
 
         m.run_step()
-        assert calls == {"setup": 1, "step": 1}
+        assert calls == {"setup": 1, "step": 2}
         assert m.t == 2
 
     def test_run_step_records_model_data(self):
@@ -301,10 +301,10 @@ class TestModelGetAgentDataAndRunStep:
                 self_m.record_model("x", self_m.t * 2)
 
         m = M({"show_progress": False})
-        m.run_step()  # setup + initial update
         m.run_step()  # step 1
         m.run_step()  # step 2
-        # _model_data has initial + 2 step entries
+        m.run_step()  # step 3
+        # _model_data has one entry per executed step
         assert len(m._model_data) == 3
 
 
@@ -376,7 +376,7 @@ class TestModelIntegration:
         assert len(results['model']) > 0
         
         # Check that simulation ran correctly
-        assert model.total_wealth == 40  # 4 steps * 10 (step runs steps-1 times)
+        assert model.total_wealth == 50  # 5 requested steps * 10
     
     def test_model_with_data_recording(self):
         """Test model that records data each step."""
@@ -397,5 +397,5 @@ class TestModelIntegration:
         results = model.run()
         
         # Check that data was recorded
-        assert len(model._model_data) == 10  # 10 steps (update runs after each step)
-        assert model.counter == 9  # step runs 9 times (step 1-9, not step 0)
+        assert len(model._model_data) == 10  # one row per requested step
+        assert model.counter == 10

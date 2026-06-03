@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 """
-AMBER Comprehensive Correctness Benchmark
+AMBER Legacy Python-Framework Correctness Benchmark
 
-Tests scientific correctness across all frameworks with rigorous metrics:
+Tests scientific correctness across the legacy in-process Python framework
+set loaded by this script. The seven-framework paper audit lives in
+``benchmarks/correctness_check.py``.
 
 1. CONSERVATION LAWS - Physical quantities preserved
 2. STATISTICAL ACCURACY - Output matches known distributions  
@@ -47,7 +49,7 @@ class MetricResult:
 
 class ComprehensiveCorrectnessBenchmark:
     """
-    Rigorous correctness testing with quantitative metrics.
+    Legacy correctness testing with quantitative metrics.
     """
     
     def __init__(self, results_dir: str = None):

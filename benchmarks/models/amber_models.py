@@ -14,7 +14,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 import ambr as am
 import numpy as np
 import polars as pl
-import random
 
 
 # =============================================================================
@@ -99,8 +98,8 @@ class SIRAgent(am.Agent):
         self.status = self.STATUS_S
         self.infection_time = 0
         world_size = self.model.p.get('world_size', 100)
-        self.x = random.uniform(0, world_size)
-        self.y = random.uniform(0, world_size)
+        self.x = self.model.random.uniform(0, world_size)
+        self.y = self.model.random.uniform(0, world_size)
         
         # Initial infections
         if self.id < self.model.p.get('initial_infected', 5):
@@ -111,8 +110,8 @@ class SIRAgent(am.Agent):
         speed = self.model.p.get('movement_speed', 2.0)
         world_size = self.model.p.get('world_size', 100)
         
-        self.x += random.uniform(-speed, speed)
-        self.y += random.uniform(-speed, speed)
+        self.x += self.model.random.uniform(-speed, speed)
+        self.y += self.model.random.uniform(-speed, speed)
         
         # Boundary wrap
         self.x = max(0, min(world_size, self.x))
@@ -132,7 +131,7 @@ class SIRAgent(am.Agent):
             
             dist_sq = (self.x - other.x)**2 + (self.y - other.y)**2
             if dist_sq <= radius**2:
-                if random.random() < transmission:
+                if self.model.random.random() < transmission:
                     other.status = self.STATUS_I
                     other.infection_time = 0
     
@@ -195,15 +194,15 @@ class WalkAgent(am.Agent):
     
     def setup(self):
         world_size = self.model.p.get('world_size', 100)
-        self.x = random.uniform(0, world_size)
-        self.y = random.uniform(0, world_size)
+        self.x = self.model.random.uniform(0, world_size)
+        self.y = self.model.random.uniform(0, world_size)
     
     def step(self):
         speed = self.model.p.get('speed', 1.0)
         world_size = self.model.p.get('world_size', 100)
         
-        self.x += random.uniform(-speed, speed)
-        self.y += random.uniform(-speed, speed)
+        self.x += self.model.random.uniform(-speed, speed)
+        self.y += self.model.random.uniform(-speed, speed)
         
         self.x = max(0, min(world_size, self.x))
         self.y = max(0, min(world_size, self.y))
@@ -293,8 +292,8 @@ class AMBERVectorizedWealthTransfer(am.Model):
             return 0.0
         sorted_vals = np.sort(values)
         n = len(sorted_vals)
-        cum = np.cumsum(sorted_vals)
-        return (2 * cum.sum()) / (n * sorted_vals.sum()) - (n + 1) / n
+        weighted_sum = np.sum(np.arange(1, n + 1) * sorted_vals)
+        return (2 * weighted_sum) / (n * sorted_vals.sum()) - (n + 1) / n
 
 
 class AMBERVectorizedSIRModel(am.Model):

@@ -15,23 +15,24 @@ exposes a vectorized view API (`agents.where(...)`, `agents.at[ids]`,
 `scatter_add`) that compiles per-step updates down to a handful of
 Polars expressions — regardless of population size.
 
-**Benchmark against every other ABM framework we found
-— 5000 agents, 50 steps, Python 3.12, Julia 1.12.3, Apple Silicon.**
-All numbers are wall-clock, averaged over 3 runs (slowest trimmed).
-Every framework is **verified against output invariants** (wealth
-conservation, boundary clamping, S+I+R population conservation) before
-timing — see [`benchmarks/correctness_check.py`](benchmarks/correctness_check.py).
+**Benchmark against six representative ABM/simulation frameworks
+— 5000 agents, 50 executed steps, Python 3.12, Julia 1.12.3, Apple Silicon.**
+All numbers are seeded wall-clock timings, averaged over 3 runs
+(slowest trimmed). Every framework is **checked against output
+invariants** (wealth conservation, boundary clamping, S+I+R population
+conservation) before timing — see
+[`benchmarks/correctness_check.py`](benchmarks/correctness_check.py).
 Reproducer: [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.py).
 
 | Framework | Language | Arch. | Wealth Transfer | Random Walk | SIR Epidemic |
 |---|---|---|---:|---:|---:|
-| **AMBER (vectorized)** | Python | Columnar (Polars) | 21 ms 🥈 | 6.2 ms 🥈 | **687 ms** 🥇 |
-| Agents.jl | Julia | Object | **7.2 ms** 🥇 | **1.6 ms** 🥇 | 808 ms 🥈 |
-| AMBER (loop) | Python | Object | 171 ms | 352 ms | 10.57 s |
-| Mesa | Python | Object | 23.92 s | 141 ms | 17.97 s |
-| AgentPy | Python | Object | 272 ms | 150 ms | 11.99 s |
-| SimPy | Python | Event loop | 218 ms | 261 ms | 5.51 s |
-| Melodie | Python | Hybrid | 188 ms | 1.10 s | 21.26 s |
+| **AMBER (vectorized)** | Python | Columnar (Polars) | 20 ms | 5.4 ms | **578 ms** |
+| Agents.jl | Julia | Object | **7.4 ms** | **1.6 ms** | 812 ms |
+| AMBER (loop) | Python | Object | 187 ms | 389 ms | 10.16 s |
+| Mesa | Python | Object | 25.89 s | 147 ms | 18.79 s |
+| AgentPy | Python | Object | 279 ms | 169 ms | 11.27 s |
+| SimPy | Python | Event loop | 241 ms | 314 ms | 5.46 s |
+| Melodie | Python | Hybrid | 207 ms | 1.19 s | 22.83 s |
 
 **AMBER (vectorized) is the fastest Python-hosted framework on every
 model at 5000 agents**. Against Agents.jl, it wins the SIR benchmark
@@ -43,8 +44,7 @@ less fixed overhead.
 
 See [`benchmarks/README.md`](benchmarks/README.md) for the full table at
 500 / 1000 / 5000 agents, speedup ratios, a per-model correctness audit,
-and a discussion of why some of the numbers I previously shipped were
-measuring different problems across frameworks.
+and the documented SIR update-semantics caveat.
 
 ## 🚀 Quick Start
 

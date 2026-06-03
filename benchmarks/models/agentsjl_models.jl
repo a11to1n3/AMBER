@@ -121,9 +121,11 @@ function _trimmed_mean(times)
 end
 
 function _timed_mean(runner; n, steps, runs)
+    Random.seed!(42)
     runner(; n=min(n, 100), steps=min(steps, 10))
     times = Float64[]
     for _ in 1:runs
+        Random.seed!(42)
         push!(times, @elapsed runner(; n=n, steps=steps))
     end
     return _trimmed_mean(times)
