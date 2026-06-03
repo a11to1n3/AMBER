@@ -21,8 +21,8 @@ copyright = '2024-2026, a11to1n3'
 author = 'a11to1n3'
 
 # The full version, including alpha/beta/rc tags
-release = '0.3.4'
-version = '0.3.4'
+release = '0.3.5'
+version = '0.3.5'
 
 # -- General configuration ---------------------------------------------------
 
