@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.4 - 2026-06-03
+
+### Fixed
+
+- Synchronize Sphinx documentation metadata with the package release version.
+- Keep runtime, project metadata, and generated documentation versions aligned
+  for patch releases.
+
 ## v0.3.3 - 2026-06-03
 
 ### Changed
