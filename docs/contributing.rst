@@ -153,6 +153,20 @@ AMBER follows semantic versioning:
 - **Minor** (0.x.0): New features, backward compatible
 - **Patch** (0.0.x): Bug fixes, backward compatible
 
+Before tagging a release:
+
+1. Make sure ``dev`` is up to date with ``origin/dev`` and merged or fast
+   forwarded into ``main`` for release.
+2. Bump the package version in ``pyproject.toml`` and update
+   ``CHANGELOG.md`` plus ``docs/changelog.rst``.
+3. Run ``make release-check`` from a clean checkout. This builds the wheel and
+   source distribution, runs ``twine check``, and executes the test suite.
+4. Inspect the source distribution if local generated artifacts exist; paper
+   drafts and ``paper.zip`` must remain ignored and excluded from the package.
+5. Create and push an annotated ``vX.Y.Z`` tag from the release commit. The
+   GitHub release workflow validates the distributions again and attaches them
+   to the GitHub release.
+
 Community Guidelines
 --------------------
 
@@ -181,4 +195,4 @@ If you need help:
 3. Ask questions in discussions
 4. Contact maintainers directly
 
-Thank you for contributing to AMBER! 
+Thank you for contributing to AMBER!

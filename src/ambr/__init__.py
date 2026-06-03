@@ -28,6 +28,9 @@ Example:
     >>> results = model.run()
 """
 
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
+from importlib.metadata import version as _metadata_version
+
 from .agent import Agent
 from .model import Model
 from .population import Population, BatchUpdateContext
@@ -56,7 +59,11 @@ from .performance import (
     HAS_NUMBA,
 )
 
-__version__ = '0.3.5'
+try:
+    __version__ = _metadata_version('ambr')
+except _PackageNotFoundError:
+    __version__ = '0.3.6'
+
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'
 __url__ = 'https://github.com/a11to1n3/AMBER'

@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.6 - 2026-06-04
+
+### Changed
+
+- Add a tag-driven GitHub release workflow that builds and validates wheel and
+  source distributions before attaching them to the release.
+- Extend CI coverage to the `dev` branch and Python 3.9, matching the declared
+  package support floor.
+- Add package metadata consistency checks so runtime, project, and documentation
+  versions do not drift across releases.
+- Tighten release-package hygiene around generated paper outputs and source
+  distribution contents.
+
 ## v0.3.5 - 2026-06-04
 
 ### Changed

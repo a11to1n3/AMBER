@@ -5,4 +5,6 @@ include requirements.txt
 recursive-include src/ambr *.py
 
 prune paper
+exclude paper.zip
+global-exclude *.aux *.bbl *.blg *.log *.out *.toc *.synctex.gz
 global-exclude __pycache__ *.py[cod] .DS_Store .coverage .coverage.* .!*.coverage

@@ -1,4 +1,4 @@
-.PHONY: help install test test-fast test-slow test-coverage clean lint format type-check docs
+.PHONY: help install test test-fast test-slow test-coverage clean lint format type-check docs package check-dist release-check
 
 help:  ## Show this help message
 	@echo "Available commands:"
@@ -58,6 +58,14 @@ type-check:  ## Run type checking
 
 docs:  ## Generate documentation (if applicable)
 	@echo "Documentation generation not yet implemented"
+
+package: clean  ## Build source and wheel distributions
+	python -m build
+
+check-dist: package  ## Validate built distributions
+	python -m twine check dist/*
+
+release-check: check-dist test  ## Validate package artifacts and tests before tagging
 
 check-all: lint type-check test  ## Run all checks (lint, type-check, test)
 

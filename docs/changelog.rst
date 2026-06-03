@@ -6,6 +6,20 @@ All notable changes to AMBER will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[0.3.6] - 2026-06-04
+---------------------
+
+Changed
+~~~~~~~
+- Added a tag-driven GitHub release workflow that builds and validates wheel
+  and source distributions before attaching them to the release.
+- Extended CI coverage to the ``dev`` branch and Python 3.9, matching the
+  declared package support floor.
+- Added package metadata consistency checks so runtime, project, and
+  documentation versions do not drift across releases.
+- Tightened release-package hygiene around generated paper outputs and source
+  distribution contents.
+
 [0.3.5] - 2026-06-04
 ---------------------
 
