@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.5 - 2026-06-04
+
+### Changed
+
+- Cut a package-only release with synchronized project metadata, runtime
+  version, and Sphinx documentation version.
+- Keep local paper drafts and generated paper archives outside the tracked
+  package release surface.
+
 ## v0.3.4 - 2026-06-03
 
 ### Fixed
