@@ -27,6 +27,8 @@ ENV/
 
 # Testing and Coverage
 .coverage
+.coverage.*
+.!*.coverage
 htmlcov/
 .pytest_cache/
 coverage.xml
@@ -47,4 +49,3 @@ paper/*.pdf
 paper/*.synctex.gz
 paper/scaling_chart.png
 paper.zip
-.coverage.*
