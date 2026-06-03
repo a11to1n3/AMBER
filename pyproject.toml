@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ambr"
-version = "0.3.5"
+version = "0.3.6"
 description = "Agent-based Modeling with Blazingly Efficient Records"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
@@ -52,6 +52,8 @@ dev = [
     "nbsphinx>=0.8.0",
     "nbconvert>=6.0.0",
     "jupyter>=1.0.0",
+    "build>=1.2.0",
+    "twine>=5.0.0",
     "black>=22.0.0",
     "flake8>=5.0.0",
     "mypy>=1.0.0"

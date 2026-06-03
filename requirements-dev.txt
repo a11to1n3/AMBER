@@ -15,6 +15,10 @@ nbsphinx>=0.8.0
 nbconvert>=6.0.0
 jupyter>=1.0.0
 
+# Packaging and release validation
+build>=1.2.0
+twine>=5.0.0
+
 # Development dependencies  
 black>=22.0.0
 flake8>=5.0.0
@@ -23,4 +27,4 @@ mypy>=1.0.0
 # Advanced optimization (optional)
 smac>=2.0.0
 ConfigSpace>=0.7.1
-scikit-learn>=1.0.0 
+scikit-learn>=1.0.0
