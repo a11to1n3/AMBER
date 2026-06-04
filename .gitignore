@@ -40,6 +40,14 @@ docs/api/
 
 # Paper drafts and generated artifacts
 paper/
+paper.aux
+paper.bbl
+paper.blg
+paper.log
+paper.out
+paper.pdf
+paper.synctex.gz
+paper.toc
 paper/*.aux
 paper/*.bbl
 paper/*.blg
