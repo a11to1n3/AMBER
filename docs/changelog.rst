@@ -6,6 +6,20 @@ All notable changes to AMBER will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[0.3.9] - 2026-06-04
+---------------------
+
+Changed
+~~~~~~~
+- Added a root split-SIR benchmark runner with deterministic shared inputs,
+  explicit sync/async schedules, Agents.jl fixtures, checked result artifacts,
+  and declared async SimPy budget skips.
+- Added a root dynamic-graph coordination benchmark runner and checked result
+  artifacts across AMBER, NumPy, Polars, a Python object loop, Mesa, AgentPy,
+  and Agents.jl.
+- Clarified public benchmark wording so the schedule-mixed headline SIR row is
+  not presented as an equivalent-trajectory AMBER-over-Julia claim.
+
 [0.3.8] - 2026-06-04
 ---------------------
 

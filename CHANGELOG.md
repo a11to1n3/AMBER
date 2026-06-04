@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.9 - 2026-06-04
+
+### Changed
+
+- Add a root split-SIR benchmark runner with deterministic shared inputs,
+  explicit sync/async schedules, Agents.jl fixtures, checked result artifacts,
+  and declared async SimPy budget skips.
+- Add a root dynamic-graph coordination benchmark runner and checked result
+  artifacts across AMBER, NumPy, Polars, a Python object loop, Mesa, AgentPy,
+  and Agents.jl.
+- Clarify public benchmark wording so the schedule-mixed headline SIR row is
+  not presented as an equivalent-trajectory AMBER-over-Julia claim.
+
 ## v0.3.8 - 2026-06-04
 
 ### Changed
