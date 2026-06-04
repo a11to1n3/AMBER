@@ -6,6 +6,18 @@ All notable changes to AMBER will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[0.3.10] - 2026-06-04
+----------------------
+
+Changed
+~~~~~~~
+- Cut a main-anchored package release after synchronizing ``dev``, ``main``,
+  and their remotes.
+- Kept package metadata, runtime fallback version, documentation version, and
+  release notes aligned for the distribution artifacts.
+- Preserved local paper drafts and generated paper archives as ignored,
+  non-package artifacts.
+
 [0.3.9] - 2026-06-04
 ---------------------
 
