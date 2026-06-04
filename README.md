@@ -15,7 +15,7 @@ exposes a vectorized view API (`agents.where(...)`, `agents.at[ids]`,
 `scatter_add`) that compiles per-step updates down to a handful of
 Polars expressions — regardless of population size.
 
-**Benchmark against six representative ABM/simulation frameworks
+**Benchmark against six other representative ABM/simulation frameworks
 — 5000 agents, 50 executed steps, Python 3.12, Julia 1.12.3, Apple Silicon.**
 All numbers are seeded wall-clock timings, averaged over 10 runs
 (slowest trimmed). Every framework is **checked against output
@@ -35,10 +35,11 @@ Reproducer: [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.p
 | Melodie | Python | Hybrid | 177 ms | 1.03 s | 20.09 s |
 
 **AMBER (vectorized) is the fastest Python-hosted framework on every
-model at 5000 agents**. Against Agents.jl, it wins the SIR benchmark
-and trails the Julia implementation on wealth transfer and random walk,
-where per-step work is small enough that Julia's compiled dispatch has
-less fixed overhead.
+headline model at 5000 agents**. The headline SIR row is schedule-mixed;
+use it as workload-class timing, not as an equivalent-trajectory
+AMBER-over-Julia claim. Against Agents.jl, AMBER trails the Julia
+implementation on wealth transfer and random walk, where per-step work is
+small enough that Julia's compiled dispatch has less fixed overhead.
 
 ![Seven-framework scaling chart](benchmarks/results/scaling_chart_all.png)
 
