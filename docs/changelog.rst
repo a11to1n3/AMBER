@@ -6,6 +6,15 @@ All notable changes to AMBER will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[0.3.7] - 2026-06-04
+---------------------
+
+Fixed
+~~~~~
+- Moved GitHub Actions workflows to current Node-24-ready action versions for
+  release, checkout, setup-python, upload-artifact, and Codecov steps.
+- Corrected the Codecov upload input from ``file`` to ``files``.
+
 [0.3.6] - 2026-06-04
 ---------------------
 
