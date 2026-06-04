@@ -30,11 +30,18 @@ def test_python_support_floor_is_declared_consistently():
     assert '"Programming Language :: Python :: 3.9"' in pyproject
 
 
-def test_paper_outputs_are_excluded_from_release_surface():
+def test_local_only_paths_are_excluded_from_release_surface():
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8")
 
     assert "paper/" in gitignore
     assert "paper.zip" in gitignore
+    assert ".claude/" in gitignore
+    assert "prune .claude" in manifest
+    assert "prune .github" in manifest
+    assert "prune benchmarks" in manifest
+    assert "prune docs" in manifest
+    assert "prune examples" in manifest
     assert "prune paper" in manifest
+    assert "prune tests" in manifest
     assert "exclude paper.zip" in manifest
