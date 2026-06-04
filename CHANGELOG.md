@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.11 - 2026-06-04
+
+### Changed
+
+- Cut a clean package release from an up-to-date `dev` branch into `main`.
+- Keep release metadata, runtime fallback version, documentation version, and
+  changelogs aligned for the wheel and source distribution.
+- Explicitly ignore local assistant metadata along with paper drafts and paper
+  archives so package releases stay focused on the AMBER library.
+
 ## v0.3.10 - 2026-06-04
 
 ### Changed
