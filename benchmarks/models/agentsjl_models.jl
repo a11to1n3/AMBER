@@ -120,7 +120,7 @@ function _trimmed_mean(times)
     return sum(sorted_times) / length(sorted_times)
 end
 
-function _timed_mean(runner; n, steps, runs)
+function _timing_summary(runner; n, steps, runs)
     Random.seed!(42)
     runner(; n=min(n, 100), steps=min(steps, 10))
     times = Float64[]
@@ -128,10 +128,17 @@ function _timed_mean(runner; n, steps, runs)
         Random.seed!(42)
         push!(times, @elapsed runner(; n=n, steps=steps))
     end
-    return _trimmed_mean(times)
+    return (
+        mean = _trimmed_mean(times),
+        samples = times,
+    )
 end
 
-function run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=50, runs=3)
+function _sample_list(times)
+    return join((@sprintf("%.9f", t) for t in times), ",")
+end
+
+function run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=50, runs=10)
     println("Agents.jl Benchmark")
     println("="^50)
 
@@ -142,8 +149,13 @@ function run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=50, runs=3)
     ]
         println("\n$name:")
         for n in agent_counts
-            t = _timed_mean(runner; n=n, steps=steps, runs=runs)
-            @printf("  %d agents: %.6fs\n", n, t)
+            summary = _timing_summary(runner; n=n, steps=steps, runs=runs)
+            @printf(
+                "  %d agents: %.9fs samples=[%s]\n",
+                n,
+                summary.mean,
+                _sample_list(summary.samples),
+            )
         end
     end
 end
@@ -153,7 +165,7 @@ end
 function _parse_args(args)
     agent_counts = [100, 500, 1000, 5000]
     steps = 50
-    runs = 3
+    runs = 10
     i = 1
     while i <= length(args)
         a = args[i]

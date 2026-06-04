@@ -6,6 +6,18 @@ All notable changes to AMBER will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[0.3.8] - 2026-06-04
+---------------------
+
+Changed
+~~~~~~~
+- Upgraded the all-framework benchmark runner to default to 10 full-run
+  samples, preserve raw Agents.jl subprocess samples, and write raw sample
+  counts, IQRs, and bootstrap median intervals into
+  ``benchmark_results_all.json``.
+- Regenerated the all-framework headline benchmark artifacts so all 63
+  framework/model/size rows carry 10 raw timing samples, including Agents.jl.
+
 [0.3.7] - 2026-06-04
 ---------------------
 
