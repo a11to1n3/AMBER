@@ -29,7 +29,7 @@ python runner.py --full
 
 # Compare just AMBER variants vs AgentPy
 python runner.py --frameworks AMBER "AMBER (vectorized)" AgentPy \
-    --agents 500 1000 5000 --steps 50 --runs 3
+    --agents 500 1000 5000 --steps 50 --runs 10
 ```
 
 ## Metrics Measured
@@ -100,44 +100,44 @@ not as proof of identical stochastic trajectories.
 
 ## Latest verified-correct results — all seven frameworks
 
-Run on 2026-06-03, Python 3.12.7, Julia 1.12.3, 50 executed steps per
-simulation, seeded runs, 3 runs averaged (slowest trimmed). Apple Silicon.
+Run on 2026-06-04, Python 3.12.7, Julia 1.12.3, 50 executed steps per
+simulation, seeded runs, 10 runs averaged (slowest trimmed). Apple Silicon.
 
 **Execution time — Wealth Transfer**
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
-| Agents.jl | **0.5 ms** | **1.2 ms** | **7.4 ms** |
-| AMBER (vectorized) | 4.4 ms | 6.3 ms | 20 ms |
-| AMBER (loop) | 17 ms | 34 ms | 187 ms |
-| SimPy | 18 ms | 41 ms | 241 ms |
-| Melodie | 18 ms | 38 ms | 207 ms |
-| AgentPy | 27 ms | 60 ms | 279 ms |
-| Mesa | 261 ms | 1.03 s | 25.89 s |
+| Agents.jl | **0.5 ms** | **1.3 ms** | **7.2 ms** |
+| AMBER (vectorized) | 4.2 ms | 6.0 ms | 20 ms |
+| AMBER (loop) | 16 ms | 32 ms | 169 ms |
+| SimPy | 18 ms | 37 ms | 216 ms |
+| Melodie | 18 ms | 36 ms | 177 ms |
+| AgentPy | 26 ms | 51 ms | 266 ms |
+| Mesa | 254 ms | 969 ms | 22.61 s |
 
 **Execution time — Random Walk**
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
-| Agents.jl | **0.1 ms** | **0.3 ms** | **1.6 ms** |
-| AMBER (vectorized) | 2.9 ms | 3.4 ms | 5.4 ms |
-| Mesa | 14 ms | 29 ms | 147 ms |
-| AgentPy | 17 ms | 33 ms | 169 ms |
-| SimPy | 24 ms | 51 ms | 314 ms |
-| AMBER (loop) | 41 ms | 80 ms | 389 ms |
-| Melodie | 112 ms | 253 ms | 1.19 s |
+| Agents.jl | **0.2 ms** | **0.3 ms** | **1.6 ms** |
+| AMBER (vectorized) | 2.4 ms | 2.7 ms | 4.8 ms |
+| Mesa | 13 ms | 25 ms | 131 ms |
+| AgentPy | 14 ms | 28 ms | 141 ms |
+| SimPy | 22 ms | 45 ms | 254 ms |
+| AMBER (loop) | 33 ms | 66 ms | 332 ms |
+| Melodie | 101 ms | 205 ms | 1.03 s |
 
 **Execution time — SIR Epidemic**
 
 | Framework | 500 | 1000 | 5000 |
 |---|---|---|---|
-| Agents.jl | **4.4 ms** | **37 ms** | 812 ms |
-| AMBER (vectorized) | 96 ms | 134 ms | **578 ms** |
-| SimPy | 121 ms | 488 ms | 5.46 s |
-| AgentPy | 227 ms | 975 ms | 11.27 s |
-| AMBER (loop) | 157 ms | 970 ms | 10.16 s |
-| Mesa | 307 ms | 1.48 s | 18.79 s |
-| Melodie | 676 ms | 2.17 s | 22.83 s |
+| Agents.jl | **4.2 ms** | **37 ms** | 813 ms |
+| AMBER (vectorized) | 88 ms | 112 ms | **497 ms** |
+| SimPy | 107 ms | 411 ms | 4.67 s |
+| AgentPy | 197 ms | 826 ms | 10.98 s |
+| AMBER (loop) | 140 ms | 799 ms | 9.53 s |
+| Mesa | 265 ms | 1.07 s | 16.63 s |
+| Melodie | 595 ms | 1.98 s | 20.09 s |
 
 **Ratio of each framework's time to `AMBER (vectorized)`, averaged across
 all three agent counts above (lower means that framework is closer to
@@ -145,12 +145,12 @@ AMBER vectorized; values < 1 mean it beats AMBER vectorized):**
 
 | Framework | Wealth Transfer | Random Walk | SIR Epidemic |
 |---|---|---|---|
-| Agents.jl | 0.2× (faster) | 0.1× (faster) | 0.6× (faster on average) |
-| AMBER (loop) | 6.2× | 36.6× | 8.8× |
-| SimPy | 7.6× | 27.2× | 4.8× |
-| Melodie | 6.9× | 111.5× | 20.9× |
-| AgentPy | 9.9× | 15.7× | 9.7× |
-| Mesa | 511.4× | 13.6× | 15.6× |
+| Agents.jl | 0.2× (faster) | 0.2× (faster) | 0.7× (faster on average) |
+| AMBER (loop) | 5.9× | 35.7× | 9.3× |
+| SimPy | 7.1× | 26.2× | 4.8× |
+| Melodie | 6.3× | 110.6× | 21.6× |
+| AgentPy | 9.3× | 15.3× | 10.6× |
+| Mesa | 450.9× | 14.0× | 15.4× |
 
 See [`results/scaling_chart_all.png`](results/scaling_chart_all.png) for the
 log-log scaling plot (the wider the gap at the right edge of each subplot,
@@ -162,16 +162,16 @@ the better AMBER scales).
 
 **Who wins each model at the 5000-agent point (the realistic ABM scale):**
 
-* **Wealth transfer**: Agents.jl wins (7.4 ms), AMBER (vectorized) is the
+* **Wealth transfer**: Agents.jl wins (7.2 ms), AMBER (vectorized) is the
   fastest Python-hosted implementation (20 ms).
   Julia's JIT compiler wins the microbenchmark because the per-step work
   is so small (two array updates) that Polars' per-expression overhead
   dominates. Every other Python-hosted implementation is roughly 9× to
-  1310× slower.
+  1130× slower.
 * **Random walk**: Agents.jl wins (1.6 ms), AMBER (vectorized) is the
-  fastest Python-hosted implementation (5.4 ms).
-* **SIR epidemic**: AMBER (vectorized) wins (578 ms), Agents.jl is close
-  behind (812 ms).
+  fastest Python-hosted implementation (4.8 ms).
+* **SIR epidemic**: AMBER (vectorized) wins (497 ms), Agents.jl is close
+  behind (813 ms).
   The Polars cross-join for the O(n²) infection step is faster than the
   hand-written Julia double loop because both languages are paying for
   the same quadratic work but Polars executes it as one compiled C/Rust
@@ -197,7 +197,7 @@ claiming identical trajectories.
 **One-command master run** (produces JSON, Markdown, and the log-log chart):
 
 ```bash
-python benchmarks/run_all_frameworks.py --agents 500 1000 5000 --steps 50 --runs 3
+python benchmarks/run_all_frameworks.py --agents 500 1000 5000 --steps 50 --runs 10
 ```
 
 **Outputs:**
@@ -227,7 +227,7 @@ useful when you want to iterate on those three specifically:
 
 ```bash
 python benchmarks/runner.py --frameworks AMBER "AMBER (vectorized)" AgentPy Mesa \
-    --agents 500 1000 5000 --steps 50 --runs 3
+    --agents 500 1000 5000 --steps 50 --runs 10
 ```
 
 Outputs land in `results/benchmark_results.json` / `summary_table.md` /

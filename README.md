@@ -17,7 +17,7 @@ Polars expressions — regardless of population size.
 
 **Benchmark against six representative ABM/simulation frameworks
 — 5000 agents, 50 executed steps, Python 3.12, Julia 1.12.3, Apple Silicon.**
-All numbers are seeded wall-clock timings, averaged over 3 runs
+All numbers are seeded wall-clock timings, averaged over 10 runs
 (slowest trimmed). Every framework is **checked against output
 invariants** (wealth conservation, boundary clamping, S+I+R population
 conservation) before timing — see
@@ -26,13 +26,13 @@ Reproducer: [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.p
 
 | Framework | Language | Arch. | Wealth Transfer | Random Walk | SIR Epidemic |
 |---|---|---|---:|---:|---:|
-| **AMBER (vectorized)** | Python | Columnar (Polars) | 20 ms | 5.4 ms | **578 ms** |
-| Agents.jl | Julia | Object | **7.4 ms** | **1.6 ms** | 812 ms |
-| AMBER (loop) | Python | Object | 187 ms | 389 ms | 10.16 s |
-| Mesa | Python | Object | 25.89 s | 147 ms | 18.79 s |
-| AgentPy | Python | Object | 279 ms | 169 ms | 11.27 s |
-| SimPy | Python | Event loop | 241 ms | 314 ms | 5.46 s |
-| Melodie | Python | Hybrid | 207 ms | 1.19 s | 22.83 s |
+| **AMBER (vectorized)** | Python | Columnar (Polars) | 20 ms | 4.8 ms | **497 ms** |
+| Agents.jl | Julia | Object | **7.2 ms** | **1.6 ms** | 813 ms |
+| AMBER (loop) | Python | Object | 169 ms | 332 ms | 9.53 s |
+| Mesa | Python | Object | 22.61 s | 131 ms | 16.63 s |
+| AgentPy | Python | Object | 266 ms | 141 ms | 10.98 s |
+| SimPy | Python | Event loop | 216 ms | 254 ms | 4.67 s |
+| Melodie | Python | Hybrid | 177 ms | 1.03 s | 20.09 s |
 
 **AMBER (vectorized) is the fastest Python-hosted framework on every
 model at 5000 agents**. Against Agents.jl, it wins the SIR benchmark

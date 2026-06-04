@@ -14,8 +14,9 @@ README and paper:
   * Agents.jl           — ``benchmarks/models/agentsjl_models.jl`` (via ``julia`` subprocess)
 
 The Python frameworks are timed in-process. Agents.jl is invoked as a
-subprocess and its stdout is parsed. All numbers are averages of multiple
-runs per configuration.
+subprocess and its stdout is parsed. All numbers are trimmed means of multiple
+runs per configuration; raw samples and summary intervals are preserved in the
+JSON artifact.
 
 Outputs (in ``benchmarks/results/``):
 
@@ -36,6 +37,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import re
 import statistics
 import subprocess
@@ -79,6 +81,8 @@ MODEL_LABELS: Dict[str, str] = {
     "sir_epidemic": "SIR Epidemic",
 }
 DEFAULT_SEED = 42
+BOOTSTRAP_REPS = 10_000
+BOOTSTRAP_SEED = 20260604
 
 # --------------------------------------------------------------------------- #
 # Timing primitives
@@ -87,14 +91,33 @@ DEFAULT_SEED = 42
 TimingSummary = Dict[str, Any]
 
 
-def _time(callable_: Callable[[], None], runs: int) -> TimingSummary:
-    """Run ``callable_`` ``runs`` times and return raw and trimmed timings."""
-    samples: List[float] = []
-    for _ in range(runs):
-        t0 = time.perf_counter()
-        callable_()
-        samples.append(time.perf_counter() - t0)
+def _percentile(values: List[float], q: float) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        raise ValueError("percentile requires at least one value")
+    if len(ordered) == 1:
+        return ordered[0]
+    pos = (len(ordered) - 1) * q
+    lo = int(pos)
+    hi = min(lo + 1, len(ordered) - 1)
+    frac = pos - lo
+    return ordered[lo] * (1 - frac) + ordered[hi] * frac
 
+
+def _bootstrap_median_ci(samples: List[float]) -> List[float]:
+    if not samples:
+        return []
+    if len(samples) == 1:
+        return [samples[0], samples[0]]
+    rng = random.Random(BOOTSTRAP_SEED)
+    medians = []
+    for _ in range(BOOTSTRAP_REPS):
+        draw = [samples[rng.randrange(len(samples))] for _ in samples]
+        medians.append(statistics.median(draw))
+    return [_percentile(medians, 0.025), _percentile(medians, 0.975)]
+
+
+def _summary_from_samples(samples: List[float], notes: Optional[str] = None) -> TimingSummary:
     sorted_samples = sorted(samples)
     # Trim the slowest run when we have >= 3 samples; noise is asymmetric.
     trimmed_samples = sorted_samples[:-1] if len(sorted_samples) >= 3 else sorted_samples
@@ -106,11 +129,26 @@ def _time(callable_: Callable[[], None], runs: int) -> TimingSummary:
         "sorted_samples": sorted_samples,
         "trimmed_samples": trimmed_samples,
         "median": statistics.median(samples),
+        "iqr": _percentile(samples, 0.75) - _percentile(samples, 0.25),
+        "ci95_median": _bootstrap_median_ci(samples),
         "stdev": stdev,
         "min": min(samples),
         "max": max(samples),
         "trimmed": len(samples) - len(trimmed_samples),
+        "raw_sample_count": len(samples),
+        "notes": notes,
     }
+
+
+def _time(callable_: Callable[[], None], runs: int) -> TimingSummary:
+    """Run ``callable_`` ``runs`` times and return raw and trimmed timings."""
+    samples: List[float] = []
+    for _ in range(runs):
+        t0 = time.perf_counter()
+        callable_()
+        samples.append(time.perf_counter() - t0)
+
+    return _summary_from_samples(samples)
 
 
 # --------------------------------------------------------------------------- #
@@ -285,12 +323,37 @@ def _bench_melodie(
 # Framework: Agents.jl (subprocess)
 # --------------------------------------------------------------------------- #
 
-_AGENTSJL_LINE = re.compile(r"^\s*(\d+)\s+agents:\s+([\d.e+-]+)s\s*$")
+_AGENTSJL_LINE = re.compile(
+    r"^\s*(\d+)\s+agents:\s+([\d.e+-]+)s(?:\s+samples=\[([^\]]*)\])?\s*$"
+)
 
 
-def _run_agentsjl(agent_counts: List[int], steps: int, runs: int) -> Dict[Tuple[str, int], float]:
-    """Run the Agents.jl standalone script once and parse averaged timings."""
-    results: Dict[Tuple[str, int], float] = {}
+def _parse_agentsjl_samples(raw: Optional[str]) -> List[float]:
+    if raw is None or not raw.strip():
+        return []
+    return [float(part) for part in raw.split(",") if part.strip()]
+
+
+def _aggregate_only_summary(sec: float) -> TimingSummary:
+    return {
+        "mean": sec,
+        "samples": [],
+        "trimmed_samples": [],
+        "median": sec,
+        "iqr": None,
+        "ci95_median": [],
+        "stdev": None,
+        "min": None,
+        "max": None,
+        "trimmed": None,
+        "raw_sample_count": 0,
+        "notes": "Agents.jl subprocess reported only trimmed aggregate timing.",
+    }
+
+
+def _run_agentsjl(agent_counts: List[int], steps: int, runs: int) -> Dict[Tuple[str, int], TimingSummary]:
+    """Run the Agents.jl standalone script once and parse raw timing samples."""
+    results: Dict[Tuple[str, int], TimingSummary] = {}
     jl_path = MODELS_DIR / "agentsjl_models.jl"
     if not jl_path.exists():
         return results
@@ -355,7 +418,11 @@ def _run_agentsjl(agent_counts: List[int], steps: int, runs: int) -> Dict[Tuple[
             n = int(m.group(1))
             sec = float(m.group(2))
             if n in agent_counts:
-                results[(current_model, n)] = sec
+                samples = _parse_agentsjl_samples(m.group(3))
+                if samples:
+                    results[(current_model, n)] = _summary_from_samples(samples)
+                else:
+                    results[(current_model, n)] = _aggregate_only_summary(sec)
     return results
 
 
@@ -410,9 +477,12 @@ def _write_json(
                 "timing": "mean with slowest sample trimmed when runs >= 3",
                 "execution_time": round(t, 6),
                 "time_per_step": round(t / steps, 9),
+                "raw_sample_count": len(detail.get("samples", [])),
                 "raw_samples": [round(x, 9) for x in detail.get("samples", [])],
                 "trimmed_samples": [round(x, 9) for x in detail.get("trimmed_samples", [])],
                 "median": _round_or_none(detail.get("median")),
+                "iqr": _round_or_none(detail.get("iqr")),
+                "ci95_median": [_round_or_none(x) for x in detail.get("ci95_median", [])],
                 "stdev": _round_or_none(detail.get("stdev")),
                 "min": _round_or_none(detail.get("min")),
                 "max": _round_or_none(detail.get("max")),
@@ -428,7 +498,8 @@ def _write_json(
                 "n_steps": steps,
                 "runs": runs,
                 "timing": "mean wall-clock seconds; slowest sample trimmed when runs >= 3",
-                "raw_samples_available": "Python-hosted frameworks include raw per-run samples; Agents.jl currently reports aggregate means from its subprocess.",
+                "raw_samples_available": "Benchmark rows preserve raw per-run samples when the selected framework runner is available; full mode defaults to 10 runs per configuration.",
+                "intervals": "JSON rows include median, IQR, and bootstrap 95% median intervals computed from raw samples.",
                 "results": flat,
             },
             indent=2,
@@ -579,7 +650,7 @@ def _parse_args():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--agents", type=int, nargs="+", default=None)
     p.add_argument("--steps", type=int, default=50)
-    p.add_argument("--runs", type=int, default=3)
+    p.add_argument("--runs", type=int, default=10)
     p.add_argument("--quick", action="store_true")
     p.add_argument("--frameworks", type=str, nargs="+", default=None)
     return p.parse_args()
@@ -646,21 +717,13 @@ def main() -> None:
     if "Agents.jl" in selected_frameworks:
         print("[Agents.jl] running julia subprocess…")
         jl_results = _run_agentsjl(agent_counts, steps, runs)
-        for (model, n), sec in jl_results.items():
+        for (model, n), summary in jl_results.items():
+            sec = summary["mean"]
             results[("Agents.jl", model, n)] = sec
-            timing_details[("Agents.jl", model, n)] = {
-                "mean": sec,
-                "samples": [],
-                "trimmed_samples": [],
-                "median": sec,
-                "stdev": None,
-                "min": None,
-                "max": None,
-                "trimmed": None,
-                "notes": "Agents.jl subprocess reports only trimmed aggregate timing.",
-            }
+            timing_details[("Agents.jl", model, n)] = summary
         if jl_results:
-            for (model, n), sec in sorted(jl_results.items()):
+            for (model, n), summary in sorted(jl_results.items()):
+                sec = summary["mean"]
                 print(f"    Agents.jl  {model:<16s} n={n:<6d}  {sec * 1000:>9.1f} ms")
         else:
             print("    Agents.jl  — (not available)")
