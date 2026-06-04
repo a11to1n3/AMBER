@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.13 - 2026-06-04
+
+### Changed
+
+- Ignore root-level LaTeX paper build outputs so local manuscript compilation
+  does not dirty package release branches.
+- Keep project metadata, runtime fallback version, documentation version, and
+  changelogs aligned for the package release.
+
 ## v0.3.12 - 2026-06-04
 
 ### Changed
