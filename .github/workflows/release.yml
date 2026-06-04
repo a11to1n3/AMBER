@@ -32,6 +32,63 @@ jobs:
     - name: Check distributions
       run: python -m twine check dist/*
 
+    - name: Check package surface
+      run: |
+        python - <<'PY'
+        import tarfile
+        import zipfile
+        from pathlib import Path
+
+        dist = Path("dist")
+        sdist = next(dist.glob("ambr-*.tar.gz"))
+        wheel = next(dist.glob("ambr-*.whl"))
+        forbidden_roots = {
+            ".claude",
+            ".github",
+            "benchmarks",
+            "docs",
+            "examples",
+            "paper",
+            "tests",
+        }
+        forbidden_files = {"paper.zip"}
+
+        def local_only_members(names):
+            offenders = []
+            for name in names:
+                parts = Path(name).parts
+                if len(parts) < 2:
+                    continue
+                root_member = parts[1]
+                if root_member in forbidden_roots or root_member in forbidden_files:
+                    offenders.append(name)
+            return offenders
+
+        with tarfile.open(sdist) as archive:
+            sdist_offenders = local_only_members(archive.getnames())
+        if sdist_offenders:
+            raise SystemExit(
+                "sdist contains local-only paths: "
+                + ", ".join(sorted(sdist_offenders)[:20])
+            )
+
+        with zipfile.ZipFile(wheel) as archive:
+            wheel_offenders = []
+            for name in archive.namelist():
+                parts = Path(name).parts
+                if not parts:
+                    continue
+                if parts[0] in forbidden_roots or parts[0] in forbidden_files:
+                    wheel_offenders.append(name)
+        if wheel_offenders:
+            raise SystemExit(
+                "wheel contains local-only paths: "
+                + ", ".join(sorted(wheel_offenders)[:20])
+            )
+
+        print(f"Checked package surface for {sdist.name} and {wheel.name}")
+        PY
+
     - name: Upload distribution artifact
       uses: actions/upload-artifact@v7
       with:

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.12 - 2026-06-04
+
+### Changed
+
+- Tighten the source distribution surface so local-only directories such as
+  tests, benchmark fixtures, documentation builds, GitHub metadata, assistant
+  metadata, and paper drafts stay out of package archives.
+- Add release-workflow package-surface validation for the wheel and source
+  distribution before creating the GitHub release.
+- Keep project metadata, runtime fallback version, documentation version, and
+  changelogs aligned for the package release.
+
 ## v0.3.11 - 2026-06-04
 
 ### Changed
