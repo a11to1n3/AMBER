@@ -62,7 +62,7 @@ from .performance import (
 try:
     __version__ = _metadata_version('ambr')
 except _PackageNotFoundError:
-    __version__ = '0.3.6'
+    __version__ = '0.3.7'
 
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'

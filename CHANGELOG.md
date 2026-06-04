@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.7 - 2026-06-04
+
+### Fixed
+
+- Move GitHub Actions workflows to current Node-24-ready action versions for
+  release, checkout, setup-python, upload-artifact, and Codecov steps.
+- Correct the Codecov upload input from `file` to `files`.
+
 ## v0.3.6 - 2026-06-04
 
 ### Changed
