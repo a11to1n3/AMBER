@@ -170,17 +170,15 @@ the better AMBER scales).
   1130× slower.
 * **Random walk**: Agents.jl wins (1.6 ms), AMBER (vectorized) is the
   fastest Python-hosted implementation (4.8 ms).
-* **SIR epidemic**: AMBER (vectorized) wins (497 ms), Agents.jl is close
-  behind (813 ms).
-  The Polars cross-join for the O(n²) infection step is faster than the
-  hand-written Julia double loop because both languages are paying for
-  the same quadratic work but Polars executes it as one compiled C/Rust
-  pipeline.
+* **SIR epidemic**: AMBER (vectorized) is the fastest Python-hosted row in the
+  mixed headline grid.  The SIR rows do not all use the same update schedule,
+  so use this row as workload-class timing only; use the split sync/async SIR
+  runner below for semantics-aligned evidence.
 
 **Overall**: AMBER (vectorized) is the fastest Python-hosted framework on
-every model at every tested scale. Agents.jl wins the cheaper wealth and
-random-walk microbenchmarks; AMBER wins the larger SIR workload at 5,000
-agents.
+every headline model at every tested scale. Agents.jl wins the cheaper wealth
+and random-walk microbenchmarks. The SIR headline remains schedule-mixed, so it
+should not be read as an equivalent-trajectory AMBER-over-Julia claim.
 
 **Sync vs async SIR update semantics.** AMBER (vectorized) uses a
 **synchronous** update step for the infection phase — it snapshots the
@@ -219,6 +217,39 @@ julia -e 'using Pkg; Pkg.add("Agents")'
 
 If Julia isn't on `PATH`, `run_all_frameworks.py` will skip the Agents.jl
 row and still produce a six-framework comparison.
+
+## Semantics-aligned SIR and dynamic graph runners
+
+The headline SIR benchmark intentionally preserves the checked-in framework
+implementations, so it mixes synchronous, sequential, and event-scheduled SIR
+conventions. The split runner below fixes initial positions, movement deltas,
+and pair-level transmission draws, then reports sync and async rows separately:
+
+```bash
+python benchmarks/run_sir_schedule_variants.py --agents 500 1000 --steps 50 --runs 10 \
+    --budget-skip-modes async_simpy_refactored \
+    --budget-skip-reason "declared run-budget exclusion"
+python benchmarks/run_sir_schedule_variants.py --agents 500 1000 5000 --steps 50 --runs 10 \
+    --modes agentsjl_actual_source_sync agentsjl_actual_source_async --resume-existing
+```
+
+Outputs land in `results/sir_schedule_results.json` and
+`results/sir_schedule_results.md`. The current artifact records 42 measured
+CI-grade rows, three explicit async SimPy budget skips, and zero reference
+mismatches.
+
+The dynamic graph runner adds a bounded-confidence opinion workload with a
+deterministic sparse edge relation regenerated every step:
+
+```bash
+python benchmarks/run_dynamic_graph_variants.py --agents 500 1000 5000 \
+    --seeds 42 77 123 --steps 20 --runs 5
+```
+
+Outputs land in `results/dynamic_graph_results.json` and
+`results/dynamic_graph_results.md`. The current artifact records 63 measured
+rows across NumPy, Polars, a Python object loop, AMBER, Mesa, AgentPy, and
+Agents.jl, with zero reference mismatches.
 
 ## Three-framework registry runner
 
