@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.10 - 2026-06-04
+
+### Changed
+
+- Cut a main-anchored package release after synchronizing `dev`, `main`, and
+  their remotes.
+- Keep package metadata, runtime fallback version, documentation version, and
+  release notes aligned for the distribution artifacts.
+- Preserve local paper drafts and generated paper archives as ignored,
+  non-package artifacts.
+
 ## v0.3.9 - 2026-06-04
 
 ### Changed
