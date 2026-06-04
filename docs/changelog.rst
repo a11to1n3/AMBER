@@ -6,6 +6,19 @@ All notable changes to AMBER will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[0.3.12] - 2026-06-04
+---------------------
+
+Changed
+~~~~~~~
+- Tightened the source distribution surface so local-only directories such as
+  tests, benchmark fixtures, documentation builds, GitHub metadata, assistant
+  metadata, and paper drafts stay out of package archives.
+- Added release-workflow package-surface validation for the wheel and source
+  distribution before creating the GitHub release.
+- Kept project metadata, runtime fallback version, documentation version, and
+  changelogs aligned for the package release.
+
 [0.3.11] - 2026-06-04
 ---------------------
 
