@@ -68,11 +68,11 @@ class Boid(am.Agent):
         # Initialize random velocity
         ndim = self.model.p['ndim']
         self.velocity = normalize(
-            self.model.nprandom.random(ndim) - 0.5)
+            self.model.rng.random(ndim) - 0.5)
         
         # Initialize random position
         size = self.model.p['size']
-        self.position = self.model.nprandom.random(ndim) * size
+        self.position = self.model.rng.random(ndim) * size
     
     def get_neighbors(self, radius):
         """Get neighbors within a certain radius."""

@@ -27,7 +27,7 @@ class SimpleWealthModel(am.Model):
     def setup(self):
         """Create agents with random initial wealth — one columnar call."""
         n = int(self.p['n_agents'])
-        self.add_agents(n, wealth=self.nprandom.integers(1, 100, size=n))
+        self.add_agents(n, wealth=self.rng.integers(1, 100, size=n))
 
     def step(self):
         """Simple wealth transfer step, fully columnar."""
@@ -36,7 +36,7 @@ class SimpleWealthModel(am.Model):
 
         # Each agent transfers with probability p['transfer_rate'] and only
         # if it has something to give.
-        active_mask = (wealth > 0) & (self.nprandom.random(size=n) < self.p['transfer_rate'])
+        active_mask = (wealth > 0) & (self.rng.random(size=n) < self.p['transfer_rate'])
         if not active_mask.any():
             return
 
@@ -47,7 +47,7 @@ class SimpleWealthModel(am.Model):
         donor_amounts = amount[active_mask]
         self.agents.at[donor_ids].scatter_add(wealth=-donor_amounts)
 
-        recipient_ids = self.nprandom.choice(self.agents.ids.to_numpy(), size=int(active_mask.sum()))
+        recipient_ids = self.rng.choice(self.agents.ids.to_numpy(), size=int(active_mask.sum()))
         self.agents.at[recipient_ids].scatter_add(wealth=donor_amounts)
     
     def update(self):

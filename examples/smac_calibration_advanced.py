@@ -59,7 +59,7 @@ class SegregationModel(am.Model):
             agent = am.Agent(self, i)
             
             # Assign agent type
-            agent.agent_type = self.nprandom.choice(
+            agent.agent_type = self.rng.choice(
                 list(agent_types.keys()),
                 p=list(agent_types.values())
             )
@@ -121,7 +121,7 @@ class SegregationModel(am.Model):
         """Execute one simulation step."""
         # Shuffle agents for random activation
         agent_ids = list(range(len(self.agents_df)))
-        self.nprandom.shuffle(agent_ids)
+        self.rng.shuffle(agent_ids)
         
         for agent_id in agent_ids:
             agent_data = self.get_agent_data(agent_id)
@@ -142,7 +142,7 @@ class SegregationModel(am.Model):
             tolerance = agent_data['tolerance'].item()
             mobility = agent_data['mobility'].item()
             
-            if satisfaction < tolerance and self.nprandom.random() < mobility:
+            if satisfaction < tolerance and self.rng.random() < mobility:
                 # Try to move to a better location
                 new_pos = self.find_better_location(agent_id, pos)
                 if new_pos and new_pos != pos:
@@ -201,7 +201,7 @@ class SegregationModel(am.Model):
         
         # Sample a subset of locations to avoid expensive computation
         max_evaluations = min(len(empty_cells), self.p['max_location_evaluations'])
-        sampled_cells = self.nprandom.choice(
+        sampled_cells = self.rng.choice(
             empty_cells, size=max_evaluations, replace=False
         ).tolist()
         
