@@ -37,6 +37,7 @@ import argparse
 import json
 import logging
 import os
+import math
 import random
 import re
 import statistics
@@ -74,11 +75,17 @@ MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
         "transmission_rate": 0.1,
         "recovery_time": 14,
     },
+    "schelling": {
+        "density": 0.8,        # fraction of grid cells occupied
+        "fraction_a": 0.5,     # split between the two agent types
+        "tolerance": 0.3,      # min same-type fraction (of occupied neighbours) to be happy
+    },
 }
 MODEL_LABELS: Dict[str, str] = {
     "wealth_transfer": "Wealth Transfer",
     "random_walk": "Random Walk",
     "sir_epidemic": "SIR Epidemic",
+    "schelling": "Schelling Segregation",
 }
 DEFAULT_SEED = 42
 BOOTSTRAP_REPS = 10_000
@@ -239,6 +246,7 @@ def _bench_simpy(
         "wealth_transfer": simpy_models.run_wealth_benchmark,
         "random_walk": simpy_models.run_walk_benchmark,
         "sir_epidemic": simpy_models.run_sir_benchmark,
+        "schelling": simpy_models.run_schelling_benchmark,
     }
     fn = fn_map[model_name]
     cfg = dict(MODEL_CONFIGS[model_name])
@@ -264,6 +272,24 @@ def _bench_simpy(
 def _bench_melodie(
     model_name: str, n: int, steps: int, runs: int
 ) -> Optional[TimingSummary]:
+    # Melodie calls multiprocessing.set_start_method() at import time. Once
+    # numba (pulled in by AMBER's vectorized models) or any earlier framework
+    # has fixed the multiprocessing context, that call raises
+    # "context has already been set". Make it idempotent so Melodie can import
+    # in-process. The benchmark runs single scenarios directly (no Melodie
+    # parallel runner), so the chosen start method is irrelevant here.
+    import multiprocessing as _mp
+    if getattr(_mp.set_start_method, "__name__", "") != "_safe_set_start_method":
+        _orig_ssm = _mp.set_start_method
+
+        def _safe_set_start_method(method=None, force=False):
+            try:
+                if method is not None:
+                    _orig_ssm(method, force=True)
+            except Exception:
+                pass
+
+        _mp.set_start_method = _safe_set_start_method
     try:
         import numpy as np
         import Melodie  # noqa: F401  (surface probe)
@@ -283,6 +309,7 @@ def _bench_melodie(
         "wealth_transfer": (mm.WealthModel, mm.WealthScenario),
         "random_walk": (mm.WalkModel, mm.WalkScenario),
         "sir_epidemic": (mm.SIRModel, mm.SIRScenario),
+        "schelling": (mm.SchellingModel, mm.SchellingScenario),
     }
     model_cls, scenario_cls = scenario_map[model_name]
 
@@ -320,6 +347,83 @@ def _bench_melodie(
 
 
 # --------------------------------------------------------------------------- #
+# Framework: AMBER (GPU) — CuPy backend
+# --------------------------------------------------------------------------- #
+
+def _bench_amber_gpu(
+    model_name: str, n: int, steps: int, runs: int
+) -> Optional[TimingSummary]:
+    try:
+        from ambr.gpu import GPU_AVAILABLE
+        if not GPU_AVAILABLE:
+            return None
+        from models import amber_gpu_models as gm
+    except ImportError:
+        return None
+    cls = gm.AMBER_GPU_MODELS[model_name]
+    cfg = dict(MODEL_CONFIGS[model_name])
+
+    def _run():
+        cls(n, steps, cfg).run()
+
+    _run()  # warm up (CUDA context + kernel JIT)
+    return _time(_run, runs)
+
+
+# --------------------------------------------------------------------------- #
+# Framework: mesa-frames
+# --------------------------------------------------------------------------- #
+
+def _bench_mesa_frames(
+    model_name: str, n: int, steps: int, runs: int
+) -> Optional[TimingSummary]:
+    try:
+        from models import mesa_frames_models as mfm
+    except ImportError:
+        return None
+    cls = mfm.MESA_FRAMES_MODELS[model_name]
+    cfg = dict(MODEL_CONFIGS[model_name])
+
+    def _run():
+        cls(n, steps, cfg).run()
+
+    _run()  # warm up
+    return _time(_run, runs)
+
+
+# --------------------------------------------------------------------------- #
+# Framework: FLAME GPU 2 (pyflamegpu, RTC on GPU)
+# --------------------------------------------------------------------------- #
+
+def _bench_flamegpu(
+    model_name: str, n: int, steps: int, runs: int
+) -> Optional[TimingSummary]:
+    import os
+    # RTC needs a CUDA toolkit; default to the user-prefix install.
+    os.environ.setdefault("CUDA_PATH", os.path.expanduser("~/cuda-12.0"))
+    os.environ.setdefault("FLAMEGPU_SHARE_USAGE_STATISTICS", "False")
+    try:
+        import pyflamegpu  # noqa: F401
+        from models import flamegpu_models as fg
+    except ImportError:
+        return None
+    cls = fg.FLAMEGPU_MODELS.get(model_name)
+    if cls is None:
+        return None      # e.g. schelling: no FLAME GPU grid adapter
+    try:
+        pyflamegpu.Telemetry.disable()
+    except Exception:
+        pass
+    cfg = dict(MODEL_CONFIGS[model_name])
+
+    def _run():
+        cls(n, steps, cfg).run()
+
+    _run()  # warm up (RTC compile is cached on disk after the first build)
+    return _time(_run, runs)
+
+
+# --------------------------------------------------------------------------- #
 # Framework: Agents.jl (subprocess)
 # --------------------------------------------------------------------------- #
 
@@ -351,7 +455,7 @@ def _aggregate_only_summary(sec: float) -> TimingSummary:
     }
 
 
-def _run_agentsjl(agent_counts: List[int], steps: int, runs: int) -> Dict[Tuple[str, int], TimingSummary]:
+def _run_agentsjl(agent_counts: List[int], steps: int, runs: int, budget: float = 15.0) -> Dict[Tuple[str, int], TimingSummary]:
     """Run the Agents.jl standalone script once and parse raw timing samples."""
     results: Dict[Tuple[str, int], TimingSummary] = {}
     jl_path = MODELS_DIR / "agentsjl_models.jl"
@@ -383,6 +487,8 @@ def _run_agentsjl(agent_counts: List[int], steps: int, runs: int) -> Dict[Tuple[
                 str(steps),
                 "--runs",
                 str(runs),
+                "--budget",
+                str(budget),
             ],
             cwd=str(MODELS_DIR),
             capture_output=True,
@@ -431,8 +537,11 @@ def _run_agentsjl(agent_counts: List[int], steps: int, runs: int) -> Dict[Tuple[
 # --------------------------------------------------------------------------- #
 
 FRAMEWORK_ORDER = [
+    "AMBER (GPU)",
     "AMBER (vectorized)",
     "AMBER (loop)",
+    "mesa-frames",
+    "FLAME GPU 2",
     "Agents.jl",
     "SimPy",
     "Melodie",
@@ -564,8 +673,8 @@ def _write_markdown(
     # Speedup summary (AMBER vectorized baseline)
     lines.append("## Speedup of AMBER (vectorized) vs other frameworks")
     lines.append("")
-    lines.append("| Framework | wealth_transfer | random_walk | sir_epidemic |")
-    lines.append("|---|---|---|---|")
+    lines.append("| Framework | " + " | ".join(MODEL_CONFIGS) + " |")
+    lines.append("|" + "---|" * (len(MODEL_CONFIGS) + 1))
     for framework in FRAMEWORK_ORDER:
         if framework == "AMBER (vectorized)":
             continue
@@ -585,7 +694,7 @@ def _write_markdown(
         lines.append("| " + " | ".join(cells) + " |")
     lines.append("")
 
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _write_chart(
@@ -653,7 +762,38 @@ def _parse_args():
     p.add_argument("--runs", type=int, default=10)
     p.add_argument("--quick", action="store_true")
     p.add_argument("--frameworks", type=str, nargs="+", default=None)
+    p.add_argument("--models", type=str, nargs="+", default=None,
+                   help="subset of models to run (default: all in MODEL_CONFIGS)")
+    p.add_argument("--tag", type=str, default="all",
+                   help="output filename suffix: results_<tag>.{json,md,png}")
+    p.add_argument("--budget", type=float, default=15.0,
+                   help="per-run wall-clock budget (s); a framework is retired "
+                        "from larger N once its measured/predicted time exceeds it")
     return p.parse_args()
+
+
+# Assumed asymptotic complexity per model, used only for the *first* retirement
+# look-ahead (before two measured points exist to fit an empirical slope).
+MODEL_EXPONENT = {"wealth_transfer": 1.0, "random_walk": 1.0, "sir_epidemic": 2.0,
+                  "schelling": 1.0}
+
+
+def _predict_next(history, next_n, exponent):
+    """Estimate runtime at ``next_n`` from ascending (n, t) history.
+
+    With two points, fit the empirical log-log slope between the last two
+    (so an overhead-dominated framework isn't extrapolated as if its small-N
+    fixed cost were per-agent cost). With one point, fall back to the model's
+    assumed complexity exponent.
+    """
+    n1, t1 = history[-1]
+    if len(history) >= 2 and history[-2][1] > 0 and t1 > 0 and history[-2][0] < n1:
+        n0, t0 = history[-2]
+        k = math.log(t1 / t0) / math.log(n1 / n0)
+        k = min(max(k, 0.0), 3.0)
+    else:
+        k = exponent
+    return t1 * (next_n / n1) ** k
 
 
 def main() -> None:
@@ -667,12 +807,14 @@ def main() -> None:
         steps = args.steps
         runs = args.runs
 
+    budget = args.budget
     selected_frameworks = set(args.frameworks) if args.frameworks else set(FRAMEWORK_ORDER)
 
     print(f"Benchmark configuration")
     print(f"  agent counts : {agent_counts}")
     print(f"  steps        : {steps}")
     print(f"  runs/config  : {runs}")
+    print(f"  budget/run   : {budget}s (retire framework from larger N above this)")
     print(f"  frameworks   : {sorted(selected_frameworks)}")
     print()
 
@@ -685,6 +827,8 @@ def main() -> None:
         py_frameworks.append(("AMBER (loop)", lambda m, n, s, r: _bench_amber(m, n, s, r, "loop")))
     if "AMBER (vectorized)" in selected_frameworks:
         py_frameworks.append(("AMBER (vectorized)", lambda m, n, s, r: _bench_amber(m, n, s, r, "vectorized")))
+    if "AMBER (GPU)" in selected_frameworks:
+        py_frameworks.append(("AMBER (GPU)", _bench_amber_gpu))
     if "AgentPy" in selected_frameworks:
         py_frameworks.append(("AgentPy", _bench_agentpy))
     if "Mesa" in selected_frameworks:
@@ -693,30 +837,53 @@ def main() -> None:
         py_frameworks.append(("SimPy", _bench_simpy))
     if "Melodie" in selected_frameworks:
         py_frameworks.append(("Melodie", _bench_melodie))
+    if "mesa-frames" in selected_frameworks:
+        py_frameworks.append(("mesa-frames", _bench_mesa_frames))
+    if "FLAME GPU 2" in selected_frameworks:
+        py_frameworks.append(("FLAME GPU 2", _bench_flamegpu))
 
-    for model in MODEL_CONFIGS:
+    sorted_counts = sorted(agent_counts)
+    models_to_run = [m for m in MODEL_CONFIGS if (not args.models or m in args.models)]
+    for model in models_to_run:
         print(f"[{model}]")
-        for n in agent_counts:
-            print(f"  n={n}")
-            for framework, fn in py_frameworks:
+        exponent = MODEL_EXPONENT.get(model, 1.0)
+        for framework, fn in py_frameworks:
+            history: List[Tuple[int, float]] = []
+            retired = False
+            for n in sorted_counts:
+                label = f"    {framework:18s} n={n:<8d}"
+                if retired:
+                    results[(framework, model, n)] = None
+                    print(f"{label} —  (retired)")
+                    continue
+                if history:
+                    est = _predict_next(history, n, exponent)
+                    if est > budget:
+                        results[(framework, model, n)] = None
+                        retired = True
+                        print(f"{label} —  (skipped, est ~{est:.0f}s > {budget:.0f}s)")
+                        continue
                 try:
                     summary = fn(model, n, steps, runs)
                 except Exception as e:
-                    print(f"    {framework:22s} ERROR  ({type(e).__name__}: {e})")
+                    print(f"{label} ERROR ({type(e).__name__}: {str(e)[:70]})")
                     summary = None
+                    retired = True
                 t = summary["mean"] if summary is not None else None
                 results[(framework, model, n)] = t
                 if summary is not None:
                     timing_details[(framework, model, n)] = summary
-                if t is not None:
-                    print(f"    {framework:22s} {t * 1000:>9.1f} ms")
-                else:
-                    print(f"    {framework:22s} —")
+                    history.append((n, t))
+                    print(f"{label} {t * 1000:>10.1f} ms")
+                    if t > budget:
+                        retired = True
+                elif not retired:
+                    print(f"{label} —")
 
     # Agents.jl -------------------------------------------------------------
     if "Agents.jl" in selected_frameworks:
         print("[Agents.jl] running julia subprocess…")
-        jl_results = _run_agentsjl(agent_counts, steps, runs)
+        jl_results = _run_agentsjl(agent_counts, steps, runs, budget)
         for (model, n), summary in jl_results.items():
             sec = summary["mean"]
             results[("Agents.jl", model, n)] = sec
@@ -730,9 +897,9 @@ def main() -> None:
 
     # Outputs ---------------------------------------------------------------
     print()
-    json_path = RESULTS_DIR / "benchmark_results_all.json"
-    md_path = RESULTS_DIR / "summary_table_all.md"
-    chart_path = RESULTS_DIR / "scaling_chart_all.png"
+    json_path = RESULTS_DIR / f"benchmark_results_{args.tag}.json"
+    md_path = RESULTS_DIR / f"summary_table_{args.tag}.md"
+    chart_path = RESULTS_DIR / f"scaling_chart_{args.tag}.png"
 
     _write_json(results, timing_details, steps, runs, agent_counts, json_path)
     print(f"  wrote {json_path.relative_to(REPO_ROOT)}")
