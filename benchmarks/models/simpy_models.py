@@ -150,6 +150,54 @@ def run_sir_benchmark(
 
 
 # =============================================================================
+# Schelling Segregation
+# =============================================================================
+
+def schelling_agent(env, agent_id, agents_data, occ, params):
+    G, tol = params['G'], params['tolerance']
+    while True:
+        yield env.timeout(1)
+        a = agents_data[agent_id]
+        x, y, atype = a['x'], a['y'], a['atype']
+        same = total = 0
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                v = occ.get(((x + dx) % G, (y + dy) % G))
+                if v is not None:
+                    total += 1
+                    if v == atype:
+                        same += 1
+        if total > 0 and same < tol * total:
+            for _ in range(20):
+                cx, cy = random.randrange(G), random.randrange(G)
+                if (cx, cy) not in occ:
+                    del occ[(x, y)]
+                    a['x'], a['y'] = cx, cy
+                    occ[(cx, cy)] = atype
+                    break
+
+
+def run_schelling_benchmark(n=100, steps=100, density=0.8, fraction_a=0.5, tolerance=0.3):
+    G = int((n / density) ** 0.5) + 1
+    cells = list(range(G * G))
+    random.shuffle(cells)
+    cells = cells[:n]
+    n_a = int(n * fraction_a)
+    agents_data, occ = [], {}
+    for i in range(n):
+        x, y, atype = cells[i] % G, cells[i] // G, (1 if i < n_a else 2)
+        agents_data.append({'id': i, 'x': x, 'y': y, 'atype': atype})
+        occ[(x, y)] = atype
+    params = {'G': G, 'tolerance': tolerance}
+    env = simpy.Environment()
+    for i in range(n):
+        env.process(schelling_agent(env, i, agents_data, occ, params))
+    env.run(until=steps)
+
+
+# =============================================================================
 # Runner
 # =============================================================================
 

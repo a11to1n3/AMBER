@@ -132,6 +132,66 @@ class SIRScenario(Melodie.Scenario):
         self.agent_num = 0
 
 # =============================================================================
+# Schelling Segregation
+# =============================================================================
+
+class SchellingAgent(Melodie.Agent):
+    def setup(self):
+        self.x = 0
+        self.y = 0
+        self.atype = 1
+
+class SchellingModel(Melodie.Model):
+    def setup(self):
+        self.agent_list = self.create_agent_list(SchellingAgent)
+        self.environment = self.create_environment(WealthEnvironment)
+        self.density = 0.8
+        self.fraction_a = 0.5
+        self.tolerance = 0.3
+
+    def run(self):
+        n = len(self.agent_list)
+        G = int((n / self.density) ** 0.5) + 1
+        self.G = G
+        cells = list(range(G * G))
+        np.random.shuffle(cells)
+        cells = cells[:n]
+        n_a = int(n * self.fraction_a)
+        self.occ = {}
+        for i, a in enumerate(self.agent_list):
+            a.x, a.y, a.atype = int(cells[i] % G), int(cells[i] // G), (1 if i < n_a else 2)
+            self.occ[(a.x, a.y)] = a.atype
+        for _ in range(self.scenario.periods):
+            self.step()
+
+    def step(self):
+        G, occ, tol = self.G, self.occ, self.tolerance
+        for a in self.agent_list:
+            same = total = 0
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    v = occ.get(((a.x + dx) % G, (a.y + dy) % G))
+                    if v is not None:
+                        total += 1
+                        if v == a.atype:
+                            same += 1
+            if total > 0 and same < tol * total:
+                for _ in range(20):
+                    cx, cy = int(np.random.randint(0, G)), int(np.random.randint(0, G))
+                    if (cx, cy) not in occ:
+                        del occ[(a.x, a.y)]
+                        a.x, a.y = cx, cy
+                        occ[(cx, cy)] = a.atype
+                        break
+
+class SchellingScenario(Melodie.Scenario):
+    def setup(self):
+        self.periods = 0
+        self.agent_num = 0
+
+# =============================================================================
 # Runner
 # =============================================================================
 
