@@ -22,12 +22,17 @@ AMBER Documentation
 Features
 --------
 
-* **Intuitive API**: Simple and clean interface for building agent-based models
-* **High Performance**: Efficient data structures using Polars for fast simulations
-* **Flexible Environments**: Support for grid, continuous space, and network topologies
-* **Rich Analytics**: Built-in data collection and analysis tools
-* **Scalable**: Handles models from small prototypes to large-scale simulations
-* **Extensible**: Easy to extend with custom agent behaviors and environments
+* **Vectorized view API**: update the whole population in a handful of Polars
+  expressions — no per-agent loops, regardless of population size
+* **Snapshot-view contract**: opt-in runtime checking that the columnar fast
+  path preserves the intended update schedule (the zero-overhead default is off)
+* **GPU backend**: a CuPy array backend with a NumPy fallback, plus a batched
+  ensemble that runs ``B`` simulations in one device pass for calibration
+* **Flexible environments**: grid, continuous space, and network topologies
+* **Optimization**: grid / random / Bayesian (SMAC) search and GPU-batched calibration
+* **Declarative reporting & typed params**: ``model_reporters`` / ``agent_reporters``
+  and a class-level ``params`` schema
+* **Reproducible**: one canonical seeded RNG (``self.rng``); deterministic runs
 
 Quick Start
 -----------
@@ -43,19 +48,24 @@ Create your first model:
 .. code-block:: python
 
    import ambr as am
-   
-   class SimpleModel(am.Model):
+
+   class WealthModel(am.Model):
+       # Declarative per-step metric -> results['model'].
+       model_reporters = {'total_wealth': lambda m: int(m.agents.wealth.sum())}
+
        def setup(self):
-           # Create 100 agents
-           for i in range(100):
-               agent = am.Agent(self, i)
-               self.add_agent(agent)
-       
+           # Bulk-create the population in one columnar write — no per-agent loop.
+           self.add_agents(100, wealth=self.rng.integers(1, 10, size=100))
+
        def step(self):
-           pass  # Define agent behaviors here
-   
+           # Every agent with wealth > 0 gives $1 to a random other agent.
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
+           recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
+           self.agents.at[recipients].scatter_add(wealth=1)
+
    # Run the model
-   model = SimpleModel({'steps': 50})
+   model = WealthModel({'steps': 50, 'seed': 42})
    results = model.run()
 
 For more examples, check the ``examples/`` directory in the repository.

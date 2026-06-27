@@ -33,7 +33,7 @@ vectorized way:
            # Bulk-create 100 agents with random initial wealth — no loop.
            self.add_agents(
                100,
-               wealth=self.nprandom.integers(1, 10, size=100),
+               wealth=self.rng.integers(1, 10, size=100),
            )
 
        def step(self):
@@ -45,11 +45,11 @@ vectorized way:
            # then scatter the $1 credits — duplicate recipients correctly
            # receive multiple dollars via scatter_add.
            ids = self.agents.ids.to_numpy()
-           recipients = self.nprandom.choice(ids, size=len(donors))
+           recipients = self.rng.choice(ids, size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
            # Track aggregate state at the model level.
-           self.record('total_wealth', int(self.agents.wealth.sum()))
+           self.record_model('total_wealth', int(self.agents.wealth.sum()))
 
    # Run the model
    model = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
@@ -69,7 +69,7 @@ Understanding the results
 The model returns a dictionary with three keys:
 
 * ``agents`` — a Polars DataFrame of agent state at the end of the run
-* ``model`` — a Polars DataFrame of the model-level metrics you ``record``-ed
+* ``model`` — a Polars DataFrame of the model-level metrics you reported
 * ``info`` — a small dict with ``steps`` and ``run_time``
 
 .. code-block:: python
@@ -111,11 +111,11 @@ Let's enhance the model with a 20×20 grid:
 
            n = 200
            # Place agents randomly on the grid (sampled with replacement)
-           xs = self.nprandom.integers(0, 20, size=n)
-           ys = self.nprandom.integers(0, 20, size=n)
+           xs = self.rng.integers(0, 20, size=n)
+           ys = self.rng.integers(0, 20, size=n)
            self.add_agents(
                n,
-               wealth=self.nprandom.integers(1, 10, size=n),
+               wealth=self.rng.integers(1, 10, size=n),
                x=xs,
                y=ys,
            )
@@ -125,7 +125,7 @@ Let's enhance the model with a 20×20 grid:
            donors = self.agents.where(self.agents.wealth > 0)
            donors.wealth -= 1
            ids = self.agents.ids.to_numpy()
-           recipients = self.nprandom.choice(ids, size=len(donors))
+           recipients = self.rng.choice(ids, size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
    spatial_model = SpatialWealthModel({'steps': 50, 'seed': 42, 'show_progress': False})
@@ -134,8 +134,9 @@ Let's enhance the model with a 20×20 grid:
 Model-level analytics
 ---------------------
 
-Aggregate metrics go through ``self.record``, which takes any scalar you
-can compute from the current DataFrame:
+Aggregate metrics go through ``self.record_model`` (or, declaratively, a
+class-level ``model_reporters`` dict), which takes any scalar you can compute
+from the current DataFrame:
 
 .. code-block:: python
 
@@ -143,20 +144,20 @@ can compute from the current DataFrame:
 
    class AnalyticalWealthModel(am.Model):
        def setup(self):
-           self.add_agents(100, wealth=self.nprandom.integers(1, 10, size=100))
+           self.add_agents(100, wealth=self.rng.integers(1, 10, size=100))
 
        def step(self):
            donors = self.agents.where(self.agents.wealth > 0)
            donors.wealth -= 1
            ids = self.agents.ids.to_numpy()
-           recipients = self.nprandom.choice(ids, size=len(donors))
+           recipients = self.rng.choice(ids, size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
            # Polars Series expose the usual aggregate methods.
            wealth = self.agents.wealth
-           self.record('mean_wealth', float(wealth.mean()))
-           self.record('wealth_std', float(wealth.std() or 0.0))
-           self.record('gini', self._gini(wealth.to_numpy()))
+           self.record_model('mean_wealth', float(wealth.mean()))
+           self.record_model('wealth_std', float(wealth.std() or 0.0))
+           self.record_model('gini', self._gini(wealth.to_numpy()))
 
        @staticmethod
        def _gini(values):
@@ -172,9 +173,8 @@ When per-agent loops are OK
 
 The view API isn't mandatory — you can still write OOP-style agents for
 behaviours that genuinely don't vectorize (graph traversal, bespoke
-scheduling). ``Agent.record()`` and ``Agent.update_data()`` queue writes
-through the same batched flush path, so you won't pay a per-call
-DataFrame clone:
+scheduling). Assigning ``agent.col = value`` writes through the same batched
+flush path, so you won't pay a per-call DataFrame clone:
 
 .. code-block:: python
 
@@ -184,7 +184,7 @@ DataFrame clone:
            # this specific agent's neighbourhood in a way that can't be
            # expressed as a single Polars expression.
            neighbours = self.get_neighbors()
-           self.record('neighbour_count', neighbours.height)
+           self.neighbour_count = neighbours.height
 
 In general: reach for ``self.agents.where(...).col = ...`` first. Fall
 back to per-agent style only when the logic is inherently sequential or
@@ -208,5 +208,5 @@ Key concepts
 * **Use** ``scatter_add`` **for resource flow.** ``view.col = ...`` handles
   deterministic updates; use ``scatter_add`` when ids may repeat and you
   want the deltas to sum.
-* **Reproducibility** comes from ``self.nprandom`` and ``self.random``,
+* **Reproducibility** comes from ``self.rng`` and ``self.random``,
   both seeded from ``parameters['seed']``.
