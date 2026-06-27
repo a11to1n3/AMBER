@@ -9,10 +9,11 @@ we synchronise once at the end for honest timing.
 
 Notes on scaling:
 * wealth_transfer / random_walk are O(N) per step -> scale to N = 1e6 easily.
-* sir_epidemic uses the same all-pairs (susceptible x infected) test as the CPU
-  vectorized model. On the GPU that is an (S, I) matrix; it is far faster than
-  the CPU cross-join but is still O(N^2) and will OOM the device for very large
-  N (a spatial-binning kernel, like FLAME GPU's, is the fix to reach 1e6 here).
+* sir_epidemic is benchmarked with the O(N) spatial-binning kernel from
+  amber_gpu_scale_models (counting-sort group-by + fixed-radius self-join CUDA
+  kernel, no per-cell cap), which scales to N = 1e7 on a 24 GB GPU. The naive
+  all-pairs (S x I) matrix version is kept as GPUSIRModel /
+  AMBER_GPU_MODELS['sir_epidemic_naive']; it OOMs the device at N >= 1e5.
 """
 
 import os
@@ -26,6 +27,14 @@ if GPU_AVAILABLE:
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _schelling_core import schelling_setup, schelling_step
+
+# Scalable O(N) spatial-binning SIR (counting-sort group-by + fixed-radius
+# self-join CUDA kernel). The naive GPUSIRModel below materialises a dense
+# (S x I) contact matrix and OOMs the device at N >= 1e5; the kernel model is
+# the same fixed-radius SIR dynamics with NO per-cell cap, so it is
+# density-faithful and scales to N = 1e7 on a 24 GB GPU. See
+# amber_gpu_scale_models.GPUSIRKernelModel.
+from amber_gpu_scale_models import GPUSIRKernelModel
 
 SEED = 42
 
@@ -122,6 +131,9 @@ class GPUSchellingModel(_Base):
 AMBER_GPU_MODELS = {
     "wealth_transfer": GPUWealthModel,
     "random_walk": GPUWalkModel,
-    "sir_epidemic": GPUSIRModel,
+    # sir_epidemic: use the O(N) spatial-binning kernel (GPUSIRModel below is
+    # the naive O(N^2) all-pairs version and OOMs at N >= 1e5).
+    "sir_epidemic": GPUSIRKernelModel,
+    "sir_epidemic_naive": GPUSIRModel,
     "schelling": GPUSchellingModel,
 }
