@@ -47,6 +47,27 @@ See [`benchmarks/README.md`](benchmarks/README.md) for the full table at
 500 / 1000 / 5000 agents, speedup ratios, a per-model correctness audit,
 and the documented SIR update-semantics caveat.
 
+### Scaling to 10M agents with the GPU backend
+
+The 0.4 GPU backend changes the story at large N. This sweep covers **1k → 10M
+agents across 10 frameworks and four models** — adding **AMBER (GPU)** and a
+**Schelling segregation** workload (NVIDIA RTX 3090 for the GPU series):
+
+![AMBER GPU + Schelling scaling to 10M agents across 10 frameworks](benchmarks/results/scaling_chart_gpu_schelling.png)
+
+- **AMBER (GPU) reaches 10M agents on all four models** while CPU frameworks blow
+  up. Wealth transfer: ~14 ms at 1M (≈330× the fastest CPU framework), 199 ms at
+  10M (**3.1× faster than FLAME GPU 2**). Schelling: the **only** framework to
+  reach 10M (847 ms; 19× AMBER-vectorized and 225× Agents.jl at 1M). SIR: 5.98 s
+  at 10M (**~2× faster than FLAME GPU 2**), via an O(N) spatial-binning kernel.
+- **It's a large-N win, not a small-N one.** A ~90 ms fixed device cost means
+  AMBER (GPU) only leads at scale: below ~100k–1M, AMBER (vectorized) or Agents.jl
+  are faster, and on SIR FLAME GPU 2 wins at 1k–10k before AMBER overtakes it from
+  100k up. (FLAME GPU 2 implements no Schelling model, so it is absent from that
+  panel.)
+
+Regenerate with `python benchmarks/plot_scaling_with_gpu_schelling.py`.
+
 ## 🚀 Quick Start
 
 ```python

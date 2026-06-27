@@ -80,6 +80,7 @@ Table of Contents
    installation
    quickstart
    tutorial
+   benchmarks
    examples/index
 
 .. toctree::
