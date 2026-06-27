@@ -183,11 +183,68 @@ class AgentPyRandomWalk(ap.Model):
         pass
 
 
+class APSchellingAgent(ap.Agent):
+    def setup(self):
+        pass  # x, y, atype set by the model
+
+    def step(self):
+        m = self.model
+        G, occ = m.G, m.occ
+        same = total = 0
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                v = occ.get(((self.x + dx) % G, (self.y + dy) % G))
+                if v is not None:
+                    total += 1
+                    if v == self.atype:
+                        same += 1
+        if total > 0 and same < m.tolerance * total:
+            for _ in range(20):
+                cx, cy = m.random.randrange(G), m.random.randrange(G)
+                if (cx, cy) not in occ:
+                    del occ[(self.x, self.y)]
+                    self.x, self.y = cx, cy
+                    occ[(cx, cy)] = self.atype
+                    break
+
+
+class AgentPySchelling(ap.Model):
+    """Schelling segregation (AgentPy Implementation)."""
+
+    def setup(self):
+        n = self.p.get('n', 100)
+        density = self.p.get('density', 0.8)
+        fraction_a = self.p.get('fraction_a', 0.5)
+        self.tolerance = self.p.get('tolerance', 0.3)
+        self.G = int((n / density) ** 0.5) + 1
+        self.agents = ap.AgentList(self, n, APSchellingAgent)
+        cells = list(range(self.G * self.G))
+        self.random.shuffle(cells)
+        cells = cells[:n]
+        n_a = int(n * fraction_a)
+        self.occ = {}
+        for i, a in enumerate(self.agents):
+            a.x, a.y, a.atype = cells[i] % self.G, cells[i] // self.G, (1 if i < n_a else 2)
+            self.occ[(a.x, a.y)] = a.atype
+
+    def step(self):
+        self.agents.step()
+
+    def update(self):
+        pass
+
+    def end(self):
+        pass
+
+
 # Model registry for benchmark runner
 AGENTPY_MODELS = {
     'wealth_transfer': AgentPyWealthTransfer,
     'sir_epidemic': AgentPySIRModel,
     'random_walk': AgentPyRandomWalk,
+    'schelling': AgentPySchelling,
 }
 
 if __name__ == '__main__':

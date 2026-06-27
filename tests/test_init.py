@@ -150,7 +150,10 @@ class TestPackageInitialization:
             'Population', 'BatchUpdateContext', 'SpatialIndex', 'ParallelRunner',
             'check_performance_deps', 'vectorized_move', 'vectorized_wealth_transfer',
             'vectorized_random_velocities', 'HAS_SCIPY', 'HAS_NUMBA',
-            'HAS_SMAC'
+            'HAS_SMAC',
+            # Snapshot-view contract conformance checking
+            'ContractCertificate', 'ContractViolation', 'ContractViolationError',
+            'CONTRACT_MODES',
         }
         
         # Check that we don't have unexpected exports
@@ -227,10 +230,10 @@ class TestPackageIntegration:
         model.setup()
         assert len(model.agent_list) == 3
         
-        # Test step
-        model.update()
+        # Test step (step() does the work; _advance_and_record owns t)
         model.step()
-        
+        model._advance_and_record()
+
         # Verify model state
         assert model.t == 1
     

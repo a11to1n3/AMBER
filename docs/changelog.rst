@@ -6,6 +6,62 @@ All notable changes to AMBER will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[0.4.0] - 2026-06-27
+--------------------
+
+The 0.4 release settles the public API on one canonical verb per task (legacy
+spellings still work, emitting a ``DeprecationWarning`` and scheduled for
+removal in 1.0; set ``AMBER_SUPPRESS_DEPRECATIONS=1`` to silence them), and adds
+the snapshot-view contract checker, a resident tensor lane, a CuPy GPU backend,
+and SMAC 2.x-compatible optimization.
+
+Added
+~~~~~
+- Snapshot-view contract: ``model.run(contract="check"|"warn"|"raise")`` records
+  a per-step ``ContractCertificate`` that columnar fast-path updates preserve the
+  intended update schedule; inspect ``results["contract"]`` (mode ``off`` is the
+  zero-overhead default).
+- Tensor lane: zero-copy ``agents.borrow(col)`` / ``agents.commit(**cols)`` over
+  the Polars frame, routed through the contract.
+- GPU backend: ``ambr.gpu`` array-module abstraction with NumPy fallback, and
+  ``ambr.gpu_ensemble`` (``GPUEnsembleRunner``, ``BatchedWellMixedSIR``,
+  ``smac_batch_calibrate``) batching a ``(B × N)`` ensemble into one device pass.
+- Declarative ``model_reporters`` / ``agent_reporters`` and ``record_initial``;
+  typed ``params`` schema and ``AttrDict.get_int`` / ``get_float`` / ``get_bool``.
+- ``AgentList`` façades ``by_id`` / ``numpy`` / ``set`` / ``borrow`` / ``commit`` /
+  ``frame``; ``add_agents(n, agent_class=...)`` tracks Python agent objects.
+- Cross-framework calibration and scaling benchmarks (Agents.jl, mesa-frames,
+  FLAME GPU) and a tensor-lane flocking example.
+
+Changed
+~~~~~~~
+- One canonical RNG: ``self.rng`` (NumPy ``Generator``) and ``self.random``
+  (stdlib), both seeded from ``seed``; seeded runs no longer touch global
+  ``np.random``.
+- Encapsulated write boundary (internal ``Model._set_frame``); ``agents.frame``
+  read accessor.
+- ``update()`` is a pure hook (no ``super().update()`` needed); step advance and
+  data finalize moved into the runner.
+- Vectorized ``SpaceEnvironment.get_neighbors`` (NumPy + scipy KD-tree);
+  ``wrap=`` collapses to ``torus=``. Examples migrated to ``rng``.
+
+Fixed
+~~~~~
+- ``optimization``: explicit ``rng`` threading (no global seed mutation) and
+  SMAC 2.x compatibility for ``SMACOptimizer`` / ``bayesian_optimization``.
+- ``NetworkEnvironment.__init__`` no longer drops ``node_id`` when adding
+  ``network_distance``; ``SpaceEnvironment.move_agent`` no longer raises a dtype
+  error on object-typed position columns.
+
+Deprecated
+~~~~~~~~~~~
+- Legacy verbs kept until 1.0 (each warns toward the canonical form):
+  ``nprandom`` → ``rng``; ``model.record`` → ``record_model`` /
+  ``model_reporters``; ``agents.select`` → ``agents.where``; ``agents.record`` /
+  ``agents.update_data`` → ``agents.set`` / ``agent.<col> = v``; ``agents.agents``
+  / ``agents.agent_ids`` → iterate / ``agents.by_id``; ``GridEnvironment(wrap=)``
+  / ``.wrap`` → ``torus=``.
+
 [0.3.13] - 2026-06-04
 ---------------------
 

@@ -11,6 +11,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 import numpy as np
 import polars as pl
 
+from ._deprecation import warn_deprecated
+
 from .agent import Agent
 from .model import Model
 
@@ -133,7 +135,7 @@ class _BaseView:
                 .otherwise(pl.col(name))
                 .alias(name)
             ).drop("__new__")
-            model.population.data = joined
+            model._set_frame(joined)
             return
 
         values = value if isinstance(value, pl.Series) else pl.Series(
@@ -148,13 +150,13 @@ class _BaseView:
 
         # Whole-population fast path: one with_columns, no join.
         if n == df.height and ids.equals(df["id"]):
-            model.population.data = df.with_columns(values.alias(name))
+            model._set_frame(df.with_columns(values.alias(name)))
             return
 
         if name not in df.columns:
             df = df.with_columns(pl.Series(name, [None] * df.height, strict=False))
         update_df = pl.DataFrame([ids.rename("id"), values.rename(name)])
-        model.population.data = df.update(update_df, on="id", how="left")
+        model._set_frame(df.update(update_df, on="id", how="left"))
 
     @property
     def ids(self) -> pl.Series:
@@ -184,6 +186,14 @@ class _BaseView:
         return FilteredAgentList(model, new_ids, parent=self._root())
 
     def select(self, selection) -> "_BaseView":
+        """Deprecated AgentPy filter; use ``where(expr)`` / ``at[ids]`` / ``[mask]``."""
+        warn_deprecated(
+            "AgentList.select(...)",
+            "agents.where(expr) / agents.at[ids] / agents[mask]",
+        )
+        return self._select_impl(selection)
+
+    def _select_impl(self, selection) -> "_BaseView":
         """AgentPy-compatible filter.
 
         Accepts bool masks (list/ndarray/Series), Polars expressions,
@@ -251,13 +261,35 @@ class _BaseView:
     # --- legacy aliases -----------------------------------------------------
 
     def record(self, name: str, value: Any) -> None:
-        """Legacy alias for ``view.<name> = value``."""
+        """Deprecated alias for ``view.<name> = value`` (or ``view.set(...)``)."""
+        warn_deprecated("AgentList.record(name, value)", "view.<name> = value (or view.set(...))")
         self._write_column(name, value)
 
     def update_data(self, data: Dict[str, Any]) -> None:
-        """Legacy alias for multi-column write over this view's agents."""
+        """Deprecated alias for a multi-column write (``view.set(**cols)``)."""
+        warn_deprecated("AgentList.update_data(data)", "view.set(**cols)")
         for k, v in data.items():
             self._write_column(k, v)
+
+    # --- ergonomic read / write --------------------------------------------
+
+    def numpy(self, *columns: str):
+        """Return the named columns as numpy arrays, aligned to this view.
+
+        ``x = agents.numpy('x')`` returns one array; ``x, y = agents.numpy('x',
+        'y')`` returns a tuple -- a one-call replacement for the repeated
+        ``agents.x.to_numpy()`` idiom.
+        """
+        arrays = tuple(getattr(self, c).to_numpy() for c in columns)
+        return arrays[0] if len(columns) == 1 else arrays
+
+    def set(self, **columns: Any) -> None:
+        """Write one or more whole columns over this view's agents.
+
+        ``agents.set(x=nx, y=ny)`` replaces ``agents.x = nx; agents.y = ny``.
+        """
+        for name, value in columns.items():
+            self._write_column(name, value)
 
     # --- scatter-add --------------------------------------------------------
 
@@ -279,9 +311,9 @@ class _BaseView:
         if n == 0:
             missing = [c for c in increments if c not in df.columns]
             if missing:
-                model.population.data = df.with_columns(
+                model._set_frame(df.with_columns(
                     [pl.Series(c, [None] * df.height, strict=False) for c in missing]
-                )
+                ))
             return
 
         delta_np: Dict[str, np.ndarray] = {
@@ -303,7 +335,7 @@ class _BaseView:
             np.add.at(base, positions, delta)
             new_columns.append(pl.Series(col_name, base, strict=False))
 
-        model.population.data = df.with_columns(new_columns)
+        model._set_frame(df.with_columns(new_columns))
 
 
 def _resolve_positions(model: Model, df: pl.DataFrame, ids_np: np.ndarray) -> np.ndarray:
@@ -418,8 +450,14 @@ class AgentList(_BaseView):
         return df["id"] if "id" in df.columns else pl.Series("id", [], dtype=pl.Int64)
 
     @property
+    def frame(self) -> pl.DataFrame:
+        """Read-only snapshot of the full agent table (alias for ``model.agents_df``)."""
+        return self.model.agents_df
+
+    @property
     def agents(self) -> List[Agent]:
-        """Legacy accessor: list of underlying ``Agent`` objects."""
+        """Deprecated: iterate ``model.agents`` directly, or use ``by_id`` / ``ids``."""
+        warn_deprecated("AgentList.agents", "iterating model.agents (or agents.by_id / agents.ids)")
         return self._agent_objects
 
     def __iter__(self):
@@ -551,6 +589,8 @@ class AgentList(_BaseView):
 
     @property
     def agent_ids(self):
+        """Deprecated alias for :attr:`ids`."""
+        warn_deprecated("AgentList.agent_ids", "agents.ids")
         return [getattr(agent, "id", i) for i, agent in enumerate(self._agent_objects)]
 
     # --- legacy APIs (kept as thin wrappers around the column protocol) ----
@@ -559,6 +599,35 @@ class AgentList(_BaseView):
         if hasattr(self.model, "agents_df"):
             return self.model.agents_df
         return pl.DataFrame()
+
+    def by_id(self, agent_id) -> Agent:
+        """Return the tracked Agent object with this id (the per-agent / OOP lane).
+
+        Lets per-agent code reach another agent without a hand-rolled id->object
+        dict (``add_agents(n, agent_class=...)`` tracks the objects for you).
+        """
+        agent = self._agents_by_id.get(agent_id)
+        if agent is None:
+            raise KeyError(f"no tracked agent with id {agent_id!r}")
+        return agent
+
+    def borrow(self, column: str):
+        """Zero-copy, read-only borrow of a numeric column for tensor kernels.
+
+        Returns ``(array, is_view)``; pair with :meth:`commit`. See
+        ``ambr.tensor_lane`` for the snapshot-view contract on borrow/commit.
+        """
+        from .tensor_lane import borrow_numeric
+        return borrow_numeric(self.model, column)
+
+    def commit(self, **columns: Any) -> None:
+        """Atomically write back derived columns (the tensor-lane commit path).
+
+        ``agents.commit(x=nx, y=ny)``. Routes through ``commit_columns`` so the
+        snapshot-view contract observes the writes.
+        """
+        from .tensor_lane import commit_columns
+        commit_columns(self.model, **columns)
 
     def group_by(self, by: str) -> Dict[Any, "FilteredAgentList"]:
         groups: Dict[Any, FilteredAgentList] = {}
@@ -608,7 +677,7 @@ class _SubView(_BaseView):
             arr = np.asarray(idx)
             id_list = self._ids.to_list()
             if arr.dtype == bool:
-                return self.select(arr)
+                return self._select_impl(arr)
             # List of positions → return a FilteredAgentList view
             picked_ids = [id_list[int(i)] for i in arr]
             return FilteredAgentList(

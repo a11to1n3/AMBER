@@ -36,20 +36,27 @@ class ParameterSpace:
         """
         self.parameters = parameters
         
-    def sample(self) -> Dict[str, Any]:
+    def sample(self, rng=None) -> Dict[str, Any]:
         """Sample a random parameter combination.
-        
+
+        Args:
+            rng: optional ``numpy.random.Generator`` for reproducibility. When
+                omitted, a fresh local generator is used (never the global
+                ``np.random`` state).
+
         Returns:
             Dictionary with parameter values
         """
         from .experiment import IntRange
-        
+
+        if rng is None:
+            rng = np.random.default_rng()
         result = {}
         for name, value in self.parameters.items():
             if isinstance(value, list):
-                result[name] = np.random.choice(value)
+                result[name] = value[int(rng.integers(0, len(value)))]
             elif isinstance(value, IntRange):  # IntRange objects (exclusive end)
-                result[name] = np.random.randint(value.start, value.end)
+                result[name] = int(rng.integers(value.start, value.end))
             else:  # Fixed value
                 result[name] = value
         return result
@@ -165,14 +172,12 @@ def random_search(model_class: Type[Model], parameter_space: ParameterSpace,
     Returns:
         List of results sorted by objective value (best first)
     """
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
-    
+    rng = np.random.default_rng(seed)  # local generator; never touches global np.random
+
     results = []
-    
+
     for _ in range(n_samples):
-        params = parameter_space.sample()
+        params = parameter_space.sample(rng)
         obj_value = objective_function(model_class, params, metric, iterations, minimize)
         results.append({
             'parameters': params,
@@ -516,11 +521,12 @@ class SMACOptimizer:
         else:
             raise ValueError(f"Unknown acquisition function: {acquisition_function}")
             
-        # Select surrogate model
+        # Select surrogate model. SMAC 2.x surrogate models require the
+        # configuration space as their first argument.
         if surrogate_model == 'random_forest':
-            model = RandomForest()
+            model = RandomForest(self.configspace)
         elif surrogate_model == 'gaussian_process':
-            model = GaussianProcess()
+            model = GaussianProcess(self.configspace)
         else:
             raise ValueError(f"Unknown model type: {surrogate_model}")
             
@@ -585,21 +591,38 @@ class SMACOptimizer:
                 )
             )
             
-    def _evaluate_config(self, config: Dict[str, Any]) -> float:
-        """Evaluate a parameter configuration.
-        
+    def _evaluate_config(self, config, seed: int = 0, budget=None) -> float:
+        """Evaluate a parameter configuration (SMAC 2.x target function).
+
+        SMAC passes a ``Configuration`` plus a per-trial ``seed`` (and an
+        optional ``budget`` for multi-fidelity); both are accepted so SMAC's
+        ``TargetFunctionRunner`` can bind them. The seed is injected into the
+        model parameters so each trial is reproducible.
+
         Args:
-            config: Parameter configuration
-            
+            config: SMAC ``Configuration`` (dict-like) of parameter values
+            seed: per-trial seed supplied by SMAC
+            budget: optional fidelity budget (unused in the single-fidelity path)
+
         Returns:
             Objective value
         """
-        # Create and run model with configuration
-        model = self.model_type(config)
-        results = model.run()
-        
-        # Calculate objective value
-        return self.objective(model)
+        params = dict(config)
+        params.setdefault('seed', seed)
+        params.setdefault('show_progress', False)
+        model = self.model_type(params)
+        # Store results on the model so a Callable[[Model], float] objective can
+        # read ``model.results`` (Model.run returns the dict but does not assign
+        # it). SMAC's surrogate cannot be fit on non-finite targets, so map a
+        # failed / degenerate evaluation to a large finite penalty.
+        try:
+            model.results = model.run()
+            value = self.objective(model)
+        except Exception:
+            return 1e10
+        if value is None or not np.isfinite(value):
+            return 1e10
+        return float(value)
         
     def optimize(self) -> Dict[str, Any]:
         """Run the optimization.
@@ -609,26 +632,29 @@ class SMACOptimizer:
         """
         # Run optimization
         incumbent = self.smac.optimize()
-        
-        # Get optimization history
+
+        # Convert the run history to a DataFrame (SMAC 2.x RunHistory is a
+        # Mapping of TrialKey -> TrialValue; access configs via get_config).
         history = self.smac.runhistory
-        
-        # Convert history to DataFrame
         data = []
-        for config_id, run_value in history.data.items():
-            config = history.ids_config[config_id]
-            data.append({
-                **config.get_dictionary(),
-                'cost': run_value.cost,
-                'time': run_value.time
-            })
-            
-        history_df = pl.DataFrame(data)
-        
+        try:
+            for trial_key, trial_value in history.items():
+                config = history.get_config(trial_key.config_id)
+                data.append({
+                    **dict(config),
+                    'cost': trial_value.cost,
+                    'time': getattr(trial_value, 'time', 0.0),
+                })
+        except Exception:
+            data = []
+        history_df = pl.DataFrame(data) if data else pl.DataFrame()
+
+        best_cost = history.get_cost(incumbent) if incumbent is not None else None
         return {
-            'best_config': incumbent.get_dictionary(),
-            'best_cost': history.get_cost(incumbent),
-            'history': history_df
+            'best_config': dict(incumbent) if incumbent is not None else {},
+            'best_cost': best_cost,
+            'best_objective': best_cost,  # alias for callers expecting this key
+            'history': history_df,
         }
 
 class MultiObjectiveSMAC:
