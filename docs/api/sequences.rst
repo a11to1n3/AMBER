@@ -30,7 +30,7 @@ entry point for vectorized queries and a legacy list of ``Agent`` objects.
    rich.tag = 'rich'
 
    # Scatter-add deltas for random id draws (duplicates sum correctly)
-   recipients = model.nprandom.choice(model.agents.ids.to_numpy(), size=50)
+   recipients = model.rng.choice(model.agents.ids.to_numpy(), size=50)
    model.agents.at[recipients].scatter_add(wealth=1)
 
 **Legacy list usage (still supported):**

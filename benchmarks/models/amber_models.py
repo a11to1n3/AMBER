@@ -15,6 +15,9 @@ import ambr as am
 import numpy as np
 import polars as pl
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _schelling_core import schelling_setup, schelling_step
+
 
 # =============================================================================
 # Wealth Transfer Model
@@ -273,7 +276,7 @@ class AMBERVectorizedWealthTransfer(am.Model):
         if n_active == 0:
             return
         donor_ids = ids[donor_mask]
-        recipient_ids = self.nprandom.choice(ids, size=n_active)
+        recipient_ids = self.rng.choice(ids, size=n_active)
         all_ids = np.concatenate([donor_ids, recipient_ids])
         deltas = np.concatenate([np.full(n_active, -1, dtype=np.int64),
                                  np.full(n_active, 1, dtype=np.int64)])
@@ -321,8 +324,8 @@ class AMBERVectorizedSIRModel(am.Model):
             n,
             status=status,
             infection_time=np.zeros(n, dtype=np.int64),
-            x=self.nprandom.random(size=n) * world_size,
-            y=self.nprandom.random(size=n) * world_size,
+            x=self.rng.random(size=n) * world_size,
+            y=self.rng.random(size=n) * world_size,
         )
 
     def step(self):
@@ -331,8 +334,8 @@ class AMBERVectorizedSIRModel(am.Model):
         world_size = self.p.get('world_size', 100)
 
         # --- movement ---
-        xs = self.agents.x.to_numpy() + self.nprandom.uniform(-speed, speed, n)
-        ys = self.agents.y.to_numpy() + self.nprandom.uniform(-speed, speed, n)
+        xs = self.agents.x.to_numpy() + self.rng.uniform(-speed, speed, n)
+        ys = self.agents.y.to_numpy() + self.rng.uniform(-speed, speed, n)
         np.clip(xs, 0, world_size, out=xs)
         np.clip(ys, 0, world_size, out=ys)
         self.agents.x = xs
@@ -357,7 +360,7 @@ class AMBERVectorizedSIRModel(am.Model):
                  + (pl.col('y') - pl.col('iy')) ** 2).alias('dist_sq')
             ).filter(pl.col('dist_sq') <= radius ** 2)
             if pairs.height:
-                draws = self.nprandom.random(size=pairs.height)
+                draws = self.rng.random(size=pairs.height)
                 hits = pairs.with_columns(pl.Series('draw', draws)).filter(
                     pl.col('draw') < transmission
                 )
@@ -393,16 +396,16 @@ class AMBERVectorizedRandomWalk(am.Model):
         world_size = self.p.get('world_size', 100)
         self.add_agents(
             n,
-            x=self.nprandom.random(size=n) * world_size,
-            y=self.nprandom.random(size=n) * world_size,
+            x=self.rng.random(size=n) * world_size,
+            y=self.rng.random(size=n) * world_size,
         )
 
     def step(self):
         n = len(self.agents)
         speed = self.p.get('speed', 1.0)
         world_size = self.p.get('world_size', 100)
-        xs = self.agents.x.to_numpy() + self.nprandom.uniform(-speed, speed, n)
-        ys = self.agents.y.to_numpy() + self.nprandom.uniform(-speed, speed, n)
+        xs = self.agents.x.to_numpy() + self.rng.uniform(-speed, speed, n)
+        ys = self.agents.y.to_numpy() + self.rng.uniform(-speed, speed, n)
         np.clip(xs, 0, world_size, out=xs)
         np.clip(ys, 0, world_size, out=ys)
         self.agents.x = xs
@@ -414,11 +417,83 @@ class AMBERVectorizedRandomWalk(am.Model):
         self.record_model('avg_y', float(self.agents.y.mean()))
 
 
+# =============================================================================
+# Schelling Segregation
+# =============================================================================
+
+class _SchellingAgent(am.Agent):
+    def setup(self):
+        pass
+
+
+class AMBERSchelling(am.Model):
+    """Agent-based Schelling segregation (per-agent loop over a toroidal grid)."""
+
+    def setup(self):
+        n = self.p.get('n', 100)
+        x, y, t, self.G = schelling_setup(
+            n, self.p.get('density', 0.8), self.p.get('fraction_a', 0.5), self.rng, np)
+        self.tolerance = float(self.p.get('tolerance', 0.3))
+        self.agent_objects = {}
+        self.agent_objects_list = []
+        self.occ = {}
+        for i in range(n):
+            a = _SchellingAgent(self, i)
+            a.x, a.y, a.type = int(x[i]), int(y[i]), int(t[i])
+            self.agent_objects[i] = a
+            self.agent_objects_list.append(a)
+            self.occ[(a.x, a.y)] = a.type
+
+    def step(self):
+        G, occ = self.G, self.occ
+        agents = list(self.agent_objects_list)
+        self.random.shuffle(agents)
+        for a in agents:
+            same = total = 0
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    v = occ.get(((a.x + dx) % G, (a.y + dy) % G))
+                    if v is not None:
+                        total += 1
+                        if v == a.type:
+                            same += 1
+            if total > 0 and same < self.tolerance * total:   # unhappy -> relocate
+                for _ in range(20):
+                    cx, cy = self.random.randrange(G), self.random.randrange(G)
+                    if (cx, cy) not in occ:
+                        del occ[(a.x, a.y)]
+                        a.x, a.y = cx, cy
+                        occ[(cx, cy)] = a.type
+                        break
+
+
+class AMBERVectorizedSchelling(am.Model):
+    """Schelling segregation via the grid-vectorized core (one columnar update)."""
+
+    def setup(self):
+        n = self.p.get('n', 100)
+        x, y, t, self.G = schelling_setup(
+            n, self.p.get('density', 0.8), self.p.get('fraction_a', 0.5), self.rng, np)
+        self.tolerance = float(self.p.get('tolerance', 0.3))
+        self._types = t
+        self.add_agents(n, x=x.astype(np.int32), y=y.astype(np.int32))
+
+    def step(self):
+        x = self.agents.x.to_numpy().astype(np.int32)
+        y = self.agents.y.to_numpy().astype(np.int32)
+        nx, ny = schelling_step(x, y, self._types, self.G, self.tolerance, self.rng, np)
+        self.agents.x = nx
+        self.agents.y = ny
+
+
 # Model registry for benchmark runner
 AMBER_MODELS = {
     'wealth_transfer': AMBERWealthTransfer,
     'sir_epidemic': AMBERSIRModel,
     'random_walk': AMBERRandomWalk,
+    'schelling': AMBERSchelling,
 }
 
 # Separate registry for the vectorized variants — loaded by runner.py under
@@ -428,6 +503,7 @@ AMBER_VECTORIZED_MODELS = {
     'wealth_transfer': AMBERVectorizedWealthTransfer,
     'sir_epidemic': AMBERVectorizedSIRModel,
     'random_walk': AMBERVectorizedRandomWalk,
+    'schelling': AMBERVectorizedSchelling,
 }
 
 if __name__ == '__main__':

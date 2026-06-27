@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ambr"
-version = "0.3.13"
+version = "0.4.0"
 description = "Agent-based Modeling with Blazingly Efficient Records"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
@@ -89,3 +89,13 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.coverage.run]
+# The CuPy GPU backend and the batched-ensemble runner require CUDA hardware,
+# which CI runners do not have. They fall back to NumPy at import time but their
+# device kernels can only be exercised on a GPU, so exclude them from the
+# coverage gate rather than let an untestable module sink the project total.
+omit = [
+    "src/ambr/gpu.py",
+    "src/ambr/gpu_ensemble.py",
+]

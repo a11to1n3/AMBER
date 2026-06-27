@@ -227,11 +227,69 @@ class MesaRandomWalk(mesa.Model):
         return {'model_data': self.datacollector.get_model_vars_dataframe()}
 
 
+class MesaSchellingAgent(mesa.Agent):
+    def __init__(self, model, x, y, atype):
+        super().__init__(model)
+        self.x, self.y, self.atype = x, y, atype
+
+    def step(self):
+        m = self.model
+        G, occ = m.G, m.occ
+        same = total = 0
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                v = occ.get(((self.x + dx) % G, (self.y + dy) % G))
+                if v is not None:
+                    total += 1
+                    if v == self.atype:
+                        same += 1
+        if total > 0 and same < m.tolerance * total:
+            for _ in range(20):
+                cx, cy = m.random.randrange(G), m.random.randrange(G)
+                if (cx, cy) not in occ:
+                    del occ[(self.x, self.y)]
+                    self.x, self.y = cx, cy
+                    occ[(cx, cy)] = self.atype
+                    break
+
+
+class MesaSchelling(mesa.Model):
+    """Schelling segregation (Mesa Implementation)."""
+
+    def __init__(self, n=100, density=0.8, fraction_a=0.5, tolerance=0.3,
+                 steps=100, seed=None, rng=None, **kwargs):
+        super().__init__(seed=seed, rng=rng)
+        self.n = n
+        self.max_steps = steps
+        self.tolerance = tolerance
+        self.G = int((n / density) ** 0.5) + 1
+        cells = list(range(self.G * self.G))
+        self.random.shuffle(cells)
+        cells = cells[:n]
+        n_a = int(n * fraction_a)
+        self.occ = {}
+        for i in range(n):
+            x, y, atype = cells[i] % self.G, cells[i] // self.G, (1 if i < n_a else 2)
+            MesaSchellingAgent(self, x, y, atype)
+            self.occ[(x, y)] = atype
+
+    def step(self):
+        self.agents.shuffle_do("step")
+
+    def run(self):
+        for _ in range(self.max_steps):
+            self.step()
+        return {}
+
+
 # Model registry for benchmark runner
 MESA_MODELS = {
     'wealth_transfer': MesaWealthTransfer,
     'sir_epidemic': MesaSIRModel,
     'random_walk': MesaRandomWalk,
+    'schelling': MesaSchelling,
 }
 
 if __name__ == '__main__':

@@ -109,6 +109,44 @@ function run_sir_benchmark(; n=100, steps=100)
 end
 
 # =============================================================================
+# Schelling Segregation (GridSpaceSingle)
+# =============================================================================
+
+@agent struct SchellingAgent(GridAgent{2})
+    group::Int
+end
+
+function schelling_step!(agent, model)
+    same = 0
+    total = 0
+    for neighbor in nearby_agents(agent, model)
+        total += 1
+        if agent.group == neighbor.group
+            same += 1
+        end
+    end
+    if total > 0 && same < model.tolerance * total
+        move_agent_single!(agent, model)
+    end
+    return
+end
+
+function run_schelling_benchmark(; n=100, steps=100)
+    density = 0.8
+    G = ceil(Int, sqrt(n / density))
+    space = GridSpaceSingle((G, G); periodic=true)
+    model = StandardABM(SchellingAgent, space;
+                        properties=Dict(:tolerance => 0.3),
+                        agent_step! = schelling_step!)
+    half = n ÷ 2
+    for i in 1:n
+        add_agent_single!(model; group = (i <= half ? 1 : 2))
+    end
+    step!(model, steps)
+    return model
+end
+
+# =============================================================================
 # Benchmark Runner
 # =============================================================================
 
@@ -138,17 +176,44 @@ function _sample_list(times)
     return join((@sprintf("%.9f", t) for t in times), ",")
 end
 
-function run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=50, runs=10)
+const MODEL_EXPONENT = Dict(
+    "wealth_transfer" => 1.0, "random_walk" => 1.0, "sir_epidemic" => 2.0,
+)
+
+function _predict_next(history, next_n, exponent)
+    n1, t1 = history[end]
+    if length(history) >= 2 && history[end-1][2] > 0 && t1 > 0 && history[end-1][1] < n1
+        n0, t0 = history[end-1]
+        k = clamp(log(t1 / t0) / log(n1 / n0), 0.0, 3.0)
+    else
+        k = exponent
+    end
+    return t1 * (next_n / n1) ^ k
+end
+
+function run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=50, runs=10, budget=15.0)
     println("Agents.jl Benchmark")
     println("="^50)
 
+    counts = sort(agent_counts)
     for (name, runner) in [
         ("wealth_transfer", run_wealth_benchmark),
         ("random_walk", run_walk_benchmark),
-        ("sir_epidemic", run_sir_benchmark)
+        ("sir_epidemic", run_sir_benchmark),
+        ("schelling", run_schelling_benchmark)
     ]
         println("\n$name:")
-        for n in agent_counts
+        exponent = get(MODEL_EXPONENT, name, 1.0)
+        history = Tuple{Int,Float64}[]
+        retired = false
+        for n in counts
+            if retired
+                continue  # printing nothing -> Python records this cell as N/A
+            end
+            if !isempty(history) && _predict_next(history, n, exponent) > budget
+                retired = true
+                continue
+            end
             summary = _timing_summary(runner; n=n, steps=steps, runs=runs)
             @printf(
                 "  %d agents: %.9fs samples=[%s]\n",
@@ -156,6 +221,10 @@ function run_benchmarks(; agent_counts=[100, 500, 1000, 5000], steps=50, runs=10
                 summary.mean,
                 _sample_list(summary.samples),
             )
+            push!(history, (n, summary.mean))
+            if summary.mean > budget
+                retired = true
+            end
         end
     end
 end
@@ -166,6 +235,7 @@ function _parse_args(args)
     agent_counts = [100, 500, 1000, 5000]
     steps = 50
     runs = 10
+    budget = 15.0
     i = 1
     while i <= length(args)
         a = args[i]
@@ -178,13 +248,16 @@ function _parse_args(args)
         elseif a == "--runs" && i + 1 <= length(args)
             runs = parse(Int, args[i + 1])
             i += 2
+        elseif a == "--budget" && i + 1 <= length(args)
+            budget = parse(Float64, args[i + 1])
+            i += 2
         else
             i += 1
         end
     end
-    return (agent_counts, steps, runs)
+    return (agent_counts, steps, runs, budget)
 end
 
-let (agent_counts, steps, runs) = _parse_args(ARGS)
-    run_benchmarks(; agent_counts=agent_counts, steps=steps, runs=runs)
+let (agent_counts, steps, runs, budget) = _parse_args(ARGS)
+    run_benchmarks(; agent_counts=agent_counts, steps=steps, runs=runs, budget=budget)
 end
