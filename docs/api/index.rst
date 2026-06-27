@@ -25,6 +25,17 @@ Utilities
    experiment
    base
 
+Advanced (0.4)
+--------------
+
+.. toctree::
+   :maxdepth: 2
+
+   contract
+   tensor_lane
+   gpu
+   gpu_ensemble
+
 Quick Reference
 ---------------
 
@@ -56,4 +67,19 @@ Quick Reference
 
 * :class:`ambr.Experiment` - Framework for running multiple model configurations
 * :class:`ambr.Sample` - Parameter sampling for experiments
-* :class:`ambr.IntRange` - Integer range specification for parameters 
+* :class:`ambr.IntRange` - Integer range specification for parameters
+
+**Snapshot-view contract (0.4):**
+
+* :class:`ambr.contract.ContractCertificate` - Per-step conformance record from ``model.run(contract=...)``
+
+**Tensor lane (0.4):**
+
+* :func:`ambr.tensor_lane.borrow_numeric` - Zero-copy borrow of a numeric column
+* :func:`ambr.tensor_lane.commit_columns` - Atomic write-back of derived columns
+
+**GPU & calibration (0.4):**
+
+* :func:`ambr.gpu.get_array_module` - Resolve the CuPy/NumPy array module
+* :class:`ambr.gpu_ensemble.GPUEnsembleRunner` - Batched (B × N) ensemble runner
+* :func:`ambr.gpu_ensemble.smac_batch_calibrate` - SMAC calibration over a batched ensemble 

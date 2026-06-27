@@ -31,9 +31,10 @@ Basic Usage
            self.age += 1
            # ... other behaviors
    
-   # In your model's setup():
-   agent = MyAgent(self, agent_id)
-   self.add_agent(agent)
+   # In your model's setup() — bulk-create tracked Python agents in one call.
+   # add_agents(..., agent_class=...) instantiates and tracks the objects, so
+   # you can iterate ``self.agents`` or reach one with ``self.agents.by_id(i)``.
+   self.add_agents(100, agent_class=MyAgent)
 
 Custom Agent Classes
 --------------------

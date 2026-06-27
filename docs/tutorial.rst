@@ -22,7 +22,7 @@ operations — no per-agent loop.
            n = self.p['n_agents']
            self.add_agents(
                n,
-               wealth=self.nprandom.integers(1, 10, size=n),
+               wealth=self.rng.integers(1, 10, size=n),
            )
 
        def step(self):
@@ -34,7 +34,7 @@ operations — no per-agent loop.
            # plain ``view.wealth = ...``) is what makes the math right when
            # two donors happen to pick the same recipient.
            ids = self.agents.ids.to_numpy()
-           recipients = self.nprandom.choice(ids, size=len(donors))
+           recipients = self.rng.choice(ids, size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
 **Step 2: Run the Model**
@@ -74,9 +74,9 @@ Now let's enhance our model with a grid environment where agents can only intera
            # Columnar creation: position + wealth together, no loop.
            self.add_agents(
                n,
-               wealth=self.nprandom.integers(1, 10, size=n),
-               x=self.nprandom.integers(0, 20, size=n),
-               y=self.nprandom.integers(0, 20, size=n),
+               wealth=self.rng.integers(1, 10, size=n),
+               x=self.rng.integers(0, 20, size=n),
+               y=self.rng.integers(0, 20, size=n),
            )
 
        def step(self):
@@ -88,7 +88,7 @@ Now let's enhance our model with a grid environment where agents can only intera
            donors = self.agents.where(self.agents.wealth > 0)
            donors.wealth -= 1
            ids = self.agents.ids.to_numpy()
-           recipients = self.nprandom.choice(ids, size=len(donors))
+           recipients = self.rng.choice(ids, size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
 **Step 2: Visualize Results**
@@ -138,13 +138,13 @@ Let's add comprehensive data collection to track model-level metrics.
    class AnalyticalWealthModel(am.Model):
        def setup(self):
            n = self.p['n_agents']
-           self.add_agents(n, wealth=self.nprandom.integers(1, 10, size=n))
+           self.add_agents(n, wealth=self.rng.integers(1, 10, size=n))
 
        def step(self):
            donors = self.agents.where(self.agents.wealth > 0)
            donors.wealth -= 1
            ids = self.agents.ids.to_numpy()
-           recipients = self.nprandom.choice(ids, size=len(donors))
+           recipients = self.rng.choice(ids, size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
            # Polars Series aggregates are the idiomatic way to record metrics.
