@@ -76,6 +76,12 @@ print(results['agents'].head(10)) # final agent state
 `self.rng` is the canonical seeded RNG (a NumPy `Generator`); `self.random` is
 the stdlib one. Both are seeded from the `seed` parameter.
 
+> **New in 0.4:** a runtime [snapshot-view contract](#-snapshot-view-contract)
+> checker, a [GPU backend + batched calibration](#-gpu-backend--batched-calibration),
+> one [canonical verb per task](#-canonical-api-04) (legacy spellings still work),
+> declarative `model_reporters`, and a typed `params` schema. See the
+> [changelog](CHANGELOG.md).
+>
 > **New in 0.3.0:** Setting ``agent.wealth = 5`` on a Python Agent
 > automatically syncs to the DataFrame. You can freely mix OOP-style
 > and vectorized access without desync.
