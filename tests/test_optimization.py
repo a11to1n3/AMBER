@@ -68,13 +68,10 @@ class TestParameterSpace:
         space1 = ParameterSpace(parameters)
         space2 = ParameterSpace(parameters)
         
-        # Set same random seed
-        np.random.seed(42)
-        sample1 = space1.sample()
-        
-        np.random.seed(42)
-        sample2 = space2.sample()
-        
+        # Same explicit RNG -> deterministic (no global np.random reliance)
+        sample1 = space1.sample(np.random.default_rng(42))
+        sample2 = space2.sample(np.random.default_rng(42))
+
         assert sample1 == sample2
     
     def test_parameter_space_grid_sample(self):
@@ -583,3 +580,20 @@ class TestOptimizationIntegration:
             assert result['parameters']['multiplier'] in [1, 2, 3]
             expected = result['parameters']['n_agents'] * result['parameters']['multiplier']
             assert result['objective'] == expected
+
+
+def test_parameter_space_sample_no_global_leak():
+    """sample(rng) must not touch the process-global numpy RNG."""
+    ps = ParameterSpace({"a": am.IntRange(1, 100), "b": [1, 2, 3]})
+    rng = np.random.default_rng(0)
+    before = np.random.get_state()
+    [ps.sample(rng) for _ in range(50)]
+    after = np.random.get_state()
+    assert np.array_equal(before[1], after[1]), "global np.random state was modified"
+
+
+def test_parameter_space_sample_reproducible_with_explicit_rng():
+    ps = ParameterSpace({"a": am.IntRange(1, 100), "b": [1, 2, 3]})
+    s1 = [ps.sample(np.random.default_rng(42)) for _ in range(5)]
+    s2 = [ps.sample(np.random.default_rng(42)) for _ in range(5)]
+    assert s1 == s2
