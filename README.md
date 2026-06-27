@@ -55,21 +55,26 @@ import numpy as np
 
 # Define a model with the vectorized view API — no per-agent loops.
 class WealthModel(am.Model):
+    # Declarative metric: evaluated once per step into results['model'].
+    model_reporters = {'total_wealth': lambda m: int(m.agents.wealth.sum())}
+
     def setup(self):
-        self.add_agents(100, wealth=np.random.randint(1, 10, size=100))
+        self.add_agents(100, wealth=self.rng.integers(1, 10, size=100))
 
     def step(self):
         donors = self.agents.where(self.agents.wealth > 0)
         donors.wealth -= 1
-        ids = self.agents.ids.to_numpy()
-        recipients = self.nprandom.choice(ids, size=len(donors))
+        recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
         self.agents.at[recipients].scatter_add(wealth=1)
-        self.record('total_wealth', int(self.agents.wealth.sum()))
 
 model = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
 results = model.run()
-print(results['agents'].head(10))
+print(results['model'].tail(5))   # per-step total_wealth
+print(results['agents'].head(10)) # final agent state
 ```
+
+`self.rng` is the canonical seeded RNG (a NumPy `Generator`); `self.random` is
+the stdlib one. Both are seeded from the `seed` parameter.
 
 > **New in 0.3.0:** Setting ``agent.wealth = 5`` on a Python Agent
 > automatically syncs to the DataFrame. You can freely mix OOP-style
@@ -83,7 +88,7 @@ The view API compiles per-step updates to a handful of Polars expressions
 ```python
 def step(self):
     # Bulk columnar reads/writes over the entire population
-    self.agents.x = self.agents.x + self.nprandom.uniform(-1, 1, len(self.agents))
+    self.agents.x = self.agents.x + self.rng.uniform(-1, 1, len(self.agents))
 
     # Filtered writes: only agents matching a condition
     infected = self.agents.where(self.agents.status == 1)
@@ -92,6 +97,68 @@ def step(self):
     # scatter_add: flow-of-resources with duplicate-id safety
     self.agents.at[[1, 1, 3]].scatter_add(wealth=1)  # agent 1 gets +2, agent 3 gets +1
 ```
+
+## 🧭 Canonical API (0.4)
+
+AMBER 0.4 settles on one obvious verb per task. The legacy spellings still work
+(they emit a `DeprecationWarning` and are scheduled for removal in 1.0); set
+`AMBER_SUPPRESS_DEPRECATIONS=1` to silence them in benchmark / reproducibility runs.
+
+| Task | Canonical | Legacy (deprecated) |
+|------|-----------|---------------------|
+| NumPy RNG | `self.rng` | `self.nprandom` |
+| Record a model metric | `model_reporters = {...}` or `record_model(k, v)` | `record(k, v)` |
+| Filter agents | `agents.where(expr)` / `agents[mask]` / `agents.at[ids]` | `agents.select(...)` |
+| Per-agent write | `agent.col = v` | `agent.record(...)`, `agent.update_data(...)` |
+| Bulk write | `agents.set(**cols)` | `agents.record(...)`, `agents.update_data(...)` |
+| Read agent objects | iterate `model.agents`, `agents.by_id(i)` | `agents.agents`, `agents.agent_ids` |
+| Bulk numpy round-trip | `agents.numpy(...)` + `agents.set(...)` (or `borrow`/`commit`) | `.to_numpy()` + per-column assign |
+| Typed parameters | `params = {'n': (int, 200)}`, then `self.p.n` | `int(self.p.get('n', 200))` |
+| Grid wrap | `GridEnvironment(torus=True)` | `wrap=` / `.wrap` |
+
+`update()` is now a **pure hook** — overriding it no longer requires
+`super().update()`. Declare `model_reporters` / `agent_reporters` for
+declarative metrics, and set `record_initial = True` to capture a `t=0` row.
+
+## 🔒 Snapshot-view contract
+
+The columnar fast path is only valid for rules that preserve the intended update
+schedule. AMBER turns that from a silent assumption into a checkable, per-step
+artifact — run with a contract mode and inspect the certificates:
+
+```python
+results = model.run(steps=100, contract="check")   # "off" | "check" | "warn" | "raise"
+for cert in results["contract"]:
+    if not cert.ok:
+        print(cert.step, cert.violations)
+```
+
+`check` records a `ContractCertificate` per step; `warn` also emits a warning per
+violation; `raise` stops on the first one (e.g. a same-step read-after-write, or a
+duplicate ordinary assignment that no snapshot rewrite can reproduce). Mode `off`
+(the default) adds zero overhead.
+
+## 🎮 GPU backend & batched calibration
+
+The same columnar contract runs on a CuPy array backend, and the *ensemble* axis
+(`B` simulations × `N` agents) batches into one device pass — the natural fit for
+calibration, where you evaluate thousands of small replicate runs:
+
+```python
+from ambr.gpu_ensemble import GPUEnsembleRunner, BatchedWellMixedSIR, smac_batch_calibrate
+
+# Evaluate B parameter sets in one (B, N) GPU pass
+runner = GPUEnsembleRunner(BatchedWellMixedSIR())
+traj = runner.run(n_agents=100_000, steps=60,
+                  params={"beta": betas, "gamma": gammas, "i0_frac": i0})  # -> {metric: (B, steps)}
+
+# SMAC ask -> one batched GPU evaluation -> tell
+best, history = smac_batch_calibrate(BatchedWellMixedSIR(), bounds, loss_fn,
+                                     n_agents=100_000, steps=60)
+```
+
+`ambr.gpu` provides the array-module abstraction (`get_array_module`, `to_device`,
+`to_host`) and falls back to NumPy when CuPy is unavailable.
 
 ## 🔬 Optimization
 
@@ -112,6 +179,10 @@ results = grid_search(MyModel, parameter_space, 'some_metric')
 best_params = results[0]['parameters']
 ```
 
+Beyond `grid_search`, AMBER ships `random_search`, `bayesian_optimization`
+(SMAC Gaussian-process), and `SMACOptimizer` (random-forest surrogate) — plus the
+GPU batched ensemble above for derivative-free calibration at scale.
+
 ## 📦 Installation
 
 ```bash
@@ -122,7 +193,10 @@ pip install ambr
 
 - **Simple API**: Intuitive interface for agent-based modeling
 - **High Performance**: Efficient data handling with Polars DataFrames
-- **Optimization**: Built-in parameter optimization with grid search, random search, and Bayesian optimization
+- **Snapshot-view contract**: runtime conformance checking that columnar updates preserve the intended schedule
+- **GPU backend**: CuPy array backend + batched ensemble for parameter sweeps and calibration
+- **Optimization**: grid / random / Bayesian (SMAC) search, plus GPU-batched calibration
+- **Declarative reporting**: `model_reporters` / `agent_reporters` and a typed `params` schema
 - **Environments**: Support for grid, network, and continuous space environments
 - **Experiments**: Run multiple simulations with parameter sampling
 - **Random Number Generation**: Reproducible simulations with controlled randomness

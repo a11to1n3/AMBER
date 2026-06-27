@@ -192,7 +192,7 @@ class TestGridEnvironment:
         """Test getting random position."""
         mock_model = Mock()
         mock_model.agents_df = pl.DataFrame()
-        mock_model.nprandom = np.random.RandomState(42)
+        mock_model.rng = np.random.default_rng(42)
         
         grid = GridEnvironment(mock_model, size=(3, 3))
         
@@ -253,7 +253,7 @@ class TestGridEnvironment:
         assert current_pos == (2, 3)
         
         # Test moving with wrapping
-        grid.wrap = True
+        grid.torus = True
         wrap_pos = Position((5, 5), 'grid') # Should wrap to (0, 0)
         grid.move_agent(1, wrap_pos)
         current_pos_wrap = grid.df.filter(pl.col('id') == 1)['grid_position'].to_list()[0]
@@ -427,7 +427,7 @@ class TestSpaceEnvironment:
         """Test getting random position."""
         mock_model = Mock()
         mock_model.agents_df = pl.DataFrame()
-        mock_model.nprandom = np.random.RandomState(42)
+        mock_model.rng = np.random.default_rng(42)
         
         space = SpaceEnvironment(mock_model, bounds=[(0, 10), (5, 15)])
         
@@ -648,7 +648,7 @@ class TestNetworkEnvironment:
         """Test getting random node."""
         mock_model = Mock()
         mock_model.agents_df = pl.DataFrame()
-        mock_model.nprandom = np.random.RandomState(42)
+        mock_model.rng = np.random.default_rng(42)
         
         network = NetworkEnvironment(mock_model, mock_networkx_graph)
         
