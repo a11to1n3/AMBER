@@ -84,13 +84,15 @@ class TestModel:
         assert result is None
     
     def test_update_method(self):
-        """Test update method."""
+        """update() is a pure hook; run_step/_advance_and_record own the lifecycle."""
         params = {'steps': 10}
         model = Model(params)
-        
+
         initial_t = model.t
-        model.update()
-        
+        model.update()  # pure hook: does NOT advance t
+        assert model.t == initial_t
+
+        model._advance_and_record()  # owns the t increment + step-data
         assert model.t == initial_t + 1
         assert hasattr(model, '_current_step_data')
         assert model._current_step_data['t'] == model.t
@@ -335,10 +337,9 @@ class TestModelSubclassing:
         model.setup()
         assert model.custom_setup_called is True
         
-        # Test custom step
-        model.update()
+        # Test custom step records through the (pure-hook) lifecycle
         model.step()
-        assert model._current_step_data.get('custom_step') == 1
+        assert model._current_step_data.get('custom_step') == model.t
         
         # Test custom end
         model.end()

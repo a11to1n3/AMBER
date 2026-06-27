@@ -34,6 +34,12 @@ from importlib.metadata import version as _metadata_version
 from .agent import Agent
 from .model import Model
 from .population import Population, BatchUpdateContext
+from .contract import (
+    ContractCertificate,
+    ContractViolation,
+    ContractViolationError,
+    CONTRACT_MODES,
+)
 from .base import BaseModel, BaseAgent
 from .sequences import AgentList
 from .environments import GridEnvironment, SpaceEnvironment, NetworkEnvironment
@@ -73,6 +79,10 @@ __all__ = [
     'Model',
     'Population',
     'BatchUpdateContext',
+    'ContractCertificate',
+    'ContractViolation',
+    'ContractViolationError',
+    'CONTRACT_MODES',
     'BaseModel',
     'BaseAgent',
     'AgentList',

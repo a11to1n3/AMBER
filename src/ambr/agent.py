@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional
 import polars as pl
 
 from .base import BaseAgent
+from ._deprecation import warn_deprecated
 
 # Names that are set during __init__ or are internal and should NOT be
 # routed to the DataFrame when assigned on a Python Agent instance.
@@ -51,7 +52,8 @@ class Agent(BaseAgent):
         pass
 
     def record(self, name: str, value: Any):
-        """Record a variable value for this agent."""
+        """Deprecated: assign the attribute directly (``agent.<name> = value``)."""
+        warn_deprecated("Agent.record(name, value)", "agent.<name> = value")
         self.model._queue_write(name, self.id, value)
 
     def get_data(self) -> pl.DataFrame:
@@ -59,7 +61,8 @@ class Agent(BaseAgent):
         return self.model.agents_df.filter(pl.col('id') == self.id)
 
     def update_data(self, data: Dict[str, Any]):
-        """Update this agent's columns from a dict."""
+        """Deprecated: assign attributes directly (``agent.<name> = value``)."""
+        warn_deprecated("Agent.update_data(data)", "direct attribute assignment")
         for name, value in data.items():
             self.model._queue_write(name, self.id, value)
 
