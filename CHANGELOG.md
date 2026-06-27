@@ -1,5 +1,71 @@
 # Changelog
 
+## v0.4.0 - 2026-06-27
+
+The 0.4 release settles the public API on one canonical verb per task (legacy
+spellings still work, emitting a `DeprecationWarning` and scheduled for removal
+in 1.0; set `AMBER_SUPPRESS_DEPRECATIONS=1` to silence them in benchmark /
+reproducibility runs), and adds the snapshot-view contract checker, a resident
+tensor lane, a CuPy GPU backend, and SMAC 2.x-compatible optimization.
+
+### Added
+
+- **Snapshot-view contract.** `model.run(contract="check"|"warn"|"raise")` records
+  a per-step `ContractCertificate` certifying that columnar fast-path updates
+  preserve the intended update schedule (e.g. catching a same-step
+  read-after-write). Inspect `results["contract"]`; mode `off` (default) adds
+  zero overhead. (`ambr.contract`)
+- **Tensor lane.** Zero-copy `agents.borrow(col)` / `agents.commit(**cols)` over
+  the Polars frame for NumPy/array kernels, routed through the contract so
+  borrow/commit stay observable. (`ambr.tensor_lane`)
+- **GPU backend.** `ambr.gpu` array-module abstraction (`get_array_module`,
+  `to_device`, `to_host`) with a NumPy fallback when CuPy is unavailable, plus
+  `ambr.gpu_ensemble` (`GPUEnsembleRunner`, `BatchedWellMixedSIR`,
+  `smac_batch_calibrate`) that batches a `(B simulations × N agents)` ensemble
+  into one device pass for derivative-free calibration at scale.
+- **Declarative reporting.** Class-level `model_reporters` / `agent_reporters`
+  evaluated by the runner, plus `record_initial = True` to capture a `t=0` row.
+- **Typed parameters.** Class-level `params = {"n": (int, 200)}` schema pre-coerces
+  `self.p.n` at init; `AttrDict.get_int` / `get_float` / `get_bool`.
+- **Collection & state façades** on `AgentList`: `by_id`, `numpy`, `set`,
+  `borrow`, `commit`, `frame`; `add_agents(n, agent_class=...)` tracks the Python
+  agent objects so OOP-style code can iterate `model.agents` / `agents.by_id(i)`.
+- Cross-framework calibration and scaling benchmarks (Agents.jl, mesa-frames,
+  FLAME GPU) and a tensor-lane flocking example.
+
+### Changed
+
+- **One canonical RNG.** `self.rng` (a NumPy `Generator`) is canonical and
+  `self.random` is the stdlib one; both are seeded from `seed`. Seeded runs no
+  longer leak into the process-global `np.random`.
+- **Encapsulated write boundary.** All frame writes route through an internal
+  `Model._set_frame`; `model.agents.frame` reads the current frame.
+- `update()` is now a pure hook — overriding it no longer requires
+  `super().update()`. Step advance and per-step data finalize moved into the
+  runner.
+- `SpaceEnvironment.get_neighbors` is vectorized (NumPy brute force with a scipy
+  KD-tree fast path for large populations); `wrap=` collapses to `torus=`.
+- Examples migrated to the canonical `rng`; benchmark models updated.
+
+### Fixed
+
+- `optimization`: explicit `rng` threading through `ParameterSpace.sample` and
+  `random_search` (no global-`np.random` seed mutation), and SMAC 2.x
+  compatibility for `SMACOptimizer` / `bayesian_optimization`.
+- `NetworkEnvironment.__init__` no longer drops the `node_id` column when it adds
+  `network_distance`.
+- `SpaceEnvironment.move_agent` no longer raises a dtype error against
+  object-typed position columns.
+
+### Deprecated
+
+- Legacy verbs kept working until 1.0, each emitting a `DeprecationWarning`
+  pointing at the canonical form: `self.nprandom` → `self.rng`; `model.record` →
+  `record_model` / `model_reporters`; `agents.select` → `agents.where`;
+  `agents.record` / `agents.update_data` → `agents.set` / `agent.<col> = v`;
+  `agents.agents` / `agents.agent_ids` → iterate `model.agents` / `agents.by_id`;
+  `GridEnvironment(wrap=)` / `.wrap` → `torus=`.
+
 ## v0.3.13 - 2026-06-04
 
 ### Changed
