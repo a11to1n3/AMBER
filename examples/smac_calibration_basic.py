@@ -29,7 +29,7 @@ class WealthTransferModel(am.Model):
     def setup(self):
         """Initialize the model with agents using the bulk-create API."""
         n = int(self.p['n_agents'])
-        self.add_agents(n, wealth=self.nprandom.integers(1, 10, size=n))
+        self.add_agents(n, wealth=self.rng.integers(1, 10, size=n))
 
     def step(self):
         """Execute one simulation step using columnar updates."""
@@ -41,7 +41,7 @@ class WealthTransferModel(am.Model):
         # and flag which agents actively transfer this step.
         wealth = self.agents.wealth.to_numpy()
         prob = self.p['base_transfer_rate'] * (wealth / 10.0) ** self.p['wealth_exponent']
-        draws = self.nprandom.random(size=n)
+        draws = self.rng.random(size=n)
         active_mask = (wealth > 0) & (draws < prob)
         if not active_mask.any():
             return
@@ -58,7 +58,7 @@ class WealthTransferModel(am.Model):
         self.agents.at[donor_ids].scatter_add(wealth=-donor_amounts)
 
         # Credit random recipients (sampled with replacement).
-        recipient_ids = self.nprandom.choice(self.agents.ids.to_numpy(), size=int(active_mask.sum()))
+        recipient_ids = self.rng.choice(self.agents.ids.to_numpy(), size=int(active_mask.sum()))
         self.agents.at[recipient_ids].scatter_add(wealth=donor_amounts)
     
     def update(self):
