@@ -10,6 +10,17 @@ import networkx as nx
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
+from ._deprecation import warn_deprecated
+
+try:  # optional fast path for large-N neighbour queries
+    from scipy.spatial import cKDTree as _cKDTree
+    _HAS_KDTREE = True
+except Exception:  # pragma: no cover - scipy is an optional accelerator
+    _cKDTree = None
+    _HAS_KDTREE = False
+
+_KDTREE_MIN_AGENTS = 2000  # below this, vectorized numpy brute force is faster
+
 @dataclass
 class Position:
     """Represents a position in any topology."""
@@ -78,17 +89,19 @@ class Environment(ABC):
 class GridEnvironment(Environment):
     """N-dimensional grid environment with discrete positions."""
     
-    def __init__(self, model, size: Union[int, Tuple[int, ...]], torus: bool = False):
+    def __init__(self, model, size: Union[int, Tuple[int, ...]], torus: bool = False,
+                 wrap: Optional[bool] = None):
         """
         Initialize grid environment.
-        
+
         Args:
             model: Reference to the model
             size: Grid size - int for square grid or tuple for rectangular grid
-            torus: Whether to wrap around grid boundaries (alias for wrap)
+            torus: Whether to wrap around grid boundaries
+            wrap: Deprecated alias for ``torus``.
         """
         super().__init__(model)
-        
+
         # Handle both int and tuple size formats
         if isinstance(size, int):
             self.dimensions = (size, size)
@@ -96,9 +109,22 @@ class GridEnvironment(Environment):
         else:
             self.dimensions = size
             self.size = size
-            
-        self.wrap = torus
-        self.torus = torus  # Alias
+
+        if wrap is not None:
+            warn_deprecated("GridEnvironment(wrap=...)", "torus=", stacklevel=3)
+            torus = wrap
+        self.torus = torus
+
+    @property
+    def wrap(self):
+        """Deprecated alias for :attr:`torus`."""
+        warn_deprecated("GridEnvironment.wrap", "GridEnvironment.torus", stacklevel=2)
+        return self.torus
+
+    @wrap.setter
+    def wrap(self, value):
+        warn_deprecated("GridEnvironment.wrap", "GridEnvironment.torus", stacklevel=2)
+        self.torus = value
     
     @property
     def width(self):
@@ -170,7 +196,7 @@ class GridEnvironment(Environment):
                 valid = True
                 for i, (coord, off) in enumerate(zip(position, offset)):
                     new_coord = coord + off
-                    if self.wrap:
+                    if self.torus:
                         new_coord = new_coord % self.dimensions[i]
                     elif not (0 <= new_coord < self.dimensions[i]):
                         valid = False
@@ -260,15 +286,8 @@ class GridEnvironment(Environment):
     
     def random_position(self):
         """Get a random position in the grid."""
-        if self.model and hasattr(self.model, 'nprandom'):
-            rng = self.model.nprandom
-            # Handle different numpy random generator types
-            if hasattr(rng, 'integers'):
-                return tuple(rng.integers(0, dim) for dim in self.dimensions)
-            else:
-                return tuple(rng.randint(0, dim) for dim in self.dimensions)
-        else:
-            return tuple(np.random.randint(0, dim) for dim in self.dimensions)
+        rng = getattr(self.model, 'rng', None) or np.random.default_rng()
+        return tuple(int(rng.integers(0, dim)) for dim in self.dimensions)
     
     def empty_positions(self) -> List[Tuple[int, int]]:
         """Return a list of empty positions."""
@@ -295,7 +314,7 @@ class GridEnvironment(Environment):
         coords = list(new_position.coordinates)
         for i, (coord, dim) in enumerate(zip(coords, self.dimensions)):
             if not (0 <= coord < dim):
-                if not self.wrap:
+                if not self.torus:
                     raise ValueError("Position out of bounds")
                 coords[i] = coord % dim
                 
@@ -327,56 +346,98 @@ class SpaceEnvironment(Environment):
         self.dimensions = len(bounds)
         self.torus = torus
         
-        # Initialise space-specific columns on the model's DataFrame if needed
+        # Initialise space-specific columns on the environment's frame. Chain
+        # both onto self.df so neither overwrites the other (the previous code
+        # re-read model.agents_df for the second column, dropping the first).
         if model is not None and hasattr(model, 'agents_df'):
-            if 'space_position' not in model.agents_df.columns:
-                self.df = model.agents_df.with_columns(
+            self.df = model.agents_df
+            if 'space_position' not in self.df.columns:
+                self.df = self.df.with_columns(
                     pl.lit(None, dtype=pl.Object).alias('space_position')
                 )
-            if 'space_distance' not in model.agents_df.columns:
-                self.df = model.agents_df.with_columns(
+            if 'space_distance' not in self.df.columns:
+                self.df = self.df.with_columns(
                     pl.lit(0.0).alias('space_distance')
                 )
     
+    def positions_array(self):
+        """Return ``(ids, positions)`` over agents that have a position set.
+
+        ``ids`` is shape ``(M,)``, ``positions`` is ``(M, d)``. The single place
+        the tuple-valued ``space_position`` column is unpacked into a contiguous
+        matrix for vectorized distance queries.
+        """
+        if not hasattr(self, 'df') or self.df.is_empty():
+            return np.empty(0, dtype=np.int64), np.empty((0, self.dimensions))
+        sub = self.df.filter(pl.col('space_position').is_not_null())
+        if sub.is_empty():
+            return np.empty(0, dtype=np.int64), np.empty((0, self.dimensions))
+        ids = sub['id'].to_numpy()
+        pos = np.asarray(sub['space_position'].to_list(), dtype=np.float64)
+        return ids, pos
+
+    def _distances_to(self, query, pos):
+        """Vectorized Euclidean distances from ``query`` (d,) to ``pos`` (M, d).
+
+        Torus-aware: under ``self.torus`` each per-axis gap is
+        ``min(|delta|, range - |delta|)``.
+        """
+        diff = np.abs(pos - np.asarray(query, dtype=np.float64))
+        if self.torus:
+            ranges = np.array([mx - mn for mn, mx in self.bounds], dtype=np.float64)
+            diff = np.minimum(diff, ranges - diff)
+        return np.sqrt(np.einsum('ij,ij->i', diff, diff))
+
     def get_neighbors(self, pos_or_agent_id, radius: float) -> List[int]:
-        """Get neighboring agents within radius."""
+        """Get agents within ``radius`` of a position or an agent (vectorized).
+
+        Replaces the former per-row Python loop / ``map_elements`` scan with a
+        single numpy pass, plus an optional scipy KD-tree for large populations.
+        Semantics are preserved: the queried agent is included (distance
+        ``0 <= radius``) and agents without a position are skipped.
+        """
+        ids, pos = self.positions_array()
+        if ids.size == 0:
+            return []
+
         if isinstance(pos_or_agent_id, (list, tuple)):
-            # Position-based search
-            agent_pos = pos_or_agent_id
-            if self.df.is_empty():
-                return []
-            
-            # Calculate distances to all agents
-            neighbors = []
-            for row in self.df.iter_rows(named=True):
-                if row['space_position'] is not None:
-                    distance = self._calculate_distance(agent_pos, row['space_position'])
-                    if distance <= radius:
-                        neighbors.append(row['id'])
-            return neighbors
+            query = pos_or_agent_id
         else:
-            # Agent-based search
-            agent_id = pos_or_agent_id
-            if self.df.is_empty():
+            match = self.df.filter(pl.col('id') == pos_or_agent_id)
+            if match.is_empty():
                 return []
-                
-            agent_pos_rows = self.df.filter(pl.col('id') == agent_id)
-            if agent_pos_rows.is_empty():
+            query = match['space_position'].item()
+            if query is None:
                 return []
-                
-            agent_pos = agent_pos_rows['space_position'].item()
-            if agent_pos is None:
-                return []
-                
-            # Calculate distances to all agents
-            distances = self.df.with_columns([
-                pl.col('space_position').map_elements(
-                    lambda x: self._calculate_distance(agent_pos, x) if x is not None else float('inf')
-                ).alias('distance')
-            ])
-            
-            # Return agents within radius
-            return distances.filter(pl.col('distance') <= radius)['id'].to_list()
+
+        # Large-N, non-torus: KD-tree. Otherwise: vectorized brute force.
+        if _HAS_KDTREE and not self.torus and ids.size >= _KDTREE_MIN_AGENTS:
+            tree = _cKDTree(pos)
+            idx = np.sort(np.asarray(
+                tree.query_ball_point(np.asarray(query, dtype=np.float64), radius),
+                dtype=np.int64,
+            ))
+            return ids[idx].tolist()
+        dists = self._distances_to(query, pos)
+        return ids[dists <= radius].tolist()
+
+    def set_position(self, agent_ids, coords) -> None:
+        """Vectorized position write for many agents at once.
+
+        ``agent_ids`` is shape ``(M,)``; ``coords`` is ``(M, d)`` (or ``(d,)``
+        for a single agent). A bulk alternative to repeated :meth:`move_agent`.
+        """
+        if not hasattr(self, 'df') or self.df.is_empty():
+            return
+        coords = np.asarray(coords, dtype=np.float64)
+        if coords.ndim == 1:
+            coords = coords[None, :]
+        agent_ids = np.asarray(agent_ids).ravel()
+        mapping = {int(i): tuple(float(c) for c in row)
+                   for i, row in zip(agent_ids, coords)}
+        new = [mapping.get(int(i), p) for i, p in
+               zip(self.df['id'].to_list(), self.df['space_position'].to_list())]
+        self.df = self.df.with_columns(pl.Series('space_position', new, dtype=pl.Object))
     
     def get_distance(self, pos1_or_agent1, pos2_or_agent2) -> float:
         """Calculate Euclidean distance between two positions or agents."""
@@ -416,11 +477,8 @@ class SpaceEnvironment(Environment):
     
     def random_position(self):
         """Get a random position within bounds."""
-        if self.model and hasattr(self.model, 'nprandom'):
-            rng = self.model.nprandom
-        else:
-            rng = np.random
-            
+        rng = getattr(self.model, 'rng', None) or np.random.default_rng()
+
         position = []
         for min_val, max_val in self.bounds:
             coord = rng.uniform(min_val, max_val)
@@ -448,14 +506,9 @@ class SpaceEnvironment(Environment):
             elif not (min_val <= coord <= max_val):
                 raise ValueError("Position out of bounds")
                 
-        # Update agent position
-        if hasattr(self, 'df') and not self.df.is_empty():
-            self.df = self.df.with_columns([
-                pl.when(pl.col('id') == agent_id)
-                .then(pl.lit(tuple(coords)))
-                .otherwise(pl.col('space_position'))
-                .alias('space_position')
-            ])
+        # Update agent position. set_position normalises to an Object column,
+        # avoiding dtype conflicts between list- and object-typed positions.
+        self.set_position([agent_id], [tuple(coords)])
     
     def _calculate_distance(self, pos1: Tuple[float, ...], pos2: Tuple[float, ...]) -> float:
         """Calculate Euclidean distance between two positions."""
@@ -489,13 +542,16 @@ class NetworkEnvironment(Environment):
         else:
             self.graph = nx.Graph()
         
-        # Initialise network-specific columns on the model's DataFrame if needed
+        # Initialise network-specific columns on the model's DataFrame if needed.
+        # Chain both onto df so the second column doesn't drop the first (the
+        # previous code re-read model.agents_df for each, losing node_id).
         if model is not None and hasattr(model, 'agents_df'):
             df = model.agents_df
             if 'node_id' not in df.columns:
-                self.df = df.with_columns(pl.lit(None, dtype=pl.Int64).alias('node_id'))
+                df = df.with_columns(pl.lit(None, dtype=pl.Int64).alias('node_id'))
             if 'network_distance' not in df.columns:
-                self.df = df.with_columns(pl.lit(0.0).alias('network_distance'))
+                df = df.with_columns(pl.lit(0.0).alias('network_distance'))
+            self.df = df
     
     @property
     def nodes(self):
@@ -612,12 +668,9 @@ class NetworkEnvironment(Environment):
         """Get a random node from the network."""
         if not self.graph.nodes():
             return None
-            
-        if self.model and hasattr(self.model, 'nprandom'):
-            return self.model.nprandom.choice(self.nodes)
-        else:
-            import random
-            return random.choice(self.nodes)
+        rng = getattr(self.model, 'rng', None) or np.random.default_rng()
+        nodes = self.nodes
+        return nodes[int(rng.integers(0, len(nodes)))]
     
     def move_agent(self, agent_id: int, new_position: Position) -> None:
         """Move an agent to a new node in the network."""
