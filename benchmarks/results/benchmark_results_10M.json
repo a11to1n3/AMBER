@@ -2060,68 +2060,6 @@
       "notes": null
     },
     {
-      "framework": "AMBER (GPU)",
-      "model": "sir_epidemic",
-      "n_agents": 1000,
-      "n_steps": 50,
-      "runs": 3,
-      "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.038752,
-      "time_per_step": 0.000775033,
-      "raw_sample_count": 3,
-      "raw_samples": [
-        0.039184889,
-        0.038776844,
-        0.038726431
-      ],
-      "trimmed_samples": [
-        0.038726431,
-        0.038776844
-      ],
-      "median": 0.038776844,
-      "iqr": 0.000229229,
-      "ci95_median": [
-        0.038726431,
-        0.039184889
-      ],
-      "stdev": 0.000251405,
-      "min": 0.038726431,
-      "max": 0.039184889,
-      "trimmed": 1,
-      "notes": null
-    },
-    {
-      "framework": "AMBER (GPU)",
-      "model": "sir_epidemic",
-      "n_agents": 10000,
-      "n_steps": 50,
-      "runs": 3,
-      "timing": "mean with slowest sample trimmed when runs >= 3",
-      "execution_time": 0.053586,
-      "time_per_step": 0.001071711,
-      "raw_sample_count": 3,
-      "raw_samples": [
-        0.054048976,
-        0.053831096,
-        0.05334004
-      ],
-      "trimmed_samples": [
-        0.05334004,
-        0.053831096
-      ],
-      "median": 0.053831096,
-      "iqr": 0.000354468,
-      "ci95_median": [
-        0.05334004,
-        0.054048976
-      ],
-      "stdev": 0.000363134,
-      "min": 0.05334004,
-      "max": 0.054048976,
-      "trimmed": 1,
-      "notes": null
-    },
-    {
       "framework": "AgentPy",
       "model": "sir_epidemic",
       "n_agents": 1000,
@@ -3732,6 +3670,162 @@
       "max": 25.270155719,
       "trimmed": 1,
       "notes": null
+    },
+    {
+      "framework": "AMBER (GPU)",
+      "model": "sir_epidemic",
+      "n_agents": 1000,
+      "n_steps": 50,
+      "runs": 2,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.024209,
+      "time_per_step": 0.000484188,
+      "raw_sample_count": 2,
+      "raw_samples": [
+        0.024147243,
+        0.024271514
+      ],
+      "trimmed_samples": [
+        0.024147243,
+        0.024271514
+      ],
+      "median": 0.024209378,
+      "iqr": 6.2135e-05,
+      "ci95_median": [
+        0.024147243,
+        0.024271514
+      ],
+      "stdev": 8.7873e-05,
+      "min": 0.024147243,
+      "max": 0.024271514,
+      "trimmed": 0,
+      "notes": "AMBER (GPU) SIR re-measured 2026-06-27 with the O(N) spatial-binning kernel (amber_gpu_scale_models.GPUSIRKernelModel); 2 runs. The naive all-pairs GPU SIR OOMs at N>=1e5. At these densities the epidemic saturates (R=N), so the kernel and all-pairs models converge."
+    },
+    {
+      "framework": "AMBER (GPU)",
+      "model": "sir_epidemic",
+      "n_agents": 10000,
+      "n_steps": 50,
+      "runs": 2,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.022991,
+      "time_per_step": 0.000459829,
+      "raw_sample_count": 2,
+      "raw_samples": [
+        0.023156441,
+        0.022826427
+      ],
+      "trimmed_samples": [
+        0.022826427,
+        0.023156441
+      ],
+      "median": 0.022991434,
+      "iqr": 0.000165007,
+      "ci95_median": [
+        0.022826427,
+        0.023156441
+      ],
+      "stdev": 0.000233355,
+      "min": 0.022826427,
+      "max": 0.023156441,
+      "trimmed": 0,
+      "notes": "AMBER (GPU) SIR re-measured 2026-06-27 with the O(N) spatial-binning kernel (amber_gpu_scale_models.GPUSIRKernelModel); 2 runs. The naive all-pairs GPU SIR OOMs at N>=1e5. At these densities the epidemic saturates (R=N), so the kernel and all-pairs models converge."
+    },
+    {
+      "framework": "AMBER (GPU)",
+      "model": "sir_epidemic",
+      "n_agents": 100000,
+      "n_steps": 50,
+      "runs": 2,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.025135,
+      "time_per_step": 0.000502706,
+      "raw_sample_count": 2,
+      "raw_samples": [
+        0.025130648,
+        0.025139922
+      ],
+      "trimmed_samples": [
+        0.025130648,
+        0.025139922
+      ],
+      "median": 0.025135285,
+      "iqr": 4.637e-06,
+      "ci95_median": [
+        0.025130648,
+        0.025139922
+      ],
+      "stdev": 6.558e-06,
+      "min": 0.025130648,
+      "max": 0.025139922,
+      "trimmed": 0,
+      "notes": "AMBER (GPU) SIR re-measured 2026-06-27 with the O(N) spatial-binning kernel (amber_gpu_scale_models.GPUSIRKernelModel); 2 runs. The naive all-pairs GPU SIR OOMs at N>=1e5. At these densities the epidemic saturates (R=N), so the kernel and all-pairs models converge."
+    },
+    {
+      "framework": "AMBER (GPU)",
+      "model": "sir_epidemic",
+      "n_agents": 1000000,
+      "n_steps": 50,
+      "runs": 2,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 0.141123,
+      "time_per_step": 0.002822469,
+      "raw_sample_count": 2,
+      "raw_samples": [
+        0.14210498,
+        0.140141872
+      ],
+      "trimmed_samples": [
+        0.140141872,
+        0.14210498
+      ],
+      "median": 0.141123426,
+      "iqr": 0.000981554,
+      "ci95_median": [
+        0.140141872,
+        0.14210498
+      ],
+      "stdev": 0.001388127,
+      "min": 0.140141872,
+      "max": 0.14210498,
+      "trimmed": 0,
+      "notes": "AMBER (GPU) SIR re-measured 2026-06-27 with the O(N) spatial-binning kernel (amber_gpu_scale_models.GPUSIRKernelModel); 2 runs. The naive all-pairs GPU SIR OOMs at N>=1e5. At these densities the epidemic saturates (R=N), so the kernel and all-pairs models converge."
+    },
+    {
+      "framework": "AMBER (GPU)",
+      "model": "sir_epidemic",
+      "n_agents": 10000000,
+      "n_steps": 50,
+      "runs": 2,
+      "timing": "mean with slowest sample trimmed when runs >= 3",
+      "execution_time": 5.984137,
+      "time_per_step": 0.119682737,
+      "raw_sample_count": 2,
+      "raw_samples": [
+        5.969023165,
+        5.999250577
+      ],
+      "trimmed_samples": [
+        5.969023165,
+        5.999250577
+      ],
+      "median": 5.984136871,
+      "iqr": 0.015113706,
+      "ci95_median": [
+        5.969023165,
+        5.999250577
+      ],
+      "stdev": 0.021374008,
+      "min": 5.969023165,
+      "max": 5.999250577,
+      "trimmed": 0,
+      "notes": "AMBER (GPU) SIR re-measured 2026-06-27 with the O(N) spatial-binning kernel (amber_gpu_scale_models.GPUSIRKernelModel); 2 runs. The naive all-pairs GPU SIR OOMs at N>=1e5. At these densities the epidemic saturates (R=N), so the kernel and all-pairs models converge."
+    }
+  ],
+  "amendments": [
+    {
+      "at": "2026-06-27T19:09:36.226734",
+      "what": "AMBER (GPU) sir_epidemic rows replaced with O(N) spatial-binning kernel measurements (1k-10M, 2 runs)."
     }
   ]
 }
