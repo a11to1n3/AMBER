@@ -272,8 +272,7 @@ class _BaseView:
     def update_data(self, data: Dict[str, Any]) -> None:
         """Deprecated alias for a multi-column write (``view.set(**cols)``)."""
         warn_deprecated("AgentList.update_data(data)", "view.set(**cols)")
-        for k, v in data.items():
-            self._write_column(k, v)
+        self.set(**data)
 
     # --- ergonomic read / write --------------------------------------------
 
@@ -288,12 +287,63 @@ class _BaseView:
         return arrays[0] if len(columns) == 1 else arrays
 
     def set(self, **columns: Any) -> None:
-        """Write one or more whole columns over this view's agents.
+        """Write one or more whole columns over this view's agents atomically.
 
-        ``agents.set(x=nx, y=ny)`` replaces ``agents.x = nx; agents.y = ny``.
+        ``agents.set(x=nx, y=ny)`` is a single ``with_columns`` / update (one
+        contract commit per column), not a loop of independent assignments.
+        Expression values (``pl.Expr``) fall back to per-column writes.
         """
+        if not columns:
+            return
+        if any(isinstance(v, pl.Expr) for v in columns.values()):
+            for name, value in columns.items():
+                self._write_column(name, value)
+            return
+
+        model = self.__dict__["model"]
+        model._flush_pending_writes()
+        ids = self._ids_series()
+        n = ids.len()
+        df = model.agents_df
+
+        series_by_name: Dict[str, pl.Series] = {}
         for name, value in columns.items():
-            self._write_column(name, value)
+            values = value if isinstance(value, pl.Series) else pl.Series(
+                name,
+                [value] * n if not isinstance(value, (list, np.ndarray)) else value,
+                strict=False,
+            )
+            if values.len() != n:
+                raise ValueError(
+                    f"Cannot assign Series of length {values.len()} "
+                    f"to view of length {n} for column {name!r}"
+                )
+            series_by_name[name] = values
+
+        names = list(series_by_name)
+        # Whole-population fast path: one with_columns for all columns.
+        if n == df.height and ids.equals(df["id"]):
+            model._set_frame(
+                df.with_columns(
+                    [s.alias(name) for name, s in series_by_name.items()]
+                ),
+                written_columns=names,
+            )
+            return
+
+        for name in names:
+            if name not in df.columns:
+                df = df.with_columns(
+                    pl.Series(name, [None] * df.height, strict=False)
+                )
+        update_df = pl.DataFrame(
+            [ids.rename("id")]
+            + [s.rename(name) for name, s in series_by_name.items()]
+        )
+        model._set_frame(
+            df.update(update_df, on="id", how="left"),
+            written_columns=names,
+        )
 
     # --- scatter-add --------------------------------------------------------
 

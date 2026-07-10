@@ -12,6 +12,14 @@
   `Model._set_frame(..., written_columns=...)`, so same-step double commits on
   the view path are visible to `contract="check"|"warn"|"raise"`. `scatter_add`
   still does not count as an ordinary multi-write (sanctioned reducer).
+- **Cross-path detection.** Same-step writes that mix the buffered (OOP) path
+  and the lane/view path on one column raise `cross_path_write`.
+- **Atomic `agents.set`.** Multi-column `set(...)` / deprecated `update_data`
+  apply in one frame update with one contract commit per column.
+- **Safer class defaults.** `Model.model_reporters` / `agent_reporters` /
+  `params` default to `None` (no shared mutable `{}` / `[]` on the base class).
+- `update_agent_data` / `batch_update_agents` route through the buffered and
+  view write seams (contract-observed) instead of raw `Population` mutators.
 - `Environment.df` routes through a real `Model._set_frame` when available;
   deprecated `Agent.record` / `update_data` go through `__setattr__` so the
   instance cache and write queue stay aligned.

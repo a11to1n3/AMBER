@@ -10,6 +10,12 @@ class Population:
     """
     Manages the columnar state of all agents using Polars DataFrames.
     Acts as the single point of truth for agent data.
+
+    Prefer writing through the model/view API (``model.agents.col = ...``,
+    ``agents.set(...)``, ``agents.commit(...)``, or ``Model._set_frame``) so
+    the snapshot-view contract can observe commits. Assigning
+    ``population.data = ...`` directly is an expert escape hatch and is
+    invisible to ``Model.run(contract=...)``.
     """
     
     def __init__(self, schema: Dict[str, Type] = None):

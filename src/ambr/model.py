@@ -18,18 +18,20 @@ class Model(BaseModel):
 
     #: Declarative model-level metrics, evaluated once per step into the
     #: ``'model'`` results frame. Maps a column name to a ``callable(model)``,
-    #: the name of a model attribute/method, or a constant. Overridable per
-    #: subclass; complements imperative ``record_model``.
-    model_reporters: Dict[str, Any] = {}
+    #: the name of a model attribute/method, or a constant. Override on the
+    #: *subclass* (do not mutate this class attribute -- default is ``None``
+    #: to avoid shared mutable state). Complements imperative ``record_model``.
+    model_reporters: Optional[Dict[str, Any]] = None
     #: Declarative per-agent columns to snapshot each step into the (opt-in)
-    #: ``'agent_vars'`` long-format results frame. Empty by default (no cost).
-    agent_reporters: List[str] = []
+    #: ``'agent_vars'`` long-format results frame. Empty / ``None`` = no cost.
+    #: Override on the subclass; do not mutate the base attribute.
+    agent_reporters: Optional[List[str]] = None
     #: When True, capture a ``t=0`` row of the reporters before the first step.
     record_initial: bool = False
-    #: Optional typed parameter schema ``{'name': (type, default)}``. When set,
-    #: ``self.p.name`` is pre-coerced to ``type`` at init (missing -> default),
-    #: replacing scattered ``int(self.p.get('name', ...))`` boilerplate.
-    params: Dict[str, Any] = {}
+    #: Optional typed parameter schema ``{'name': (type, default)}``. When set
+    #: on the subclass, ``self.p.name`` is pre-coerced to ``type`` at init
+    #: (missing -> default). Default ``None`` avoids shared mutable state.
+    params: Optional[Dict[str, Any]] = None
 
     def __init__(self, parameters: Dict[str, Any]):
         """Initialize a new model.
@@ -235,7 +237,7 @@ class Model(BaseModel):
         constant. Runs before :meth:`update`, so an imperative ``record_model``
         of the same key wins.
         """
-        reporters = getattr(self, 'model_reporters', None)
+        reporters = type(self).model_reporters
         if not reporters:
             return
         for name, spec in reporters.items():
@@ -251,7 +253,7 @@ class Model(BaseModel):
 
     def _snapshot_agent_reporters(self) -> None:
         """Append a per-agent snapshot of ``agent_reporters`` columns (opt-in)."""
-        cols = getattr(self, 'agent_reporters', None)
+        cols = type(self).agent_reporters
         if not cols:
             return
         df = self.agents_df
@@ -357,7 +359,7 @@ class Model(BaseModel):
 
         self._ensure_setup()
 
-        if getattr(self, 'record_initial', False):
+        if self.record_initial:
             self._record_initial_state()
 
         # Use run_step() to execute exactly one model step per loop iteration.
@@ -416,7 +418,9 @@ class Model(BaseModel):
             
         results = {
             'info': {'steps': self.t, 'run_time': time.time() - start_time},
-            'agents': self.population.data,
+            # agents_df flushes the buffered write queue so OOP /
+            # update_agent_data writes land in the returned frame.
+            'agents': self.agents_df,
             'model': model_df
         }
         if self._contract.mode != "off":
@@ -503,22 +507,33 @@ class Model(BaseModel):
         return self.agents
 
     def get_agent_data(self, agent_id: Any) -> pl.DataFrame:
-        """Return a 1-row DataFrame with the current state of ``agent_id``."""
-        return self.population.data.filter(pl.col('id') == agent_id)
+        """Return a 1-row DataFrame with the current state of ``agent_id``.
+
+        Uses :attr:`agents_df` so pending buffered writes are flushed first.
+        """
+        return self.agents_df.filter(pl.col('id') == agent_id)
 
     def update_agent_data(self, agent_id: int, data: Dict[str, Any]):
-        """Update data for a single agent."""
+        """Update columns for a single agent via the buffered write path.
+
+        Routes through :meth:`_queue_write` so the snapshot-view contract can
+        witness the writes (same seam as ``agent.<col> = value``).
+        """
         for key, value in data.items():
-            self.population.set_agent_value(agent_id, key, value)
-        
+            self._queue_write(key, agent_id, value)
+
     def batch_update_agents(self, agent_ids: list, data: dict):
-        """Batch update multiple agents at once for better performance.
-        
+        """Batch-update specific agents via the view write seam.
+
+        Equivalent to ``self.agents.at[agent_ids].set(**data)`` so multi-column
+        updates are atomic and contract-observed.
+
         Args:
             agent_ids: List of agent IDs to update
-            data: Dictionary of column names and values (or lists of values)
+            data: Dictionary of column names and values (or lists of values
+                aligned to ``agent_ids``)
         """
-        self.population.batch_update_by_ids(agent_ids, data)
+        self.agents.at[agent_ids].set(**data)
 
     def _print_progress(self, current_step: int, total_steps: int, force: bool = False):
         pass

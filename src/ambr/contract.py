@@ -23,6 +23,10 @@ The checks:
   Under simultaneous activation the later write silently clobbers the earlier
   one (a "partial map" conflict). The sanctioned fix is a commutative reducer
   (``agents.at[ids].scatter_add(col=delta)``) or committing each column once.
+* **cross-path write** -- the same column received both a buffered (OOP)
+  write and a whole-column lane/view commit within one step. The flush order
+  makes the later path win; under simultaneous activation that is still a
+  partial-map conflict.
 * **read-after-write (lane path)** -- a column borrowed *after* it was committed
   in the same step; a snapshot rule must read step-entry state.
 * **schema / population mutation** -- the column set, a column's *dtype*, or the
@@ -35,8 +39,9 @@ This is a conformance *monitor*, not a prover, with two known limits: (1) the
 schema/population diff is **endpoint-only** -- a mutation that is introduced and
 reverted within a single step is not caught; (2) raw ``population.data = ...``
 writes that bypass both ``_queue_write`` and the reported lane/view seams are
-invisible to the conflict check. Cell-level read-after-write within the
-buffered view API remains the job of the (separate) static analyzer.
+invisible to the conflict check (prefer ``agents.col = ...`` / ``agents.set`` /
+``agents.commit``). Cell-level read-after-write within the buffered view API
+remains the job of the (separate) static analyzer.
 """
 
 from __future__ import annotations
@@ -147,10 +152,13 @@ class ContractMonitor:
         # Buffered (OOP) path
         self._write_counts: Dict[Any, int] = {}
         self._dup_cells: Set[Any] = set()
+        self._buffered_cols: Set[str] = set()
         # Lane / whole-column path
         self._commit_counts: Dict[str, int] = {}
         self._committed: Set[str] = set()
         self._raw_cols: Set[str] = set()
+        # Columns touched by both buffered and lane/view paths in this step
+        self._cross_path_cols: Set[str] = set()
         # Step-entry snapshot for schema / population diff
         self._entry_schema: Optional[Dict[str, str]] = None
         self._entry_ids: Optional[Set[Any]] = None
@@ -170,9 +178,11 @@ class ContractMonitor:
         self._entry_schema, self._entry_ids = snapshot
         self._write_counts = {}
         self._dup_cells = set()
+        self._buffered_cols = set()
         self._commit_counts = {}
         self._committed = set()
         self._raw_cols = set()
+        self._cross_path_cols = set()
         self.active = True
 
     def end_step(self, step: int, snapshot: Snapshot) -> ContractCertificate:
@@ -181,6 +191,7 @@ class ContractMonitor:
         exit_schema, exit_ids = snapshot
         cert = ContractCertificate(step)
         self._check_duplicate_buffered(cert)
+        self._check_cross_path(cert)
         self._check_schema(cert, exit_schema)
         self._check_lane_conflicts(cert)
         self._check_population(cert, exit_ids)
@@ -196,6 +207,9 @@ class ContractMonitor:
         self._write_counts[key] = count
         if count == 2:
             self._dup_cells.add(key)
+        self._buffered_cols.add(column)
+        if column in self._committed:
+            self._cross_path_cols.add(column)
 
     def record_commit(self, columns: Iterable[str]) -> None:
         """Record a whole-column lane/view commit of ``columns`` this step."""
@@ -204,6 +218,8 @@ class ContractMonitor:
         for c in columns:
             self._commit_counts[c] = self._commit_counts.get(c, 0) + 1
             self._committed.add(c)
+            if c in self._buffered_cols:
+                self._cross_path_cols.add(c)
 
     def record_borrow(self, column: str) -> None:
         """Record a lane borrow of ``column``; flag if already committed."""
@@ -228,6 +244,20 @@ class ContractMonitor:
             severity=SEVERITY_ERROR,
             columns=cols,
             ids=ids,
+        ))
+
+    def _check_cross_path(self, cert: ContractCertificate) -> None:
+        if not self._cross_path_cols:
+            return
+        cols = sorted(self._cross_path_cols)
+        cert.add(ContractViolation(
+            "cross_path_write",
+            f"column(s) {cols} were written via both the buffered (OOP) path "
+            f"and the lane/view path within the same step; under simultaneous "
+            f"activation the later path clobbers the earlier. Use one write "
+            f"path per column per step (or scatter_add for accumulation).",
+            severity=SEVERITY_ERROR,
+            columns=cols,
         ))
 
     def _check_schema(
