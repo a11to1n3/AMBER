@@ -39,9 +39,10 @@ This is a conformance *monitor*, not a prover, with two known limits: (1) the
 schema/population diff is **endpoint-only** -- a mutation that is introduced and
 reverted within a single step is not caught; (2) raw ``population.data = ...``
 writes that bypass both ``_queue_write`` and the reported lane/view seams are
-invisible to the conflict check (prefer ``agents.col = ...`` / ``agents.set`` /
-``agents.commit``). Cell-level read-after-write within the buffered view API
-remains the job of the (separate) static analyzer.
+invisible to the conflict check (``Population.data = ...`` is deprecated and
+warns; prefer ``agents.col = ...`` / ``agents.set`` / ``agents.commit``).
+Cell-level read-after-write within the buffered view API remains the job of
+the (separate) static analyzer.
 """
 
 from __future__ import annotations

@@ -115,7 +115,7 @@ class Model(BaseModel):
         columns are recorded as lane/view commits (``scatter_add`` deliberately
         omits this -- it is the sanctioned multi-write reducer).
         """
-        self.population.data = df
+        self.population.replace_frame(df)
         if written_columns is not None and self._contract.active:
             self._contract.record_commit(written_columns)
 
@@ -149,9 +149,9 @@ class Model(BaseModel):
             data_cols: Dict[str, list] = {'id': touched_ids}
             for col, id_to_val in pending.items():
                 data_cols[col] = [id_to_val.get(aid, None) for aid in touched_ids]
-            self.population.data = pl.DataFrame(
+            self.population.replace_frame(pl.DataFrame(
                 [pl.Series(k, v, strict=False) for k, v in data_cols.items()]
-            )
+            ))
             self._bump_id_version()
             return
 
@@ -174,7 +174,7 @@ class Model(BaseModel):
         update_df = pl.DataFrame(
             [pl.Series(k, v, strict=False) for k, v in update_cols.items()]
         )
-        self.population.data = df.update(update_df, on='id', how='left')
+        self.population.replace_frame(df.update(update_df, on='id', how='left'))
 
     # --- snapshot-view contract seams ---------------------------------------
 
@@ -193,16 +193,12 @@ class Model(BaseModel):
             ids = set()
         return schema, ids
 
-    def _contract_record_commit(self, columns) -> None:
-        """Record a vectorized lane/view commit of ``columns`` this step.
-
-        Called by the tensor lane and by ``_set_frame(..., written_columns=...)``
-        when the contract is active.
-        """
-        self._contract.record_commit(columns)
-
     def _contract_record_borrow(self, column: str) -> None:
-        """Record a lane borrow of ``column``; flag it if already committed."""
+        """Record a lane borrow of ``column``; flag it if already committed.
+
+        Commits go through :meth:`_set_frame` (``written_columns=``); only
+        borrows need this separate seam.
+        """
         self._contract.record_borrow(column)
 
     def setup(self): pass
@@ -378,16 +374,16 @@ class Model(BaseModel):
 
     # --- Helper methods ---
     def _print_start_info(self, max_steps):
-        print(f"🚀 Simulation: {self.__class__.__name__}")
-        print(f"⏱️  Steps: {max_steps:,}")
+        print(f"Simulation: {self.__class__.__name__}")
+        print(f"Steps: {max_steps:,}")
 
     def _print_end_info(self, start_time, max_steps):
         total_time = time.time() - start_time
-        print(f"\n✅ Done. Time: {timedelta(seconds=int(total_time))}")
+        print(f"\nDone. Time: {timedelta(seconds=int(total_time))}")
         if total_time > 0:
-            print(f"📈 Rate: {max_steps/total_time:.1f} steps/s")
+            print(f"Rate: {max_steps/total_time:.1f} steps/s")
         else:
-            print(f"📈 Rate: Inf steps/s")
+            print("Rate: Inf steps/s")
 
     def _collect_results(self, start_time, max_steps):
         if self._model_data:
