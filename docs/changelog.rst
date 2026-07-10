@@ -37,6 +37,8 @@ Deprecated
 - ``Model.batch_update_agents`` → ``agents.at[ids].set``
 - ``Population.set_agent_value`` / ``batch_update`` / ``batch_update_by_ids``
   → view ``set`` / column assign (until 1.0)
+- Assigning ``Population.data = ...`` → view write path (setter warns;
+  internal ``replace_frame`` is the quiet Model seam)
 
 [0.4.0] - 2026-06-27
 --------------------
