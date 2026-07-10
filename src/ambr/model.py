@@ -514,25 +514,28 @@ class Model(BaseModel):
         return self.agents_df.filter(pl.col('id') == agent_id)
 
     def update_agent_data(self, agent_id: int, data: Dict[str, Any]):
-        """Update columns for a single agent via the buffered write path.
+        """Deprecated: use ``agent.<col> = value`` or ``agents.at[id].set(...)``.
 
-        Routes through :meth:`_queue_write` so the snapshot-view contract can
-        witness the writes (same seam as ``agent.<col> = value``).
+        Still routes through :meth:`_queue_write` so the snapshot-view contract
+        can witness the writes.
         """
+        warn_deprecated(
+            "Model.update_agent_data(...)",
+            "agent.<col> = value or agents.at[id].set(**cols)",
+        )
         for key, value in data.items():
             self._queue_write(key, agent_id, value)
 
     def batch_update_agents(self, agent_ids: list, data: dict):
-        """Batch-update specific agents via the view write seam.
+        """Deprecated: use ``agents.at[ids].set(**data)`` (or column assign).
 
-        Equivalent to ``self.agents.at[agent_ids].set(**data)`` so multi-column
-        updates are atomic and contract-observed.
-
-        Args:
-            agent_ids: List of agent IDs to update
-            data: Dictionary of column names and values (or lists of values
-                aligned to ``agent_ids``)
+        Still equivalent to ``self.agents.at[agent_ids].set(**data)`` so
+        multi-column updates stay atomic and contract-observed.
         """
+        warn_deprecated(
+            "Model.batch_update_agents(...)",
+            "agents.at[ids].set(**cols) or agents.where(...).set(**cols)",
+        )
         self.agents.at[agent_ids].set(**data)
 
     def _print_progress(self, current_step: int, total_steps: int, force: bool = False):
