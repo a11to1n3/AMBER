@@ -54,7 +54,9 @@ class Agent(BaseAgent):
     def record(self, name: str, value: Any):
         """Deprecated: assign the attribute directly (``agent.<name> = value``)."""
         warn_deprecated("Agent.record(name, value)", "agent.<name> = value")
-        self.model._queue_write(name, self.id, value)
+        # Route through __setattr__ so instance cache and the write queue stay
+        # consistent with direct assignment.
+        setattr(self, name, value)
 
     def get_data(self) -> pl.DataFrame:
         """Return this agent's row as a 1-row DataFrame."""
@@ -64,7 +66,7 @@ class Agent(BaseAgent):
         """Deprecated: assign attributes directly (``agent.<name> = value``)."""
         warn_deprecated("Agent.update_data(data)", "direct attribute assignment")
         for name, value in data.items():
-            self.model._queue_write(name, self.id, value)
+            setattr(self, name, value)
 
     def get_neighbors(self, condition: Optional[pl.Expr] = None) -> pl.DataFrame:
         """Return all other agents, optionally filtered by ``condition``."""

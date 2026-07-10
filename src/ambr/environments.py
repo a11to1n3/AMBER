@@ -4,6 +4,7 @@ Supports different types of spatial and network topologies.
 """
 
 from typing import Dict, List, Optional, Tuple, Union
+from types import MethodType
 import polars as pl
 import numpy as np
 import networkx as nx
@@ -49,22 +50,24 @@ class Environment(ABC):
     def df(self, value: pl.DataFrame) -> None:
         """Replace the model's agent DataFrame.
 
-        Routes through ``model.population.data`` when available so the
-        ``_id_version`` cache stays consistent. Falls back to writing
-        ``model.agents_df`` directly (for mock models) or a private
-        store.
+        Prefers a real ``model._set_frame`` bound method (the single write
+        seam) so the contract monitor and pending-write buffer stay consistent.
+        Falls back to a plain attribute write (mock models) or a private store.
+        ``unittest.mock.Mock`` auto-creates callables for missing attrs, so we
+        require a true bound method rather than ``callable(...)``.
         """
         model = self.model
-        # Check for a *real* Population manager, not a Mock attribute.
-        pop = getattr(model, 'population', None)
-        if pop is not None and hasattr(pop, 'data') and isinstance(
-            getattr(pop, 'data', None), pl.DataFrame
-        ):
-            pop.data = value
+        set_frame = getattr(model, '_set_frame', None) if model is not None else None
+        if isinstance(set_frame, MethodType):
+            # Clear any pending OOP buffer -- environment writes are authoritative.
+            if hasattr(model, '_pending_writes'):
+                model._pending_writes = {}
+            set_frame(value)
             bump = getattr(model, '_bump_id_version', None)
-            if bump is not None:
+            if isinstance(bump, MethodType):
                 bump()
-        elif model is not None and hasattr(model, 'agents_df'):
+            return
+        if model is not None and hasattr(model, 'agents_df'):
             # Plain attribute (e.g. Mock model) — write directly.
             object.__setattr__(model, 'agents_df', value)
             self._df = value
