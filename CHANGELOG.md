@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- **Grid occupancy helpers** on `GridEnvironment` for Schelling-style models:
+  `get_random_empty_cell`, `get_agent_at_pos`, `add_agent` / `add_agent_from_id`,
+  `remove_agent_from_pos`, `get_empty_cells_in_radius`, and `get_neighbors(..., radius=)`
+  (Moore neighbourhood alias). Restores `examples/smac_calibration_advanced.py`.
+
 ### Changed
 
 - **Contract monitor extraction.** Runtime snapshot-view bookkeeping moved from
