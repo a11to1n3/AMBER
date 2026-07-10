@@ -38,6 +38,7 @@ from .contract import (
     ContractCertificate,
     ContractViolation,
     ContractViolationError,
+    ContractMonitor,
     CONTRACT_MODES,
 )
 from .base import BaseModel, BaseAgent
@@ -64,6 +65,8 @@ from .performance import (
     HAS_SCIPY,
     HAS_NUMBA,
 )
+from .tensor_lane import TensorLane, borrow_numeric, commit_columns
+from .gpu import GPU_AVAILABLE, get_array_module, to_device, to_host
 
 try:
     __version__ = _metadata_version('ambr')
@@ -82,12 +85,13 @@ __all__ = [
     'ContractCertificate',
     'ContractViolation',
     'ContractViolationError',
+    'ContractMonitor',
     'CONTRACT_MODES',
     'BaseModel',
     'BaseAgent',
     'AgentList',
     'GridEnvironment',
-    'SpaceEnvironment', 
+    'SpaceEnvironment',
     'NetworkEnvironment',
     'Experiment',
     'Sample',
@@ -109,4 +113,12 @@ __all__ = [
     'check_performance_deps',
     'HAS_SCIPY',
     'HAS_NUMBA',
+    # Tensor lane / GPU (0.4)
+    'TensorLane',
+    'borrow_numeric',
+    'commit_columns',
+    'GPU_AVAILABLE',
+    'get_array_module',
+    'to_device',
+    'to_host',
 ]
