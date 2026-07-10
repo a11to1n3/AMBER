@@ -59,9 +59,11 @@ dev = [
     "mypy>=1.0.0"
 ]
 advanced = [
-    "smac>=2.0.0",
+    # SMAC 2.4 imports sklearn.tree._tree.DTYPE, removed in scikit-learn 1.9
+    # (automl/SMAC3#1314). Keep sklearn in the range SMAC actually runs on.
+    "smac>=2.0.0,<3",
     "ConfigSpace>=0.7.1",
-    "scikit-learn>=1.0.0"
+    "scikit-learn>=1.6.1,<1.9",
 ]
 docs = [
     "sphinx>=4.0.0",

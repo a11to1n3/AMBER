@@ -6,21 +6,31 @@ import random
 import time
 from .model import Model
 
-# SMAC is an optional dependency - lazy import when needed
+# SMAC is an optional dependency. Probe a real import path (not just the
+# package name) so a broken smac/sklearn combo still reports HAS_SMAC=False.
 HAS_SMAC = False
+_SMAC_IMPORT_ERROR: Optional[BaseException] = None
 try:
-    import smac
+    import smac  # noqa: F401
+    from smac import HyperparameterOptimizationFacade  # noqa: F401
     HAS_SMAC = True
-except ImportError:
-    pass
+except Exception as exc:  # ImportError, or sklearn.tree._tree.DTYPE breakage
+    _SMAC_IMPORT_ERROR = exc
 
 
 def _check_smac():
     """Check if SMAC is available, raise helpful error if not."""
     if not HAS_SMAC:
+        hint = (
+            "Install the advanced extra with a SMAC-compatible scikit-learn:\n"
+            "  pip install 'ambr[advanced]'\n"
+            "  # or: pip install 'smac>=2,<3' 'scikit-learn>=1.6.1,<1.9'\n"
+            "SMAC 2.4 is incompatible with scikit-learn 1.9+ "
+            "(missing sklearn.tree._tree.DTYPE; see automl/SMAC3#1314)."
+        )
+        detail = f"\nUnderlying error: {_SMAC_IMPORT_ERROR!r}" if _SMAC_IMPORT_ERROR else ""
         raise ImportError(
-            "SMAC is required for advanced optimization features. "
-            "Install it with: pip install smac"
+            "SMAC is required for advanced optimization features. " + hint + detail
         )
 
 
