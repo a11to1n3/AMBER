@@ -3,6 +3,8 @@ import warnings
 import polars as pl
 import numpy as np
 
+from ._deprecation import warn_deprecated
+
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -145,8 +147,15 @@ class Population:
         return res.item(0, 0)
 
     def set_agent_value(self, agent_id: int, column: str, value: Any):
-        """Sets a value for a single agent. Very slow if used in loops."""
-        # Determine Polars type from value
+        """Deprecated: use ``agent.<col> = value`` or ``agents.at[id].col = value``."""
+        warn_deprecated(
+            "Population.set_agent_value(...)",
+            "agent.<col> = value or agents.at[id].set(**cols)",
+        )
+        self._set_agent_value(agent_id, column, value)
+
+    def _set_agent_value(self, agent_id: int, column: str, value: Any) -> None:
+        """Internal single-cell write (no deprecation warning)."""
         if hasattr(value, 'dtype'):  # Handle numpy scalars
             if np.issubdtype(value.dtype, np.integer):
                 pl_type = pl.Int64
@@ -156,21 +165,30 @@ class Population:
                 pl_type = pl.Object
         else:
             pl_type = pl.Int64 if isinstance(value, int) else pl.Float64 if isinstance(value, float) else pl.Utf8 if isinstance(value, str) else pl.Object
-        
-        # Check if column exists, if not create it with correct type
+
         if column not in self.data.columns:
             self.data = self.data.with_columns(pl.lit(None).cast(pl_type).alias(column))
 
-        # Polars explicit update
         self.data = self.data.with_columns(
             pl.when(pl.col("id") == agent_id)
             .then(pl.lit(value))
             .otherwise(pl.col(column))
             .alias(column)
         )
-        
+
     def batch_update(self, updates: Dict[str, Union[np.ndarray, list]], selector: Optional[pl.Expr] = None):
-        """Updates columns for all agents (or a filtered subset)."""
+        """Deprecated: use ``agents.set(**cols)`` or ``agents.where(...).set(...)``."""
+        warn_deprecated(
+            "Population.batch_update(...)",
+            "agents.set(**cols) or agents.where(expr).set(**cols)",
+        )
+        self._batch_update(updates, selector)
+
+    def _batch_update(
+        self,
+        updates: Dict[str, Union[np.ndarray, list]],
+        selector: Optional[pl.Expr] = None,
+    ) -> None:
         if selector is None:
             self.data = self.data.with_columns([
                 pl.Series(k, v) for k, v in updates.items()
@@ -187,12 +205,23 @@ class Population:
             self.data = self.data.with_columns(cols)
 
     def batch_update_by_ids(self, ids: Union[list, np.ndarray], data: Dict[str, Union[list, np.ndarray, Any]]):
-        """Updates specific agents identified by IDs."""
+        """Deprecated: use ``agents.at[ids].set(**data)``."""
+        warn_deprecated(
+            "Population.batch_update_by_ids(...)",
+            "agents.at[ids].set(**cols)",
+        )
+        self._batch_update_by_ids(ids, data)
+
+    def _batch_update_by_ids(
+        self,
+        ids: Union[list, np.ndarray],
+        data: Dict[str, Union[list, np.ndarray, Any]],
+    ) -> None:
         id_series = pl.Series("id", ids)
         count = len(ids)
-        
+
         update_data = {"id": id_series}
-        
+
         for col, val in data.items():
             if isinstance(val, (list, np.ndarray)):
                 if len(val) != count:
@@ -200,11 +229,11 @@ class Population:
                 update_data[f"{col}_new"] = val
             else:
                 update_data[f"{col}_new"] = [val] * count
-                
+
         update_df = pl.DataFrame(update_data)
-        
+
         self.data = self.data.join(update_df, on="id", how="left")
-        
+
         cols = []
         for col in data.keys():
             new_col = f"{col}_new"
@@ -214,7 +243,7 @@ class Population:
                 .otherwise(pl.col(col))
                 .alias(col)
             )
-        
+
         self.data = self.data.with_columns(cols).drop([f"{col}_new" for col in data.keys()])
 
     def create_batch_context(self):
@@ -268,4 +297,4 @@ class BatchUpdateContext:
                 vals.append(self.updates[aid].get(col, None))
             final_data[col] = vals
             
-        self.population.batch_update_by_ids(ids, final_data)
+        self.population._batch_update_by_ids(ids, final_data)

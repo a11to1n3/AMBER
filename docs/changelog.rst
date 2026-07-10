@@ -28,6 +28,15 @@ Changed
 - Public package exports for ``ContractMonitor``, ``TensorLane``,
   ``borrow_numeric``, ``commit_columns``, and GPU helpers
   (``GPU_AVAILABLE``, ``get_array_module``, ``to_device``, ``to_host``).
+- Canonical-verb docs: select / write / scatter_add / borrow-commit surface;
+  extra ``batch_*`` aliases are not the performance path.
+
+Deprecated
+~~~~~~~~~~
+- ``Model.update_agent_data`` → ``agent.<col> = value`` / ``agents.at[id].set``
+- ``Model.batch_update_agents`` → ``agents.at[ids].set``
+- ``Population.set_agent_value`` / ``batch_update`` / ``batch_update_by_ids``
+  → view ``set`` / column assign (until 1.0)
 
 [0.4.0] - 2026-06-27
 --------------------
