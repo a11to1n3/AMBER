@@ -135,7 +135,7 @@ class _BaseView:
                 .otherwise(pl.col(name))
                 .alias(name)
             ).drop("__new__")
-            model._set_frame(joined)
+            model._set_frame(joined, written_columns=[name])
             return
 
         values = value if isinstance(value, pl.Series) else pl.Series(
@@ -150,13 +150,17 @@ class _BaseView:
 
         # Whole-population fast path: one with_columns, no join.
         if n == df.height and ids.equals(df["id"]):
-            model._set_frame(df.with_columns(values.alias(name)))
+            model._set_frame(
+                df.with_columns(values.alias(name)), written_columns=[name]
+            )
             return
 
         if name not in df.columns:
             df = df.with_columns(pl.Series(name, [None] * df.height, strict=False))
         update_df = pl.DataFrame([ids.rename("id"), values.rename(name)])
-        model._set_frame(df.update(update_df, on="id", how="left"))
+        model._set_frame(
+            df.update(update_df, on="id", how="left"), written_columns=[name]
+        )
 
     @property
     def ids(self) -> pl.Series:

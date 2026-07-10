@@ -153,6 +153,27 @@ def test_duplicate_write_is_detected():
     assert set(dup.ids) == {0, 1, 2, 3}
 
 
+class DoubleColumnCommitModel(am.Model):
+    """View-path model that commits the same column twice per step."""
+
+    def setup(self):
+        self.add_agents(5, wealth=np.ones(5, dtype=int))
+
+    def step(self):
+        self.agents.wealth = self.agents.wealth + 1
+        self.agents.wealth = self.agents.wealth + 1  # second whole-column commit
+
+
+def test_view_path_double_commit_is_detected():
+    """Whole-column view writes report commits; a second write is a conflict."""
+    res = DoubleColumnCommitModel(_params(steps=1)).run(contract="check")
+    cert = res["contract"][0]
+    assert not cert.ok
+    dup = next(v for v in cert.violations if v.kind == "duplicate_write")
+    assert "wealth" in dup.columns
+    assert "lane/view" in dup.detail
+
+
 def test_raise_mode_raises_on_duplicate_write():
     m = DuplicateWriteModel(_params(steps=5))
     with pytest.raises(ContractViolationError) as exc:

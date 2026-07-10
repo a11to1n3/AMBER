@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Contract monitor extraction.** Runtime snapshot-view bookkeeping moved from
+  `Model` into `ambr.contract.ContractMonitor`. `Model` keeps a thin public
+  surface (`contract_certificates`, `_contract_mode`) for callers and tests.
+- **Unified write/contract seam.** Whole-column view writes
+  (`agents.col = ...`) and tensor-lane commits report through
+  `Model._set_frame(..., written_columns=...)`, so same-step double commits on
+  the view path are visible to `contract="check"|"warn"|"raise"`. `scatter_add`
+  still does not count as an ordinary multi-write (sanctioned reducer).
+- `Environment.df` routes through a real `Model._set_frame` when available;
+  deprecated `Agent.record` / `update_data` go through `__setattr__` so the
+  instance cache and write queue stay aligned.
+- Public package exports for `ContractMonitor`, `TensorLane`, `borrow_numeric`,
+  `commit_columns`, and GPU helpers (`GPU_AVAILABLE`, `get_array_module`,
+  `to_device`, `to_host`).
+
 ## v0.4.0 - 2026-06-27
 
 The 0.4 release settles the public API on one canonical verb per task (legacy
