@@ -13,6 +13,9 @@ pytestmark = pytest.mark.skipif(not HAS_SMAC, reason="SMAC3 not installed")
 class _TinyModel(am.Model):
     """Cheap model: two metrics from a single parameter."""
 
+    # Fixed short horizon so SMAC does not need a degenerate steps HP.
+    params = {"steps": (int, 2), "show_progress": (bool, False)}
+
     def setup(self):
         self.add_agents(4, x=np.zeros(4))
 
@@ -39,8 +42,6 @@ def _obj_b(model: am.Model) -> float:
 def test_multiobjective_smac_smoke_runs_and_returns_front():
     space = SMACParameterSpace()
     space.add_parameter("x", param_type="float", bounds=(0.0, 3.0), default=1.0)
-    # steps fixed via default on model params at evaluate time
-    space.add_parameter("steps", param_type="int", bounds=(2, 2), default=2)
 
     mo = MultiObjectiveSMAC(
         model_type=_TinyModel,

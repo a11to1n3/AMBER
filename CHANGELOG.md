@@ -10,6 +10,9 @@
   (Moore neighbourhood alias). Restores `examples/smac_calibration_advanced.py`.
 - **MultiObjectiveSMAC CI smoke** (`tests/test_multiobjective_smac.py`, skipped
   without the `advanced` / smac extra).
+- **SMAC install constraint:** `ambr[advanced]` pins `scikit-learn>=1.6.1,<1.9`
+  so SMAC 2.4 can import (`sklearn.tree._tree.DTYPE` removed in sklearn 1.9;
+  automl/SMAC3#1314). Clearer error if SMAC import fails.
 
 ### Changed
 
