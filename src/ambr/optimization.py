@@ -658,164 +658,150 @@ class SMACOptimizer:
         }
 
 class MultiObjectiveSMAC:
-    """Multi-objective parameter optimization using SMAC."""
-    
-    def __init__(self, model_type: Type[Model],
-                 param_space: SMACParameterSpace,
-                 objectives: Dict[str, Callable[[Model], float]],
-                 n_trials: int = 100,
-                 n_workers: int = 1,
-                 seed: Optional[int] = None,
-                 strategy: str = 'pareto',
-                 use_multi_fidelity: bool = False):
-        """Initialize the multi-objective optimizer.
-        
-        Args:
-            model_type: Class of model to optimize
-            param_space: Parameter space definition
-            objectives: Dictionary of objective functions
-            n_trials: Number of optimization trials
-            n_workers: Number of parallel workers
-            seed: Random seed
-            strategy: Multi-objective strategy ('pareto', 'aggregation')
-            use_multi_fidelity: Whether to use multi-fidelity optimization
-        """
-        # Check SMAC availability and do lazy imports
+    """Multi-objective optimization by running one SMAC search per objective.
+
+    Each named objective is optimized independently with a scalar SMAC facade
+    (same evaluate path as :class:`SMACOptimizer`). Histories are merged and a
+    simple non-dominated set is returned as ``pareto_front``. Suitable for
+    small multi-objective calibration examples; not a full ParEGO/EHVI MOBO.
+    """
+
+    def __init__(
+        self,
+        model_type: Type[Model],
+        param_space: SMACParameterSpace,
+        objectives: Dict[str, Callable[[Model], float]],
+        n_trials: int = 100,
+        n_workers: int = 1,
+        seed: Optional[int] = None,
+        strategy: str = "pareto",
+        use_multi_fidelity: bool = False,
+    ):
         _check_smac()
-        from smac import HyperparameterOptimizationFacade, Scenario, MultiFidelityFacade
-        from smac.intensifier import SuccessiveHalving
-        from smac.multi_objective import AbstractMultiObjectiveAlgorithm
-        from smac.multi_objective.aggregation_strategy import MeanAggregationStrategy
-        
+        if use_multi_fidelity:
+            raise NotImplementedError(
+                "MultiObjectiveSMAC multi-fidelity is not supported; "
+                "use SMACOptimizer(use_multi_fidelity=True) per objective."
+            )
+        if not objectives:
+            raise ValueError("objectives must be a non-empty dict")
+
         self.model_type = model_type
         self.param_space = param_space
-        self.objectives = objectives
-        self.n_trials = n_trials
+        self.objectives = dict(objectives)
+        self.n_trials = int(n_trials)
         self.n_workers = n_workers
         self.seed = seed
-        
-        # Initialize SMAC components
-        self.configspace = param_space.get_configspace()
-        self.scenario = Scenario(
-            self.configspace,
-            n_trials=n_trials,
-            n_workers=n_workers,
-            seed=seed
-        )
-        
-        # Initialize multi-objective algorithm
-        if strategy == 'aggregation':
-            mo_algorithm = MeanAggregationStrategy(
-                scenario=self.scenario,
-                objectives=list(objectives.keys())
+        self.strategy = strategy
+        # Built on first optimize() so construction stays cheap for smoke tests.
+        self._optimizers: Optional[Dict[str, SMACOptimizer]] = None
+
+    def _ensure_optimizers(self) -> Dict[str, "SMACOptimizer"]:
+        if self._optimizers is not None:
+            return self._optimizers
+        opts: Dict[str, SMACOptimizer] = {}
+        for i, (name, objective) in enumerate(self.objectives.items()):
+            # Distinct seeds so independent searches explore differently.
+            seed = None if self.seed is None else int(self.seed) + i * 17
+            opts[name] = SMACOptimizer(
+                model_type=self.model_type,
+                param_space=self.param_space,
+                objective=objective,
+                n_trials=self.n_trials,
+                n_workers=self.n_workers,
+                seed=seed,
+                strategy="bayesian",
             )
-        else:  # pareto
-            mo_algorithm = AbstractMultiObjectiveAlgorithm(
-                scenario=self.scenario,
-                objectives=list(objectives.keys())
-            )
-            
-        # Initialize SMAC facade for each objective
-        self.smacs = {}
-        for name, objective in objectives.items():
-            if use_multi_fidelity:
-                if not param_space.fidelity_parameters:
-                    raise ValueError("No fidelity parameters defined for multi-fidelity optimization")
-                self.smacs[name] = MultiFidelityFacade(
-                    scenario=self.scenario,
-                    target_function=lambda config, obj=objective: self._evaluate_objective(config, obj),
-                    multi_objective_algorithm=mo_algorithm,
-                    intensifier=SuccessiveHalving(
-                        scenario=self.scenario,
-                        incumbent_selection="highest_budget",
-                        max_incumbents=1
-                    )
-                )
-            else:
-                self.smacs[name] = HyperparameterOptimizationFacade(
-                    scenario=self.scenario,
-                    target_function=lambda config, obj=objective: self._evaluate_objective(config, obj),
-                    multi_objective_algorithm=mo_algorithm
-                )
-                
-    def _evaluate_objective(self, config: Dict[str, Any], 
-                          objective: Callable[[Model], float]) -> float:
-        """Evaluate a parameter configuration for a specific objective.
-        
-        Args:
-            config: Parameter configuration
-            objective: Objective function
-            
-        Returns:
-            Objective value
-        """
-        model = self.model_type(config)
-        results = model.run()
-        return objective(model)
-        
+        self._optimizers = opts
+        return opts
+
     def optimize(self) -> Dict[str, Any]:
-        """Run the multi-objective optimization.
-        
+        """Run per-objective SMAC and assemble a Pareto set.
+
         Returns:
-            Dictionary containing Pareto-optimal configurations and results
+            ``n_evaluations``, ``pareto_front`` (configs + objective costs),
+            ``history`` (long-format rows), ``single_objective_results``.
         """
-        # Run optimization for each objective
-        results = {}
-        for name, smac in self.smacs.items():
-            incumbent = smac.optimize()
-            results[name] = {
-                'best_config': incumbent.get_dictionary(),
-                'best_cost': smac.runhistory.get_cost(incumbent)
+        optimizers = self._ensure_optimizers()
+        single: Dict[str, Any] = {}
+        history_frames: Dict[str, pl.DataFrame] = {}
+        n_evals = 0
+
+        for name, opt in optimizers.items():
+            result = opt.optimize()
+            single[name] = {
+                "best_config": result.get("best_config", {}),
+                "best_cost": result.get("best_cost"),
             }
-            
-        # Get full optimization history
-        history = {}
-        for name, smac in self.smacs.items():
-            data = []
-            for config_id, run_value in smac.runhistory.data.items():
-                config = smac.runhistory.ids_config[config_id]
-                data.append({
-                    **config.get_dictionary(),
-                    f'{name}_cost': run_value.cost,
-                    f'{name}_time': run_value.time
-                })
-            history[name] = pl.DataFrame(data)
-            
-        # Find Pareto-optimal configurations
-        pareto_front = self._find_pareto_front(history)
-        
+            hist = result.get("history")
+            if hist is not None and not hist.is_empty() and "cost" in hist.columns:
+                history_frames[name] = hist.rename({"cost": name})
+                n_evals += hist.height
+            elif result.get("best_config"):
+                # Degenerate history: still record the incumbent.
+                history_frames[name] = pl.DataFrame(
+                    [{**result["best_config"], name: result.get("best_cost")}]
+                )
+                n_evals += 1
+
+        history_long = (
+            pl.concat(list(history_frames.values()), how="diagonal_relaxed")
+            if history_frames
+            else pl.DataFrame()
+        )
+        pareto = self._pareto_from_incumbents(single)
+
         return {
-            'single_objective_results': results,
-            'pareto_front': pareto_front,
-            'history': history
+            "n_evaluations": n_evals,
+            "pareto_front": pareto,
+            "history": history_long if not history_long.is_empty() else history_frames,
+            "single_objective_results": single,
         }
-        
-    def _find_pareto_front(self, history: Dict[str, pl.DataFrame]) -> pl.DataFrame:
-        """Find Pareto-optimal configurations.
-        
-        Args:
-            history: Dictionary of optimization histories
-            
-        Returns:
-            DataFrame containing Pareto-optimal configurations
+
+    def _pareto_from_incumbents(self, single: Dict[str, Any]) -> pl.DataFrame:
+        """Build a small Pareto table from per-objective incumbents.
+
+        Each incumbent is re-scored on *all* objectives so the front carries
+        comparable columns for plotting / example code.
         """
-        from smac.utils.pareto_front import calculate_pareto_front
-        from smac.utils.multi_objective import normalize_costs
-        
-        # Combine all histories
-        combined = history[list(history.keys())[0]]
-        for name, df in list(history.items())[1:]:
-            combined = combined.join(
-                df.select(['id', f'{name}_cost']),
-                on='id'
-            )
-            
-        # Normalize costs
-        costs = np.array([[row[f'{name}_cost'] for name in self.objectives.keys()]
-                         for row in combined.iter_rows(named=True)])
-        normalized_costs = normalize_costs(costs)
-        
-        # Find Pareto-optimal points
-        pareto_mask = calculate_pareto_front(normalized_costs)
-        
-        return combined.filter(pl.Series(pareto_mask)) 
+        rows = []
+        seen = set()
+        for _name, res in single.items():
+            cfg = dict(res.get("best_config") or {})
+            key = tuple(sorted(cfg.items()))
+            if key in seen:
+                continue
+            seen.add(key)
+            params = {**cfg, "show_progress": False}
+            try:
+                model = self.model_type(params)
+                model.results = model.run()
+                row = {**cfg}
+                for obj_name, obj_fn in self.objectives.items():
+                    try:
+                        row[obj_name] = float(obj_fn(model))
+                    except Exception:
+                        row[obj_name] = float("inf")
+                rows.append(row)
+            except Exception:
+                continue
+
+        if not rows:
+            return pl.DataFrame()
+
+        df = pl.DataFrame(rows)
+        obj_names = list(self.objectives.keys())
+        costs = df.select(obj_names).to_numpy()
+        # Non-dominated: minimize all objectives.
+        n = costs.shape[0]
+        keep = np.ones(n, dtype=bool)
+        for i in range(n):
+            if not keep[i]:
+                continue
+            for j in range(n):
+                if i == j or not keep[j]:
+                    continue
+                if np.all(costs[j] <= costs[i]) and np.any(costs[j] < costs[i]):
+                    keep[i] = False
+                    break
+        return df.filter(pl.Series(keep.tolist()))
