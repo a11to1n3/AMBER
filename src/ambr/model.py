@@ -128,10 +128,13 @@ class Model(BaseModel):
 
     def _bump_id_version(self) -> None:
         self._id_version += 1
+        # Invalidate position / arange caches used by scatter_add and flush.
+        self._id_pos_cache = None
+        self._ids_arange_cache = None
 
     def _flush_pending_writes(self) -> None:
         """Apply all queued ``Agent`` attribute writes as a single
-        ``df.update(on='id')`` hash join."""
+        ``df.update(on='id')`` hash join (or a faster numpy path)."""
         if not self._pending_writes:
             return
         # Clear before the write so an exception can't leave a stale buffer
@@ -165,9 +168,32 @@ class Model(BaseModel):
                 [pl.Series(c, [None] * df.height, strict=False) for c in missing]
             )
 
-        # df.update(on='id') skips null cells, so untouched (col, id) pairs
-        # retain their current value.
         touched_ids = list({aid for col_map in pending.values() for aid in col_map})
+
+        # Fast path: map ids → rows once and scatter values into Python lists
+        # (preserves nulls; cheaper than a wide update DataFrame + join).
+        try:
+            from .sequences import _resolve_positions
+            ids_np = np.asarray(touched_ids)
+            positions = _resolve_positions(self, df, ids_np)
+            new_cols = []
+            for col, id_to_val in pending.items():
+                # to_list keeps None (unlike float numpy arrays → nan).
+                base = (
+                    df[col].to_list()
+                    if col in df.columns
+                    else [None] * df.height
+                )
+                for aid, pos in zip(touched_ids, positions):
+                    if aid in id_to_val:
+                        base[int(pos)] = id_to_val[aid]
+                new_cols.append(pl.Series(col, base, strict=False))
+            self.population.replace_frame(df.with_columns(new_cols))
+            return
+        except Exception:
+            pass
+
+        # Fallback: df.update(on='id') hash join.
         update_cols: Dict[str, list] = {'id': touched_ids}
         for col, id_to_val in pending.items():
             update_cols[col] = [id_to_val.get(aid, None) for aid in touched_ids]

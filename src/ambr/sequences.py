@@ -155,6 +155,26 @@ class _BaseView:
             )
             return
 
+        # Subset fast path: unique ids + row positions + in-place column write
+        # (avoids Polars join/update for the common filtered-view case).
+        ids_np = ids.to_numpy()
+        if n > 0 and len(np.unique(ids_np)) == n and name in df.columns:
+            try:
+                positions = _resolve_positions(model, df, ids_np)
+                base = df[name].to_numpy()
+                vals = values.to_numpy()
+                # Object / mixed columns fall through to the join path.
+                if base.dtype != object and vals.dtype != object:
+                    out = base.copy()
+                    out[positions] = vals
+                    model._set_frame(
+                        df.with_columns(pl.Series(name, out, strict=False)),
+                        written_columns=[name],
+                    )
+                    return
+            except (KeyError, TypeError, ValueError):
+                pass
+
         if name not in df.columns:
             df = df.with_columns(pl.Series(name, [None] * df.height, strict=False))
         update_df = pl.DataFrame([ids.rename("id"), values.rename(name)])
@@ -392,17 +412,32 @@ class _BaseView:
         model._set_frame(df.with_columns(new_columns))
 
 
+def _ids_are_arange(model: Model, df_ids_np: np.ndarray) -> bool:
+    """True if ``df_ids_np`` is exactly ``0..N-1`` (cached per id-version)."""
+    version = getattr(model, "_id_version", 0)
+    cached = getattr(model, "_ids_arange_cache", None)
+    if cached is not None and cached[0] == version:
+        return cached[1]
+    n = int(df_ids_np.size)
+    ok = (
+        df_ids_np.dtype.kind in ("i", "u")
+        and n > 0
+        and int(df_ids_np[0]) == 0
+        and int(df_ids_np[-1]) == n - 1
+        and (n == 1 or bool(np.all(df_ids_np.astype(np.int64, copy=False) == np.arange(n, dtype=np.int64))))
+    )
+    # For large N the arange compare is still O(N) once per id-version only.
+    model._ids_arange_cache = (version, ok)
+    return ok
+
+
 def _resolve_positions(model: Model, df: pl.DataFrame, ids_np: np.ndarray) -> np.ndarray:
     """Map view ids to row positions in ``df``, caching the lookup by id version."""
     df_ids_np = df["id"].to_numpy()
     # Contiguous [0, N) fast path (the common case after add_agents).
     if (
-        df_ids_np.dtype.kind in ("i", "u")
-        and df_ids_np.size == df.height
-        and df_ids_np.size > 0
-        and df_ids_np[0] == 0
-        and df_ids_np[-1] == df_ids_np.size - 1
-        and np.array_equal(df_ids_np, np.arange(df_ids_np.size))
+        df_ids_np.size == df.height
+        and _ids_are_arange(model, df_ids_np)
     ):
         return np.asarray(ids_np, dtype=np.int64)
 
