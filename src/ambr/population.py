@@ -3,6 +3,8 @@ import warnings
 import polars as pl
 import numpy as np
 
+from ._deprecation import warn_deprecated
+
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -10,6 +12,12 @@ class Population:
     """
     Manages the columnar state of all agents using Polars DataFrames.
     Acts as the single point of truth for agent data.
+
+    Prefer writing through the model/view API (``model.agents.col = ...``,
+    ``agents.set(...)``, ``agents.commit(...)``, or ``Model._set_frame``) so
+    the snapshot-view contract can observe commits. Assigning
+    ``population.data = ...`` still works but is deprecated and invisible
+    to ``Model.run(contract=...)``; use the view API instead.
     """
     
     def __init__(self, schema: Dict[str, Type] = None):
@@ -23,53 +31,73 @@ class Population:
             **schema
         }
         
-        # Initialize empty DataFrame
-        self.data = pl.DataFrame(schema=self.schema)
-        
+        # Backing store. Prefer Model._set_frame / view API over assigning
+        # ``.data`` (the public setter warns; use ``replace_frame`` internally).
+        self._data = pl.DataFrame(schema=self.schema)
+
         # Buffer for batch operations
         self._pending_updates: Dict[int, Dict[str, Any]] = {}
-        
+
+    @property
+    def data(self) -> pl.DataFrame:
+        """Read the agent table (single system of record)."""
+        return self._data
+
+    @data.setter
+    def data(self, value: pl.DataFrame) -> None:
+        """Direct assign is deprecated; prefer the view / ``_set_frame`` seam."""
+        warn_deprecated(
+            "assigning Population.data",
+            "agents.set(**cols) / agents.col = values (or Model agents_df)",
+            stacklevel=3,
+        )
+        self._data = value
+
+    def replace_frame(self, df: pl.DataFrame) -> None:
+        """Replace the table without deprecation (Model write path only)."""
+        self._data = df
+
     @property
     def size(self) -> int:
-        return len(self.data)
+        return len(self._data)
     
     def _align_and_concat(self, new_df: pl.DataFrame) -> pl.DataFrame:
         """
-        Robustly concatenate new_df to self.data, handling type mismatches.
+        Robustly concatenate new_df to self._data, handling type mismatches.
         This is the core fix for Polars Null vs Int64 conflicts.
         """
-        if self.data.is_empty():
+        if self._data.is_empty():
             return new_df
         
         # Get union of all columns
-        all_cols = set(self.data.columns) | set(new_df.columns)
+        all_cols = set(self._data.columns) | set(new_df.columns)
         
-        # Align self.data: add missing columns from new_df
+        # Align self._data: add missing columns from new_df
         for col in all_cols:
-            if col not in self.data.columns:
-                # Column exists in new_df but not self.data
+            if col not in self._data.columns:
+                # Column exists in new_df but not self._data
                 dtype = new_df.schema[col]
-                self.data = self.data.with_columns(pl.lit(None).cast(dtype).alias(col))
+                self._data = self._data.with_columns(pl.lit(None).cast(dtype).alias(col))
             if col not in new_df.columns:
-                # Column exists in self.data but not new_df
-                dtype = self.data.schema[col]
+                # Column exists in self._data but not new_df
+                dtype = self._data.schema[col]
                 new_df = new_df.with_columns(pl.lit(None).cast(dtype).alias(col))
         
         # Handle type mismatches between matching columns
         for col in all_cols:
-            left_type = self.data.schema[col]
+            left_type = self._data.schema[col]
             right_type = new_df.schema[col]
             
             if left_type != right_type:
                 # Promote Null to concrete type
                 if left_type == pl.Null and right_type != pl.Null:
-                    self.data = self.data.with_columns(pl.col(col).cast(right_type))
+                    self._data = self._data.with_columns(pl.col(col).cast(right_type))
                 elif right_type == pl.Null and left_type != pl.Null:
                     new_df = new_df.with_columns(pl.col(col).cast(left_type))
                 # For other mismatches, try to find supertype or cast to Object
                 else:
                     try:
-                        # Try casting new_df to self.data's type
+                        # Try casting new_df to self._data's type
                         new_df = new_df.with_columns(pl.col(col).cast(left_type))
                     except (pl.exceptions.ComputeError, pl.exceptions.InvalidOperationError, TypeError, ValueError):
                         # Last resort: cast both to String. This is
@@ -82,13 +110,13 @@ class Population:
                             UserWarning,
                             stacklevel=2,
                         )
-                        self.data = self.data.with_columns(pl.col(col).cast(pl.Utf8))
+                        self._data = self._data.with_columns(pl.col(col).cast(pl.Utf8))
                         new_df = new_df.with_columns(pl.col(col).cast(pl.Utf8))
         
         # Ensure column order matches
-        new_df = new_df.select(self.data.columns)
+        new_df = new_df.select(self._data.columns)
         
-        return pl.concat([self.data, new_df], how="vertical")
+        return pl.concat([self._data, new_df], how="vertical")
         
     def add_agent(self, agent_id: int, step: int = 0, **attributes):
         """Adds a single agent to the population."""
@@ -100,11 +128,11 @@ class Population:
                 row[col] = None
         
         new_row = pl.DataFrame([row])
-        self.data = self._align_and_concat(new_row)
+        self._data = self._align_and_concat(new_row)
 
     def batch_add_agents(self, count: int, step: int = 0, **attributes):
         """Adds multiple agents efficiently."""
-        start_id = self.data['id'].max() + 1 if not self.data.is_empty() else 0
+        start_id = self._data['id'].max() + 1 if not self._data.is_empty() else 0
         ids = range(start_id, start_id + count)
         
         new_data = {
@@ -130,17 +158,24 @@ class Population:
                 new_data[col] = [None] * count
                 
         new_df = pl.DataFrame(new_data)
-        self.data = self._align_and_concat(new_df)
+        self._data = self._align_and_concat(new_df)
         
     def get_agent_value(self, agent_id: int, column: str) -> Any:
-        res = self.data.filter(pl.col("id") == agent_id).select(column)
+        res = self._data.filter(pl.col("id") == agent_id).select(column)
         if res.is_empty():
             raise KeyError(f"Agent {agent_id} not found")
         return res.item(0, 0)
 
     def set_agent_value(self, agent_id: int, column: str, value: Any):
-        """Sets a value for a single agent. Very slow if used in loops."""
-        # Determine Polars type from value
+        """Deprecated: use ``agent.<col> = value`` or ``agents.at[id].col = value``."""
+        warn_deprecated(
+            "Population.set_agent_value(...)",
+            "agent.<col> = value or agents.at[id].set(**cols)",
+        )
+        self._set_agent_value(agent_id, column, value)
+
+    def _set_agent_value(self, agent_id: int, column: str, value: Any) -> None:
+        """Internal single-cell write (no deprecation warning)."""
         if hasattr(value, 'dtype'):  # Handle numpy scalars
             if np.issubdtype(value.dtype, np.integer):
                 pl_type = pl.Int64
@@ -150,23 +185,32 @@ class Population:
                 pl_type = pl.Object
         else:
             pl_type = pl.Int64 if isinstance(value, int) else pl.Float64 if isinstance(value, float) else pl.Utf8 if isinstance(value, str) else pl.Object
-        
-        # Check if column exists, if not create it with correct type
-        if column not in self.data.columns:
-            self.data = self.data.with_columns(pl.lit(None).cast(pl_type).alias(column))
 
-        # Polars explicit update
-        self.data = self.data.with_columns(
+        if column not in self._data.columns:
+            self._data = self._data.with_columns(pl.lit(None).cast(pl_type).alias(column))
+
+        self._data = self._data.with_columns(
             pl.when(pl.col("id") == agent_id)
             .then(pl.lit(value))
             .otherwise(pl.col(column))
             .alias(column)
         )
-        
+
     def batch_update(self, updates: Dict[str, Union[np.ndarray, list]], selector: Optional[pl.Expr] = None):
-        """Updates columns for all agents (or a filtered subset)."""
+        """Deprecated: use ``agents.set(**cols)`` or ``agents.where(...).set(...)``."""
+        warn_deprecated(
+            "Population.batch_update(...)",
+            "agents.set(**cols) or agents.where(expr).set(**cols)",
+        )
+        self._batch_update(updates, selector)
+
+    def _batch_update(
+        self,
+        updates: Dict[str, Union[np.ndarray, list]],
+        selector: Optional[pl.Expr] = None,
+    ) -> None:
         if selector is None:
-            self.data = self.data.with_columns([
+            self._data = self._data.with_columns([
                 pl.Series(k, v) for k, v in updates.items()
             ])
         else:
@@ -178,15 +222,26 @@ class Population:
                     .otherwise(pl.col(col))
                     .alias(col)
                 )
-            self.data = self.data.with_columns(cols)
+            self._data = self._data.with_columns(cols)
 
     def batch_update_by_ids(self, ids: Union[list, np.ndarray], data: Dict[str, Union[list, np.ndarray, Any]]):
-        """Updates specific agents identified by IDs."""
+        """Deprecated: use ``agents.at[ids].set(**data)``."""
+        warn_deprecated(
+            "Population.batch_update_by_ids(...)",
+            "agents.at[ids].set(**cols)",
+        )
+        self._batch_update_by_ids(ids, data)
+
+    def _batch_update_by_ids(
+        self,
+        ids: Union[list, np.ndarray],
+        data: Dict[str, Union[list, np.ndarray, Any]],
+    ) -> None:
         id_series = pl.Series("id", ids)
         count = len(ids)
-        
+
         update_data = {"id": id_series}
-        
+
         for col, val in data.items():
             if isinstance(val, (list, np.ndarray)):
                 if len(val) != count:
@@ -194,11 +249,11 @@ class Population:
                 update_data[f"{col}_new"] = val
             else:
                 update_data[f"{col}_new"] = [val] * count
-                
+
         update_df = pl.DataFrame(update_data)
-        
-        self.data = self.data.join(update_df, on="id", how="left")
-        
+
+        self._data = self._data.join(update_df, on="id", how="left")
+
         cols = []
         for col in data.keys():
             new_col = f"{col}_new"
@@ -208,8 +263,8 @@ class Population:
                 .otherwise(pl.col(col))
                 .alias(col)
             )
-        
-        self.data = self.data.with_columns(cols).drop([f"{col}_new" for col in data.keys()])
+
+        self._data = self._data.with_columns(cols).drop([f"{col}_new" for col in data.keys()])
 
     def create_batch_context(self):
         """Legacy batched-update context manager.
@@ -262,4 +317,4 @@ class BatchUpdateContext:
                 vals.append(self.updates[aid].get(col, None))
             final_data[col] = vals
             
-        self.population.batch_update_by_ids(ids, final_data)
+        self.population._batch_update_by_ids(ids, final_data)

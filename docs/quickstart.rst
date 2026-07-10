@@ -18,6 +18,43 @@ On any view, ``view.col`` returns a Polars Series sourced from
 ``self.agents_df``, and ``view.col = value`` queues a columnar update that
 lands in the DataFrame on the next flush.
 
+Canonical verbs (learn these)
+-----------------------------
+
+Prefer this small surface; everything else is a legacy alias or an internal
+helper scheduled for removal in 1.0.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 38 40
+
+   * - Role
+     - Canonical
+     - Avoid / deprecated
+   * - Select
+     - ``agents`` / ``.where`` / ``.at``
+     - ``agents.select`` (use ``where`` / ``at`` / ``[mask]``)
+   * - Write
+     - ``view.col = …`` / ``view.set(…)``
+     - ``update_agent_data``, ``batch_update_agents``, ``Population.batch_*``
+   * - Accumulate
+     - ``view.scatter_add(…)``
+     - double-assigning the same cell/column in one step
+   * - Array kernels
+     - ``agents.borrow`` / ``agents.commit``
+     - maintaining a parallel NumPy buffer by hand
+   * - Create
+     - ``add_agents(n, **cols)``
+     - per-agent ``Agent`` + ``add_agent`` loops (unless you need OOP)
+   * - Metrics
+     - ``record_model`` / ``model_reporters``
+     - ``model.record`` (alias of ``record_model``)
+
+**Efficiency note.** Batch performance comes from using these verbs (one
+columnar write per step), not from extra public ``batch_*`` methods. Subset
+``set`` / ``scatter_add`` / tensor ``commit`` are the hot paths that stay
+optimized; aliases only forward to the same seams.
+
 Your first model
 ----------------
 

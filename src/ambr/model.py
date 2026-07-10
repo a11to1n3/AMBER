@@ -18,18 +18,20 @@ class Model(BaseModel):
 
     #: Declarative model-level metrics, evaluated once per step into the
     #: ``'model'`` results frame. Maps a column name to a ``callable(model)``,
-    #: the name of a model attribute/method, or a constant. Overridable per
-    #: subclass; complements imperative ``record_model``.
-    model_reporters: Dict[str, Any] = {}
+    #: the name of a model attribute/method, or a constant. Override on the
+    #: *subclass* (do not mutate this class attribute -- default is ``None``
+    #: to avoid shared mutable state). Complements imperative ``record_model``.
+    model_reporters: Optional[Dict[str, Any]] = None
     #: Declarative per-agent columns to snapshot each step into the (opt-in)
-    #: ``'agent_vars'`` long-format results frame. Empty by default (no cost).
-    agent_reporters: List[str] = []
+    #: ``'agent_vars'`` long-format results frame. Empty / ``None`` = no cost.
+    #: Override on the subclass; do not mutate the base attribute.
+    agent_reporters: Optional[List[str]] = None
     #: When True, capture a ``t=0`` row of the reporters before the first step.
     record_initial: bool = False
-    #: Optional typed parameter schema ``{'name': (type, default)}``. When set,
-    #: ``self.p.name`` is pre-coerced to ``type`` at init (missing -> default),
-    #: replacing scattered ``int(self.p.get('name', ...))`` boilerplate.
-    params: Dict[str, Any] = {}
+    #: Optional typed parameter schema ``{'name': (type, default)}``. When set
+    #: on the subclass, ``self.p.name`` is pre-coerced to ``type`` at init
+    #: (missing -> default). Default ``None`` avoids shared mutable state.
+    params: Optional[Dict[str, Any]] = None
 
     def __init__(self, parameters: Dict[str, Any]):
         """Initialize a new model.
@@ -113,7 +115,7 @@ class Model(BaseModel):
         columns are recorded as lane/view commits (``scatter_add`` deliberately
         omits this -- it is the sanctioned multi-write reducer).
         """
-        self.population.data = df
+        self.population.replace_frame(df)
         if written_columns is not None and self._contract.active:
             self._contract.record_commit(written_columns)
 
@@ -147,9 +149,9 @@ class Model(BaseModel):
             data_cols: Dict[str, list] = {'id': touched_ids}
             for col, id_to_val in pending.items():
                 data_cols[col] = [id_to_val.get(aid, None) for aid in touched_ids]
-            self.population.data = pl.DataFrame(
+            self.population.replace_frame(pl.DataFrame(
                 [pl.Series(k, v, strict=False) for k, v in data_cols.items()]
-            )
+            ))
             self._bump_id_version()
             return
 
@@ -172,7 +174,7 @@ class Model(BaseModel):
         update_df = pl.DataFrame(
             [pl.Series(k, v, strict=False) for k, v in update_cols.items()]
         )
-        self.population.data = df.update(update_df, on='id', how='left')
+        self.population.replace_frame(df.update(update_df, on='id', how='left'))
 
     # --- snapshot-view contract seams ---------------------------------------
 
@@ -191,16 +193,12 @@ class Model(BaseModel):
             ids = set()
         return schema, ids
 
-    def _contract_record_commit(self, columns) -> None:
-        """Record a vectorized lane/view commit of ``columns`` this step.
-
-        Called by the tensor lane and by ``_set_frame(..., written_columns=...)``
-        when the contract is active.
-        """
-        self._contract.record_commit(columns)
-
     def _contract_record_borrow(self, column: str) -> None:
-        """Record a lane borrow of ``column``; flag it if already committed."""
+        """Record a lane borrow of ``column``; flag it if already committed.
+
+        Commits go through :meth:`_set_frame` (``written_columns=``); only
+        borrows need this separate seam.
+        """
         self._contract.record_borrow(column)
 
     def setup(self): pass
@@ -235,7 +233,7 @@ class Model(BaseModel):
         constant. Runs before :meth:`update`, so an imperative ``record_model``
         of the same key wins.
         """
-        reporters = getattr(self, 'model_reporters', None)
+        reporters = type(self).model_reporters
         if not reporters:
             return
         for name, spec in reporters.items():
@@ -251,7 +249,7 @@ class Model(BaseModel):
 
     def _snapshot_agent_reporters(self) -> None:
         """Append a per-agent snapshot of ``agent_reporters`` columns (opt-in)."""
-        cols = getattr(self, 'agent_reporters', None)
+        cols = type(self).agent_reporters
         if not cols:
             return
         df = self.agents_df
@@ -357,7 +355,7 @@ class Model(BaseModel):
 
         self._ensure_setup()
 
-        if getattr(self, 'record_initial', False):
+        if self.record_initial:
             self._record_initial_state()
 
         # Use run_step() to execute exactly one model step per loop iteration.
@@ -376,16 +374,16 @@ class Model(BaseModel):
 
     # --- Helper methods ---
     def _print_start_info(self, max_steps):
-        print(f"🚀 Simulation: {self.__class__.__name__}")
-        print(f"⏱️  Steps: {max_steps:,}")
+        print(f"Simulation: {self.__class__.__name__}")
+        print(f"Steps: {max_steps:,}")
 
     def _print_end_info(self, start_time, max_steps):
         total_time = time.time() - start_time
-        print(f"\n✅ Done. Time: {timedelta(seconds=int(total_time))}")
+        print(f"\nDone. Time: {timedelta(seconds=int(total_time))}")
         if total_time > 0:
-            print(f"📈 Rate: {max_steps/total_time:.1f} steps/s")
+            print(f"Rate: {max_steps/total_time:.1f} steps/s")
         else:
-            print(f"📈 Rate: Inf steps/s")
+            print("Rate: Inf steps/s")
 
     def _collect_results(self, start_time, max_steps):
         if self._model_data:
@@ -416,7 +414,9 @@ class Model(BaseModel):
             
         results = {
             'info': {'steps': self.t, 'run_time': time.time() - start_time},
-            'agents': self.population.data,
+            # agents_df flushes the buffered write queue so OOP /
+            # update_agent_data writes land in the returned frame.
+            'agents': self.agents_df,
             'model': model_df
         }
         if self._contract.mode != "off":
@@ -503,22 +503,36 @@ class Model(BaseModel):
         return self.agents
 
     def get_agent_data(self, agent_id: Any) -> pl.DataFrame:
-        """Return a 1-row DataFrame with the current state of ``agent_id``."""
-        return self.population.data.filter(pl.col('id') == agent_id)
+        """Return a 1-row DataFrame with the current state of ``agent_id``.
+
+        Uses :attr:`agents_df` so pending buffered writes are flushed first.
+        """
+        return self.agents_df.filter(pl.col('id') == agent_id)
 
     def update_agent_data(self, agent_id: int, data: Dict[str, Any]):
-        """Update data for a single agent."""
-        for key, value in data.items():
-            self.population.set_agent_value(agent_id, key, value)
-        
-    def batch_update_agents(self, agent_ids: list, data: dict):
-        """Batch update multiple agents at once for better performance.
-        
-        Args:
-            agent_ids: List of agent IDs to update
-            data: Dictionary of column names and values (or lists of values)
+        """Deprecated: use ``agent.<col> = value`` or ``agents.at[id].set(...)``.
+
+        Still routes through :meth:`_queue_write` so the snapshot-view contract
+        can witness the writes.
         """
-        self.population.batch_update_by_ids(agent_ids, data)
+        warn_deprecated(
+            "Model.update_agent_data(...)",
+            "agent.<col> = value or agents.at[id].set(**cols)",
+        )
+        for key, value in data.items():
+            self._queue_write(key, agent_id, value)
+
+    def batch_update_agents(self, agent_ids: list, data: dict):
+        """Deprecated: use ``agents.at[ids].set(**data)`` (or column assign).
+
+        Still equivalent to ``self.agents.at[agent_ids].set(**data)`` so
+        multi-column updates stay atomic and contract-observed.
+        """
+        warn_deprecated(
+            "Model.batch_update_agents(...)",
+            "agents.at[ids].set(**cols) or agents.where(...).set(**cols)",
+        )
+        self.agents.at[agent_ids].set(**data)
 
     def _print_progress(self, current_step: int, total_steps: int, force: bool = False):
         pass
