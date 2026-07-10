@@ -28,8 +28,9 @@ Changed
 - Public package exports for ``ContractMonitor``, ``TensorLane``,
   ``borrow_numeric``, ``commit_columns``, and GPU helpers
   (``GPU_AVAILABLE``, ``get_array_module``, ``to_device``, ``to_host``).
-- Canonical-verb docs: select / write / scatter_add / borrow-commit surface;
-  extra ``batch_*`` aliases are not the performance path.
+- Canonical-verb docs: select / write / scatter_add / borrow-commit surface
+  (quickstart, sequences API, README); examples prefer ``agents.at[...].set``
+  over deprecated ``update_agent_data``.
 
 Deprecated
 ~~~~~~~~~~
