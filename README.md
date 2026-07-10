@@ -128,22 +128,27 @@ def step(self):
 ## 🧭 Canonical API (0.4)
 
 AMBER 0.4 settles on one obvious verb per task. The legacy spellings still work
-(they emit a `DeprecationWarning` and are scheduled for removal in 1.0); set
+(they emit a `DeprecationWarning` and are scheduled for removal in **1.0**); set
 `AMBER_SUPPRESS_DEPRECATIONS=1` to silence them in benchmark / reproducibility runs.
+Batch performance comes from these verbs (columnar writes), not from extra public
+`batch_*` helpers.
 
-| Task | Canonical | Legacy (deprecated) |
-|------|-----------|---------------------|
+| Task | Canonical | Legacy (deprecated → 1.0) |
+|------|-----------|---------------------------|
 | NumPy RNG | `self.rng` | `self.nprandom` |
 | Record a model metric | `model_reporters = {...}` or `record_model(k, v)` | `record(k, v)` |
 | Filter agents | `agents.where(expr)` / `agents[mask]` / `agents.at[ids]` | `agents.select(...)` |
-| Per-agent write | `agent.col = v` | `agent.record(...)`, `agent.update_data(...)` |
-| Bulk write | `agents.set(**cols)` | `agents.record(...)`, `agents.update_data(...)` |
+| Per-agent write | `agent.col = v` | `agent.record(...)`, `agent.update_data(...)`, `update_agent_data` |
+| Bulk / multi-column write | `agents.set(**cols)` or `view.col = …` | `agents.record` / `update_data`, `batch_update_agents`, `Population.batch_*` |
+| Accumulate (duplicate ids) | `agents.at[ids].scatter_add(...)` | double ordinary writes in one step |
+| Array kernels | `agents.borrow` / `agents.commit` (or `TensorLane`) | hand-maintained parallel NumPy buffers |
 | Read agent objects | iterate `model.agents`, `agents.by_id(i)` | `agents.agents`, `agents.agent_ids` |
-| Bulk numpy round-trip | `agents.numpy(...)` + `agents.set(...)` (or `borrow`/`commit`) | `.to_numpy()` + per-column assign |
+| Bulk numpy round-trip | `agents.numpy(...)` + `agents.set(...)` | `.to_numpy()` + per-column assign only |
 | Typed parameters | `params = {'n': (int, 200)}`, then `self.p.n` | `int(self.p.get('n', 200))` |
 | Grid wrap | `GridEnvironment(torus=True)` | `wrap=` / `.wrap` |
+| Agent table assign | view / `_set_frame` | `population.data = ...` (setter warns) |
 
-`update()` is now a **pure hook** — overriding it no longer requires
+`update()` is a **pure hook** — overriding it no longer requires
 `super().update()`. Declare `model_reporters` / `agent_reporters` for
 declarative metrics, and set `record_initial = True` to capture a `t=0` row.
 
@@ -161,9 +166,16 @@ for cert in results["contract"]:
 ```
 
 `check` records a `ContractCertificate` per step; `warn` also emits a warning per
-violation; `raise` stops on the first one (e.g. a same-step read-after-write, or a
-duplicate ordinary assignment that no snapshot rewrite can reproduce). Mode `off`
-(the default) adds zero overhead.
+violation; `raise` stops on the first error. Mode `off` (default) adds zero overhead.
+
+The monitor watches **two write paths** (and combinations):
+
+* **Buffered (OOP)** — `agent.col = …` / queued cell writes  
+* **Lane / view** — `agents.col = …`, `agents.set(...)`, `borrow`/`commit`  
+* **Cross-path** — same column via both OOP and view in one step → `cross_path_write`  
+
+`scatter_add` is the sanctioned multi-write reducer (not treated as a conflicting
+ordinary commit). Prefer those APIs over assigning `population.data` directly.
 
 ## 🎮 GPU backend & batched calibration
 

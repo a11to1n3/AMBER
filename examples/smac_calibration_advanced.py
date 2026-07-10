@@ -22,12 +22,11 @@ Requirements:
     ``GridEnvironment`` methods that no longer exist
     (``get_random_empty_cell``, ``add_agent_from_id``,
     ``get_empty_cells_in_radius``, ``get_agent_at_pos``,
-    ``remove_agent_from_pos``) and uses ``get_agent_data`` /
-    ``update_agent_data`` inside a per-agent loop. The Schelling-style
-    neighbourhood logic is a legitimate case for per-agent code (see
-    "When per-agent loops are OK" in the tutorial), but the underlying
-    GridEnvironment surface needs the missing methods back before this
-    example can be rewritten cleanly. Tracked as a follow-up; use
+    ``remove_agent_from_pos``). Writes below use the canonical view path
+    (``agents.at[id].set(...)``), not deprecated ``update_agent_data``.
+    Schelling-style neighbourhood logic is a legitimate per-agent case
+    (see "When per-agent loops are OK" in the tutorial), but the grid
+    helpers need restoring before this example runs cleanly. Use
     ``smac_calibration_basic.py`` for the vectorized reference instead.
 """
 
@@ -134,14 +133,14 @@ class SegregationModel(am.Model):
             
             # Calculate satisfaction
             satisfaction = self.calculate_satisfaction(agent_id, pos)
-            
-            # Update agent satisfaction
-            self.update_agent_data(agent_id, {'satisfaction': satisfaction})
-            
+
+            # Canonical multi-column write (contract-observed; not update_agent_data)
+            self.agents.at[agent_id].set(satisfaction=satisfaction)
+
             # Decide whether to move
             tolerance = agent_data['tolerance'].item()
             mobility = agent_data['mobility'].item()
-            
+
             if satisfaction < tolerance and self.rng.random() < mobility:
                 # Try to move to a better location
                 new_pos = self.find_better_location(agent_id, pos)
@@ -149,13 +148,12 @@ class SegregationModel(am.Model):
                     # Execute move
                     self.env.remove_agent_from_pos(pos)
                     self.env.add_agent_from_id(agent_id, new_pos)
-                    
-                    # Update agent data
+
                     current_moves = agent_data['moves'].item()
-                    self.update_agent_data(agent_id, {
-                        'pos': str(new_pos),
-                        'moves': current_moves + 1
-                    })
+                    self.agents.at[agent_id].set(
+                        pos=str(new_pos),
+                        moves=current_moves + 1,
+                    )
     
     def calculate_satisfaction(self, agent_id: int, pos: Tuple[int, int]) -> float:
         """Calculate agent satisfaction based on neighborhood composition."""

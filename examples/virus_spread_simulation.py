@@ -206,12 +206,12 @@ class VirusSpreadModel(am.Model):
             agent.interact()
             agent.update_health()
         
-        # Batch update changed agents
+        # Append step snapshots for agents that changed (history table style).
         if self._agents_to_update:
-            self._batch_update_agents()
+            self._append_agent_snapshots()
 
-    def _batch_update_agents(self):
-        """Efficiently batch update agent data."""
+    def _append_agent_snapshots(self):
+        """Append current state rows for agents touched this step."""
         agent_data = [{
             'id': int(agent_id),
             'step': int(self.t),
@@ -220,7 +220,7 @@ class VirusSpreadModel(am.Model):
             'y': float(self.agent_objects[agent_id].y),
             'infection_time': int(self.agent_objects[agent_id].infection_time)
         } for agent_id in self._agents_to_update]
-        
+
         if agent_data:
             new_data = pl.DataFrame(agent_data)
             self.agents_df = pl.concat([self.agents_df, new_data])

@@ -26,9 +26,10 @@
 - Public package exports for `ContractMonitor`, `TensorLane`, `borrow_numeric`,
   `commit_columns`, and GPU helpers (`GPU_AVAILABLE`, `get_array_module`,
   `to_device`, `to_host`).
-- **Canonical-verb docs.** Quickstart / sequences API document the small
-  select → write → scatter_add → borrow/commit surface; extra batch aliases
-  are not the performance path.
+- **Canonical-verb docs.** Quickstart / sequences API / README document the
+  small select → write → scatter_add → borrow/commit surface; extra batch
+  aliases are not the performance path. Examples prefer `agents.at[...].set`
+  over deprecated `update_agent_data`.
 
 ### Deprecated
 
