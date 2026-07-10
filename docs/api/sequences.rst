@@ -7,8 +7,18 @@ The ``sequences`` module defines AMBER's vectorized view API. The full
 population lives at ``model.agents``; filtered and scatter views are
 produced by ``where`` / indexing / ``at[...]``. All three view types share
 the same attribute/assignment protocol — column reads return Polars Series
-sourced from ``model.agents_df``, and column writes queue through the
-batched flush path.
+sourced from ``model.agents_df``, and column writes go through
+``Model._set_frame`` (contract-observed when enabled).
+
+Canonical operations on a view:
+
+* **Read** — ``view.col``, ``view.numpy('x', 'y')``, ``view.frame`` / ``view.ids``
+* **Write** — ``view.col = values``, ``view.set(x=…, y=…)`` (atomic multi-column)
+* **Reduce** — ``view.scatter_add(col=delta)`` (duplicate ids sum)
+* **Tensor** — ``view.borrow(col)`` / ``view.commit(**cols)``
+
+Prefer these over ``Model.update_agent_data`` / ``batch_update_agents`` and
+``Population.set_agent_value`` / ``batch_update*`` (deprecated aliases).
 
 AgentList
 ---------

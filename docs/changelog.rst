@@ -19,11 +19,27 @@ Changed
   double commits on the view path are visible under
   ``contract="check"|"warn"|"raise"``. ``scatter_add`` remains the sanctioned
   multi-write reducer (not counted as ordinary multi-write).
-- ``Environment.df`` routes through a real ``Model._set_frame`` when available;
-  deprecated ``Agent.record`` / ``update_data`` go through ``__setattr__``.
+- Cross-path detection: same-step OOP + lane/view writes on one column raise
+  ``cross_path_write``.
+- Atomic ``agents.set`` (one frame update, one commit per column); safer
+  ``None`` defaults for ``model_reporters`` / ``agent_reporters`` / ``params``.
+- ``update_agent_data`` / ``batch_update_agents`` use the buffered and view
+  write seams; ``Environment.df`` uses real ``Model._set_frame`` when available.
 - Public package exports for ``ContractMonitor``, ``TensorLane``,
   ``borrow_numeric``, ``commit_columns``, and GPU helpers
   (``GPU_AVAILABLE``, ``get_array_module``, ``to_device``, ``to_host``).
+- Canonical-verb docs: select / write / scatter_add / borrow-commit surface
+  (quickstart, sequences API, README); examples prefer ``agents.at[...].set``
+  over deprecated ``update_agent_data``.
+
+Deprecated
+~~~~~~~~~~
+- ``Model.update_agent_data`` → ``agent.<col> = value`` / ``agents.at[id].set``
+- ``Model.batch_update_agents`` → ``agents.at[ids].set``
+- ``Population.set_agent_value`` / ``batch_update`` / ``batch_update_by_ids``
+  → view ``set`` / column assign (until 1.0)
+- Assigning ``Population.data = ...`` → view write path (setter warns;
+  internal ``replace_frame`` is the quiet Model seam)
 
 [0.4.0] - 2026-06-27
 --------------------

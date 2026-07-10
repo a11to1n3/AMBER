@@ -125,6 +125,11 @@ class TensorLane:
     :meth:`write_result` to attach a derived 1-D column (e.g. an interaction
     output) without disturbing the pack.
 
+    Install the lane in ``setup`` (or before ``run``), not mid-``step``: packing
+    folds named columns into an ``Array`` column and will show up as a schema
+    mutation under ``contract="check"``. Call :meth:`unpack` after the run if
+    you need the named columns back for reporting.
+
     The backing strategy is chosen by the capability probe, not by version:
 
     * ``"array"``  -- the F columns are folded into one ``Array(F)`` column;
