@@ -1,19 +1,15 @@
-from typing import Any, Dict, List, Type, Optional
+from typing import Any, Dict, List, Type, Optional, Set, Tuple
 import polars as pl
-import random
 import warnings
 import numpy as np
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from .base import BaseModel
 from .population import Population
 from ._deprecation import warn_deprecated
 from .contract import (
-    CONTRACT_MODES,
-    SEVERITY_ERROR,
-    SEVERITY_WARNING,
     ContractCertificate,
-    ContractViolation,
+    ContractMonitor,
     ContractViolationError,
 )
 
@@ -51,25 +47,9 @@ class Model(BaseModel):
         # it to invalidate cached id→row-position lookups.
         self._id_version: int = 0
 
-        # --- snapshot-view contract conformance checking (see contract.py) ---
-        # Mode is one of CONTRACT_MODES; 'off' adds zero per-write overhead.
-        self._contract_mode: str = "off"
-        self.contract_certificates: List[ContractCertificate] = []
-        # Active only while a step body runs under a non-'off' mode.
-        self._contract_active: bool = False
-        # Per-step bookkeeping for duplicate-write detection on the buffered
-        # (OOP) write path, plus the step-entry snapshot for lifecycle diffing.
-        self._contract_write_counts: Dict[Any, int] = {}
-        self._contract_dup_cells: set = set()
-        self._contract_entry_schema: Optional[Dict[str, str]] = None
-        self._contract_entry_ids: Optional[set] = None
-        # Per-step bookkeeping for the vectorized lane/view write path
-        # (``population.data = df.with_columns(...)``), which bypasses
-        # ``_queue_write``. The tensor lane reports its commits/borrows here so
-        # duplicate commits and read-after-write are visible to the contract.
-        self._contract_commit_counts: Dict[str, int] = {}
-        self._contract_committed: set = set()
-        self._contract_raw_cols: set = set()
+        # Snapshot-view contract monitor (see contract.py). Mode 'off' adds
+        # zero per-write overhead.
+        self._contract = ContractMonitor()
 
         super().__init__(parameters)  # sets self.random / self.rng / self.nprandom
         self.t = 0
@@ -81,7 +61,29 @@ class Model(BaseModel):
 
         from .sequences import AgentList
         self.agents = AgentList(self, [])
-    
+
+    # --- public contract surface (stable for tests / callers) ---------------
+
+    @property
+    def _contract_mode(self) -> str:
+        return self._contract.mode
+
+    @_contract_mode.setter
+    def _contract_mode(self, value: str) -> None:
+        self._contract.mode = value
+
+    @property
+    def contract_certificates(self) -> List[ContractCertificate]:
+        return self._contract.certificates
+
+    @contract_certificates.setter
+    def contract_certificates(self, value: List[ContractCertificate]) -> None:
+        self._contract.certificates = value
+
+    @property
+    def _contract_active(self) -> bool:
+        return self._contract.active
+
     @property
     def agents_df(self) -> pl.DataFrame:
         self._flush_pending_writes()
@@ -93,7 +95,12 @@ class Model(BaseModel):
         self._set_frame(value)
         self._bump_id_version()
 
-    def _set_frame(self, df: pl.DataFrame) -> None:
+    def _set_frame(
+        self,
+        df: pl.DataFrame,
+        *,
+        written_columns: Optional[List[str]] = None,
+    ) -> None:
         """Internal single write seam for the agent table.
 
         All columnar writes (the view API in ``sequences.py`` and the tensor
@@ -101,27 +108,28 @@ class Model(BaseModel):
         the backing store stays encapsulated. Does not bump the id-version
         (column-value writes keep the id set stable); callers that change the
         id set (e.g. the ``agents_df`` setter, ``add_agents``) bump explicitly.
+
+        When ``written_columns`` is provided and the contract is active, those
+        columns are recorded as lane/view commits (``scatter_add`` deliberately
+        omits this -- it is the sanctioned multi-write reducer).
         """
         self.population.data = df
+        if written_columns is not None and self._contract.active:
+            self._contract.record_commit(written_columns)
 
     def _queue_write(self, column: str, agent_id: Any, value: Any) -> None:
         self._pending_writes.setdefault(column, {})[agent_id] = value
         # Contract: count ordinary writes per (column, id) within a step so a
         # second write to an already-written cell (which the buffer would
         # silently clobber) is detectable as a partial-map conflict.
-        if self._contract_active:
-            key = (column, agent_id)
-            count = self._contract_write_counts.get(key, 0) + 1
-            self._contract_write_counts[key] = count
-            if count == 2:
-                self._contract_dup_cells.add(key)
+        self._contract.record_buffered_write(column, agent_id)
 
     def _bump_id_version(self) -> None:
         self._id_version += 1
 
     def _flush_pending_writes(self) -> None:
-        """Apply all queued ``Agent.record()`` / ``update_data()`` writes
-        as a single ``df.update(on='id')`` hash join."""
+        """Apply all queued ``Agent`` attribute writes as a single
+        ``df.update(on='id')`` hash join."""
         if not self._pending_writes:
             return
         # Clear before the write so an exception can't leave a stale buffer
@@ -166,9 +174,9 @@ class Model(BaseModel):
         )
         self.population.data = df.update(update_df, on='id', how='left')
 
-    # --- snapshot-view contract conformance checking ------------------------
+    # --- snapshot-view contract seams ---------------------------------------
 
-    def _contract_snapshot(self):
+    def _contract_snapshot(self) -> Tuple[Dict[str, str], Set[Any]]:
         """Return ({column: dtype-str}, id-set) of the committed population.
 
         The schema carries dtypes (not just names) so that a mid-step dtype
@@ -183,126 +191,17 @@ class Model(BaseModel):
             ids = set()
         return schema, ids
 
-    def _contract_begin_step(self) -> None:
-        """Snapshot pre-step structure and arm per-write duplicate tracking."""
-        self._contract_entry_schema, self._contract_entry_ids = self._contract_snapshot()
-        self._contract_write_counts = {}
-        self._contract_dup_cells = set()
-        self._contract_commit_counts = {}
-        self._contract_committed = set()
-        self._contract_raw_cols = set()
-        self._contract_active = True
-
     def _contract_record_commit(self, columns) -> None:
         """Record a vectorized lane/view commit of ``columns`` this step.
 
-        Called by the tensor lane (``commit_columns`` / ``TensorLane.commit`` /
-        ``write_result``) when the contract is active, so the conformance check
-        can witness writes that bypass the ``_queue_write`` seam.
+        Called by the tensor lane and by ``_set_frame(..., written_columns=...)``
+        when the contract is active.
         """
-        if not self._contract_active:
-            return
-        for c in columns:
-            self._contract_commit_counts[c] = self._contract_commit_counts.get(c, 0) + 1
-            self._contract_committed.add(c)
+        self._contract.record_commit(columns)
 
     def _contract_record_borrow(self, column: str) -> None:
         """Record a lane borrow of ``column``; flag it if already committed."""
-        if not self._contract_active:
-            return
-        if column in self._contract_committed:
-            self._contract_raw_cols.add(column)
-
-    def _contract_end_step(self, cert: "ContractCertificate") -> None:
-        """Finalise ``cert`` by comparing the committed end-of-step state to
-        the step-entry snapshot and folding in any duplicate-write findings."""
-        self._contract_active = False
-        exit_schema, exit_ids = self._contract_snapshot()
-
-        # (1) Duplicate unreduced writes on the buffered (OOP) path.
-        if self._contract_dup_cells:
-            cols = sorted({c for c, _ in self._contract_dup_cells})
-            ids = sorted({i for _, i in self._contract_dup_cells})
-            cert.add(ContractViolation(
-                "duplicate_write",
-                f"{len(self._contract_dup_cells)} (column, id) cell(s) received more "
-                f"than one ordinary write within the step; under simultaneous "
-                f"activation the later write clobbers the earlier (partial-map "
-                f"conflict). Use agents.at[ids].scatter_add(...) to accumulate.",
-                severity=SEVERITY_ERROR,
-                columns=cols,
-                ids=ids,
-            ))
-
-        # (2) Schema mutation across the step (names added/removed or dtype drift).
-        if self._contract_entry_schema is not None:
-            entry = self._contract_entry_schema
-            added = set(exit_schema) - set(entry)
-            removed = set(entry) - set(exit_schema)
-            retyped = sorted(
-                c for c in (set(entry) & set(exit_schema)) if entry[c] != exit_schema[c]
-            )
-            if removed:
-                cert.add(ContractViolation(
-                    "schema_mutation",
-                    f"column(s) removed mid-step ({sorted(removed)}); reads issued "
-                    f"during the step may reference a column that no longer exists.",
-                    severity=SEVERITY_ERROR,
-                    columns=sorted(removed),
-                ))
-            if retyped:
-                cert.add(ContractViolation(
-                    "schema_mutation",
-                    f"column dtype(s) changed mid-step "
-                    f"({[(c, entry[c], exit_schema[c]) for c in retyped]}); a write "
-                    f"silently altered a column's type, breaking schema stability.",
-                    severity=SEVERITY_ERROR,
-                    columns=retyped,
-                ))
-            if added:
-                cert.add(ContractViolation(
-                    "schema_mutation",
-                    f"column(s) added mid-step ({sorted(added)}); a vectorized read "
-                    f"of these earlier in the step would see no stable snapshot.",
-                    severity=SEVERITY_WARNING,
-                    columns=sorted(added),
-                ))
-
-        # (2b) Vectorized lane/view conflicts (writes that bypass _queue_write).
-        dup_commits = sorted(c for c, n in self._contract_commit_counts.items() if n > 1)
-        if dup_commits:
-            cert.add(ContractViolation(
-                "duplicate_write",
-                f"column(s) {dup_commits} were committed more than once within the "
-                f"step via the lane/view path; the later commit clobbers the earlier "
-                f"under simultaneous activation. Commit each column exactly once.",
-                severity=SEVERITY_ERROR,
-                columns=dup_commits,
-            ))
-        if self._contract_raw_cols:
-            raw = sorted(self._contract_raw_cols)
-            cert.add(ContractViolation(
-                "read_after_write",
-                f"column(s) {raw} were borrowed after being committed within the same "
-                f"step; a snapshot rule must read step-entry state, not post-write "
-                f"state. Borrow all inputs before committing any output.",
-                severity=SEVERITY_ERROR,
-                columns=raw,
-            ))
-
-        # (3) Population mutation (births/deaths) across the step.
-        if self._contract_entry_ids is not None:
-            born = exit_ids - self._contract_entry_ids
-            died = self._contract_entry_ids - exit_ids
-            if born or died:
-                cert.add(ContractViolation(
-                    "population_mutation",
-                    f"agent population changed mid-step (added={len(born)}, "
-                    f"removed={len(died)}); verify lifecycle rules read the "
-                    f"step-entry snapshot rather than partially-updated state.",
-                    severity=SEVERITY_WARNING,
-                    ids=sorted(born | died),
-                ))
+        self._contract.record_borrow(column)
 
     def setup(self): pass
     def step(self): pass
@@ -405,27 +304,26 @@ class Model(BaseModel):
         is appended to ``self.contract_certificates``.
         """
         self._ensure_setup()
-        if self._contract_mode == "off":
+        mon = self._contract
+        if mon.mode == "off":
             self.step()
             self._advance_and_record()
             return
 
-        cert = ContractCertificate(self.t)
-        self._contract_begin_step()
+        mon.begin_step(self._contract_snapshot())
         try:
             self.step()
         finally:
-            self._contract_end_step(cert)
-        self.contract_certificates.append(cert)
+            cert = mon.end_step(self.t, self._contract_snapshot())
 
-        if self._contract_mode == "warn":
+        if mon.mode == "warn":
             for v in cert.violations:
                 warnings.warn(
                     f"[step {cert.step}] {v.kind}: {v.detail}",
                     UserWarning,
                     stacklevel=2,
                 )
-        elif self._contract_mode == "raise" and not cert.ok:
+        elif mon.mode == "raise" and not cert.ok:
             raise ContractViolationError(cert)
 
         self._advance_and_record()
@@ -447,13 +345,7 @@ class Model(BaseModel):
                 ``'raise'`` (raise :class:`~ambr.contract.ContractViolationError`
                 on the first step with an error-severity violation).
         """
-        if contract not in CONTRACT_MODES:
-            raise ValueError(
-                f"contract must be one of {CONTRACT_MODES}, got {contract!r}"
-            )
-        self._contract_mode = contract
-        if contract != "off":
-            self.contract_certificates = []
+        self._contract.reset_run(contract)
 
         start_time = time.time()
         max_steps = steps if steps is not None else self.p.get('steps', 100)
@@ -527,9 +419,9 @@ class Model(BaseModel):
             'agents': self.population.data,
             'model': model_df
         }
-        if self._contract_mode != "off":
-            results['contract'] = self.contract_certificates
-        if getattr(self, '_agent_vars', None):
+        if self._contract.mode != "off":
+            results['contract'] = self._contract.certificates
+        if self._agent_vars:
             results['agent_vars'] = pl.concat(self._agent_vars, how='vertical_relaxed')
         return results
 

@@ -37,7 +37,7 @@ Polars version. Zero-copy is an optimisation that is *measured at runtime* (via
 -- have been stable across the Polars 0.20 -> 1.x line.
 """
 
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import polars as pl
@@ -74,6 +74,30 @@ ARRAY_BACKING_AVAILABLE: bool = _probe_array_backing()
 SINGLE_COL_ZERO_COPY: bool = _probe_single_col_zero_copy()
 
 
+def _series_as_readonly(col: pl.Series) -> Tuple[np.ndarray, bool]:
+    """Convert a Polars series to a read-only NumPy array, measuring zero-copy.
+
+    Rechunks locally when needed so a contiguous view is possible; never mutates
+    the model. The array is **always** marked read-only.
+    """
+    if col.n_chunks() > 1:
+        # A chunked column has no single contiguous view; rechunk into a local
+        # (the returned array pins this buffer). We deliberately do NOT persist
+        # the rechunk -- a "borrow" must not mutate the model.
+        col = col.rechunk()
+    arr = col.to_numpy()
+    is_view = bool(np.shares_memory(arr, col.to_numpy()))
+    arr.flags.writeable = False
+    return arr, is_view
+
+
+def _maybe_record_borrow(model, column: str) -> None:
+    if getattr(model, "_contract_active", False):
+        record = getattr(model, "_contract_record_borrow", None)
+        if record is not None:
+            record(column)
+
+
 def borrow_numeric(model, column: str) -> Tuple[np.ndarray, bool]:
     """Borrow a single numeric column as a 1-D array (read-only).
 
@@ -88,19 +112,9 @@ def borrow_numeric(model, column: str) -> Tuple[np.ndarray, bool]:
     any write) on this column rebinds the Polars buffer and leaves this array
     reading the old one. Borrow all inputs first, compute, then commit.
     """
-    if getattr(model, "_contract_active", False):
-        model._contract_record_borrow(column)
+    _maybe_record_borrow(model, column)
     df = model.agents_df  # flushes pending writes; single source of truth
-    col = df.get_column(column)
-    if col.n_chunks() > 1:
-        # A chunked column has no single contiguous view; rechunk into a local
-        # (the returned array pins this buffer). We deliberately do NOT persist
-        # the rechunk -- a "borrow" must not mutate the model.
-        col = col.rechunk()
-    arr = col.to_numpy()
-    is_view = bool(np.shares_memory(arr, col.to_numpy()))
-    arr.flags.writeable = False
-    return arr, is_view
+    return _series_as_readonly(df.get_column(column))
 
 
 class TensorLane:
@@ -180,18 +194,11 @@ class TensorLane:
 
     def borrow(self) -> Tuple[np.ndarray, bool]:
         """Return ``(arr, is_view)`` for the packed ``(N, F)`` tensor (read-only)."""
-        if getattr(self.model, "_contract_active", False):
-            for c in self.columns:
-                self.model._contract_record_borrow(c)
+        for c in self.columns:
+            _maybe_record_borrow(self.model, c)
         df = self._df()
         if self._mode == "array":
-            col = df.get_column(self._packed_name)
-            if col.n_chunks() > 1:
-                col = col.rechunk()  # local; do not persist (a borrow must not mutate)
-            arr = col.to_numpy()
-            is_view = bool(np.shares_memory(arr, col.to_numpy()))
-            arr.flags.writeable = False
-            return arr, is_view
+            return _series_as_readonly(df.get_column(self._packed_name))
         # stacked fallback: always a correct (N, F) copy, marked read-only
         arr = np.ascontiguousarray(df.select(self.columns).to_numpy(), dtype=self.dtype)
         arr.flags.writeable = False
@@ -200,29 +207,31 @@ class TensorLane:
     def commit(self, arr: np.ndarray) -> None:
         """Write a full ``(N, F)`` result back into the model's DataFrame."""
         arr = np.asarray(arr)
-        if arr.shape[1] != self.F:
+        if arr.ndim != 2 or arr.shape[1] != self.F:
             raise ValueError(f"expected (N, {self.F}) array, got {arr.shape}")
         df = self._df()
         if self._mode == "array":
-            self.model._set_frame(df.with_columns(
-                pl.Series(self._packed_name, np.ascontiguousarray(arr, dtype=self.dtype))
-            ))
+            self.model._set_frame(
+                df.with_columns(
+                    pl.Series(
+                        self._packed_name,
+                        np.ascontiguousarray(arr, dtype=self.dtype),
+                    )
+                ),
+                written_columns=list(self.columns),
+            )
         else:
             cols = [
                 _cast_to_existing(df, pl.Series(name, arr[:, i]), name)
                 for i, name in enumerate(self.columns)
             ]
-            self.model._set_frame(df.with_columns(cols))
-        if getattr(self.model, "_contract_active", False):
-            self.model._contract_record_commit(self.columns)
+            self.model._set_frame(df.with_columns(cols), written_columns=list(self.columns))
 
     def write_result(self, name: str, values) -> None:
         """Attach a derived 1-D column (e.g. an interaction output)."""
         df = self._df()
         series = _cast_to_existing(df, pl.Series(name, np.asarray(values)), name)
-        self.model._set_frame(df.with_columns(series))
-        if getattr(self.model, "_contract_active", False):
-            self.model._contract_record_commit([name])
+        self.model._set_frame(df.with_columns(series), written_columns=[name])
 
 
 def _cast_to_existing(df: pl.DataFrame, series: pl.Series, name: str) -> pl.Series:
@@ -242,15 +251,13 @@ def commit_columns(model, **columns) -> None:
     is never silently re-typed. Pre-declare these columns in ``setup`` so the
     contract certificate stays clean.
 
-    Note: this writes via ``population.data = df.with_columns(...)`` (the
-    vectorized lane path). When the contract is active the commit is reported
-    to the model so duplicate same-step commits of a column are flagged.
+    Writes go through ``model._set_frame`` so the snapshot-view contract can
+    witness the commit and flag same-step duplicate commits of a column.
     """
     df = model.agents_df
+    names = list(columns)
     series = [
         _cast_to_existing(df, pl.Series(name, np.asarray(v)), name)
         for name, v in columns.items()
     ]
-    model._set_frame(df.with_columns(series))
-    if getattr(model, "_contract_active", False):
-        model._contract_record_commit(columns.keys())
+    model._set_frame(df.with_columns(series), written_columns=names)
