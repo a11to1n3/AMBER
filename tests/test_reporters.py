@@ -78,6 +78,24 @@ def test_record_initial_adds_t0_row():
     assert md["mean_x"].to_list() == [1.5, 2.5, 3.5]
 
 
+def test_model_reporters_default_is_not_shared_mutable():
+    """Base Model.model_reporters must not be a shared {} (classic class-attr leak)."""
+    assert am.Model.model_reporters is None
+    assert am.Model.agent_reporters is None
+    assert am.Model.params is None
+
+    class A(am.Model):
+        model_reporters = {"n": lambda m: 0}
+
+    class B(am.Model):
+        pass
+
+    A.model_reporters["leaked"] = lambda m: 1
+    assert "leaked" not in (B.model_reporters or {})
+    assert am.Model.model_reporters is None
+    del A.model_reporters["leaked"]
+
+
 def test_agent_reporters_long_frame():
     class M(am.Model):
         agent_reporters = ["x"]

@@ -174,6 +174,43 @@ def test_view_path_double_commit_is_detected():
     assert "lane/view" in dup.detail
 
 
+class CrossPathModel(am.Model):
+    """Buffered OOP write then whole-column view write on the same column."""
+
+    def setup(self):
+        self.add_agents(3, agent_class=_Walker)
+
+    def step(self):
+        for a in self.agents:
+            a.x = a.x + 1  # buffered path
+        self.agents.x = self.agents.x + 10  # lane/view path
+
+
+def test_cross_path_write_is_detected():
+    res = CrossPathModel(_params(steps=1)).run(contract="check")
+    cert = res["contract"][0]
+    assert not cert.ok
+    cross = next(v for v in cert.violations if v.kind == "cross_path_write")
+    assert "x" in cross.columns
+    assert cross.severity == "error"
+
+
+def test_agents_set_is_atomic_single_commit_per_column():
+    """One agents.set(...) must not flag duplicate_write for multi-column."""
+
+    class M(am.Model):
+        def setup(self):
+            self.add_agents(4, x=np.zeros(4), y=np.zeros(4))
+
+        def step(self):
+            self.agents.set(x=self.agents.x + 1, y=self.agents.y + 1)
+
+    res = M(_params(steps=3)).run(contract="check")
+    assert all(c.clean for c in res["contract"])
+    assert res["agents"]["x"].to_list() == [3, 3, 3, 3]
+    assert res["agents"]["y"].to_list() == [3, 3, 3, 3]
+
+
 def test_raise_mode_raises_on_duplicate_write():
     m = DuplicateWriteModel(_params(steps=5))
     with pytest.raises(ContractViolationError) as exc:
