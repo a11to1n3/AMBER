@@ -6,6 +6,25 @@ All notable changes to AMBER will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[Unreleased]
+------------
+
+Changed
+~~~~~~~
+- Contract monitor extraction: runtime snapshot-view bookkeeping moved from
+  ``Model`` into ``ambr.contract.ContractMonitor`` (``Model`` keeps
+  ``contract_certificates`` / ``_contract_mode`` for callers).
+- Unified write/contract seam: whole-column view writes and tensor-lane commits
+  report through ``Model._set_frame(..., written_columns=...)``, so same-step
+  double commits on the view path are visible under
+  ``contract="check"|"warn"|"raise"``. ``scatter_add`` remains the sanctioned
+  multi-write reducer (not counted as ordinary multi-write).
+- ``Environment.df`` routes through a real ``Model._set_frame`` when available;
+  deprecated ``Agent.record`` / ``update_data`` go through ``__setattr__``.
+- Public package exports for ``ContractMonitor``, ``TensorLane``,
+  ``borrow_numeric``, ``commit_columns``, and GPU helpers
+  (``GPU_AVAILABLE``, ``get_array_module``, ``to_device``, ``to_host``).
+
 [0.4.0] - 2026-06-27
 --------------------
 
