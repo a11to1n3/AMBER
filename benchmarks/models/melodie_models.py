@@ -27,10 +27,10 @@ class WealthModel(Melodie.Model):
     def run(self):
         for _ in range(self.scenario.periods):
             self.step()
-            
+
     def step(self):
         agents = self.agent_list
-        # Vectorized-style logic isn't default in Melodie loops, 
+        # Vectorized-style logic isn't default in Melodie loops,
         # so we use standard Python loops as per Melodie examples
         for agent in agents:
             if agent.wealth > 0:
@@ -109,11 +109,11 @@ class SIRModel(Melodie.Model):
         for agent in self.agent_list:
             agent.x = np.clip(agent.x + np.random.uniform(-2.0, 2.0), 0, 100)
             agent.y = np.clip(agent.y + np.random.uniform(-2.0, 2.0), 0, 100)
-            
+
         # Infection (O(N^2) naive)
         infected = [a for a in self.agent_list if a.status == 1]
         susceptible = [a for a in self.agent_list if a.status == 0]
-        
+
         for inf in infected:
             for sus in susceptible:
                 dist = np.sqrt((inf.x - sus.x)**2 + (inf.y - sus.y)**2)
@@ -121,7 +121,7 @@ class SIRModel(Melodie.Model):
                     if np.random.random() < self.transmission_rate:
                         sus.status = 1
                         sus.infection_time = 0
-                        
+
             inf.infection_time += 1
             if inf.infection_time >= self.recovery_time:
                 inf.status = 2
@@ -198,7 +198,7 @@ class SchellingScenario(Melodie.Scenario):
 def run_benchmark(model_cls, scenario_cls, agent_counts, steps=100):
     results = {}
     print(f"\nBenchmarking {model_cls.__name__}...")
-    
+
     # Melodie requires config
     config = Melodie.Config(
         project_name='MelodieBenchmark',
@@ -207,61 +207,61 @@ def run_benchmark(model_cls, scenario_cls, agent_counts, steps=100):
         output_folder='.',
         input_folder='.',
     )
-    
+
     for n in agent_counts:
         # Cleanup
         if os.path.exists('MelodieBenchmark.sqlite'):
             os.remove('MelodieBenchmark.sqlite')
-            
+
         # Init model
         scenario = scenario_cls()
         scenario.manager = None # Hack to bypass manager check if needed
         scenario.periods = steps
         scenario.agent_num = n
         scenario.id = 0
-        
+
         model = model_cls(config, scenario)
         model.setup()
-        
+
         # Manually add agents
         for i in range(n):
             agent = model.agent_list.add()
             agent.id = i
             agent.setup()
-            
+
         # Init agent properties
         for i in range(n):
             agent = model.agent_list[i]
             agent.id = i
             if hasattr(agent, 'wealth'): agent.wealth = 1
-            if hasattr(agent, 'x'): 
+            if hasattr(agent, 'x'):
                 agent.x = np.random.uniform(0, 100)
                 agent.y = np.random.uniform(0, 100)
             if hasattr(agent, 'status'):
                 agent.status = 1 if i < 5 else 0
-        
+
         # Run
         start_time = time.time()
         model.run()
         end_time = time.time()
-        
+
         elapsed = end_time - start_time
         print(f"  {n} agents: {elapsed:.3f}s")
         results[n] = elapsed
-        
+
     return results
 
 if __name__ == "__main__":
     counts = [100, 500, 1000, 5000]
-    
+
     print("Melodie Benchmark")
     print("="*50)
-    
+
     # 1. Wealth
     run_benchmark(WealthModel, WealthScenario, counts)
-    
+
     # 2. Random Walk
     run_benchmark(WalkModel, WalkScenario, counts)
-    
+
     # 3. SIR
     run_benchmark(SIRModel, SIRScenario, counts)

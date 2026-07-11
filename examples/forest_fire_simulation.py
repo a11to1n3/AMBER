@@ -37,19 +37,19 @@ The forest fire model consists of:
 
 class TreeAgent(am.Agent):
     """A tree agent that can be alive, burning, or burned."""
-    
+
     def __init__(self, model, agent_id):
         super().__init__(model, agent_id)
         self.condition = 0  # 0: Alive, 1: Burning, 2: Burned
         self.position = None
-    
+
     def setup(self):
         pass
 
 class ForestModel(am.Model):
-    
+
     def setup(self):
-        
+
         # Initialize DataFrame with correct columns for forest model
         self.agents_df = pl.DataFrame({
             'id': pl.Series([], dtype=pl.Int64),
@@ -58,36 +58,36 @@ class ForestModel(am.Model):
             'x': pl.Series([], dtype=pl.Int64),
             'y': pl.Series([], dtype=pl.Int64)
         })
-        
-        # Create agents (trees) 
+
+        # Create agents (trees)
         tree_density = self.p['tree_density'] / 100.0 if self.p['tree_density'] > 1 else self.p['tree_density']
         n_trees = int(tree_density * (self.p['size']**2))
-        
+
         # Create tree agents
         self.tree_agents = {}
         for i in range(n_trees):
             agent = TreeAgent(self, i)
             agent.setup()
             self.tree_agents[i] = agent
-        
+
         # Randomly place trees on the grid
         available_positions = [(x, y) for x in range(self.p['size']) for y in range(self.p['size'])]
         selected_positions = self.random.sample(available_positions, n_trees)
-        
+
         # Create position mapping for quick neighbor lookup
         self.grid = {}  # (x, y) -> agent_id
         for i, (x, y) in enumerate(selected_positions):
             self.tree_agents[i].position = (x, y)
             self.grid[(x, y)] = i
-            
+
         # Start a fire from the left side of the grid (x=0 or x=1)
         for agent_id, agent in self.tree_agents.items():
             if agent.position[0] <= 1:  # Left side of grid
                 agent.condition = 1  # Start burning
-        
+
         # Record initial state
         self._record_all_agents()
-        
+
     def get_neighbors(self, position):
         """Get neighboring positions (4-directional)."""
         x, y = position
@@ -98,7 +98,7 @@ class ForestModel(am.Model):
                 if (nx, ny) in self.grid:
                     neighbors.append((nx, ny))
         return neighbors
-        
+
     def _record_all_agents(self):
         """Record current state of all agents."""
         agent_data = []
@@ -110,25 +110,25 @@ class ForestModel(am.Model):
                 'x': agent.position[0] if agent.position else None,
                 'y': agent.position[1] if agent.position else None
             })
-        
+
         if agent_data:
             new_data = pl.DataFrame(agent_data)
             self.agents_df = pl.concat([self.agents_df, new_data])
-        
+
     def step(self):
-        
+
         # Get currently burning trees
         burning_trees = [agent for agent in self.tree_agents.values() if agent.condition == 1]
-        
+
         if not burning_trees:
             return  # No more fire to spread
-            
+
         # Spread fire to neighbors
         new_burning = []
         for tree in burning_trees:
             # Get neighboring positions
             neighbor_positions = self.get_neighbors(tree.position)
-            
+
             # Check each neighbor
             for neighbor_pos in neighbor_positions:
                 neighbor_id = self.grid[neighbor_pos]
@@ -136,35 +136,35 @@ class ForestModel(am.Model):
                 if neighbor.condition == 0:  # Alive tree
                     neighbor.condition = 1  # Start burning
                     new_burning.append(neighbor_id)
-            
+
             # Tree burns out
             tree.condition = 2
-            
+
         # Record changes
         self._record_all_agents()
-        
+
         # Stop if no new trees are burning
         if not new_burning:
             self.record_model('simulation_ended', True)
-            
+
     def end(self):
-        
+
         # Calculate percentage of burned trees
         burned_count = sum(1 for agent in self.tree_agents.values() if agent.condition == 2)
         total_trees = len(self.tree_agents)
         percentage = burned_count / total_trees if total_trees > 0 else 0
-        
+
         self.record_model('percentage_burned_trees', percentage)
-        
+
     def get_grid_for_visualization(self):
         """Get grid state for visualization."""
         grid_state = np.full((self.p['size'], self.p['size']), None)
-        
+
         for agent in self.tree_agents.values():
             if agent.position:
                 x, y = agent.position
                 grid_state[y, x] = agent.condition  # Note: y, x for matplotlib
-                
+
         return grid_state
 
 ## Single-run Animation
@@ -191,16 +191,16 @@ from IPython.display import HTML
 def create_forest_animation(parameters, max_steps=50):
     """Create an animated visualization of the forest fire simulation."""
     print("🔥 Creating forest fire animation...")
-    
+
     # Initialize model
     model = ForestModel(parameters)
     model.setup()
     model.update()
-    
+
     # Store simulation states
     states = []
     step_count = 0
-    
+
     # Run simulation and collect states
     while step_count < max_steps:
         # Record current state
@@ -211,32 +211,32 @@ def create_forest_animation(parameters, max_steps=50):
             'step': model.t,
             'alive': alive_count
         })
-        
+
         if step_count > 0:
             model.step()
             model.update()
-            
+
             # Check if simulation ended early
             if hasattr(model, '_model_data') and model._model_data:
                 if model._model_data[-1].get('simulation_ended', False):
                     print(f"🔥 Fire spread completed at step {step_count}")
                     break
-        
+
         step_count += 1
-    
+
     model.end()
-    
+
     # Create animation
     fig, ax = plt.subplots(figsize=(10, 8))
-    
+
     def animate(frame):
         ax.clear()
         state = states[frame]
         grid_state = state['grid']
-        
+
         # Convert grid to colored array
         colored_grid = np.full((*grid_state.shape, 3), [0.839, 0.898, 0.839])  # Light green background
-        
+
         for i in range(grid_state.shape[0]):
             for j in range(grid_state.shape[1]):
                 value = grid_state[i, j]
@@ -246,20 +246,20 @@ def create_forest_animation(parameters, max_steps=50):
                     colored_grid[i, j] = [0.839, 0.173, 0.173]  # Red
                 elif value == 2:  # Burned
                     colored_grid[i, j] = [0.898, 0.898, 0.898]  # Gray
-        
+
         ax.imshow(colored_grid, interpolation='nearest')
         ax.set_title(f"Forest Fire Simulation\nStep: {state['step']}, Trees left: {state['alive']}")
         ax.set_xticks([])
         ax.set_yticks([])
-        
+
         return ax.collections
-    
+
     # Create animation
     anim = FuncAnimation(fig, animate, frames=len(states), interval=200, blit=False, repeat=True)
-    
+
     print(f"✅ Animation created with {len(states)} frames")
     plt.close()  # Close the figure to prevent static display
-    
+
     return HTML(anim.to_jshtml())
 
 # Create and display the animation
@@ -328,7 +328,7 @@ final_step_agents = results['agents'].group_by(['tree_density', 'iteration']).ag
 
 # Get final agent states
 final_agents = results['agents'].join(
-    final_step_agents, 
+    final_step_agents,
     on=['tree_density', 'iteration']
 ).filter(pl.col('step') == pl.col('final_step'))
 
@@ -355,8 +355,8 @@ plot_data_pd = plot_data.to_pandas()
 
 plt.figure(figsize=(10, 6))
 sns.lineplot(
-    data=plot_data_pd, 
-    x='tree_density_pct', 
+    data=plot_data_pd,
+    x='tree_density_pct',
     y='percentage_burned'
 )
 plt.title('Forest Fire Simulation: Tree Density vs Burned Trees')
@@ -375,4 +375,3 @@ summary = plot_data.group_by('tree_density').agg([
     (pl.col('tree_density') / 100.0).alias('tree_density_pct')
 ])
 print(summary)
-

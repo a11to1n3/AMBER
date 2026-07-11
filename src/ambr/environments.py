@@ -30,7 +30,7 @@ class Position:
 
 class Environment(ABC):
     """Base class for all environments."""
-    
+
     def __init__(self, model):
         """Initialize environment with reference to model."""
         self.model = model
@@ -78,12 +78,12 @@ class Environment(ABC):
     def get_neighbors(self, agent_id: int) -> List[int]:
         """Get neighboring agents for a given agent."""
         pass
-    
+
     @abstractmethod
     def get_distance(self, agent1_id: int, agent2_id: int) -> float:
         """Calculate distance between two agents."""
         pass
-    
+
     @abstractmethod
     def move_agent(self, agent_id: int, new_position: Position) -> None:
         """Move an agent to a new position."""
@@ -91,7 +91,7 @@ class Environment(ABC):
 
 class GridEnvironment(Environment):
     """N-dimensional grid environment with discrete positions."""
-    
+
     def __init__(self, model, size: Union[int, Tuple[int, ...]], torus: bool = False,
                  wrap: Optional[bool] = None):
         """
@@ -128,17 +128,17 @@ class GridEnvironment(Environment):
     def wrap(self, value):
         warn_deprecated("GridEnvironment.wrap", "GridEnvironment.torus", stacklevel=2)
         self.torus = value
-    
+
     @property
     def width(self):
         """Get grid width (first dimension)."""
         return self.dimensions[0]
-    
+
     @property
     def height(self):
         """Get grid height (second dimension if it exists)."""
         return self.dimensions[1] if len(self.dimensions) > 1 else 1
-    
+
     @property
     def positions(self):
         """Get all possible positions in the grid."""
@@ -153,7 +153,7 @@ class GridEnvironment(Environment):
             ranges = [range(dim) for dim in self.dimensions]
             positions = list(itertools.product(*ranges))
         return positions
-    
+
     def get_neighbors(self, position_or_agent_id, include_diagonal=False, distance=1,
                       radius: Optional[int] = None):
         """Get neighboring positions or agents.
@@ -172,7 +172,7 @@ class GridEnvironment(Environment):
             # Position-based neighbor search
             position = position_or_agent_id
             neighbors = []
-            
+
             if include_diagonal:
                 # Include all 8 neighbors in 2D (or more in higher dimensions)
                 offsets = []
@@ -185,7 +185,7 @@ class GridEnvironment(Environment):
                 else:
                     import itertools
                     ranges = [range(-distance, distance + 1) for _ in self.dimensions]
-                    offsets = [offset for offset in itertools.product(*ranges) 
+                    offsets = [offset for offset in itertools.product(*ranges)
                               if not all(o == 0 for o in offset)]
             else:
                 # Only orthogonal neighbors
@@ -197,7 +197,7 @@ class GridEnvironment(Environment):
                         offset = [0] * len(self.dimensions)
                         offset[dim] = offset_val
                         offsets.append(tuple(offset))
-            
+
             seen = set()
             origin = tuple(position)
             for offset in offsets:
@@ -227,17 +227,17 @@ class GridEnvironment(Environment):
             agent_id = position_or_agent_id
             if self.df.is_empty():
                 return []
-                
+
             agent_pos_rows = self.df.filter(pl.col('id') == agent_id)
             if agent_pos_rows.is_empty():
                 return []
-                
+
             agent_pos = agent_pos_rows['grid_position'].item()
             if agent_pos is None:
                 return []
-            
+
             neighbor_positions = self.get_neighbors(agent_pos, include_diagonal, distance)
-            
+
             # Find agents at neighbor positions
             neighbors = []
             for pos in neighbor_positions:
@@ -245,9 +245,9 @@ class GridEnvironment(Environment):
                     pl.col('grid_position').map_elements(lambda x: x == pos if x is not None else False)
                 )['id'].to_list()
                 neighbors.extend(pos_agents)
-                
+
             return neighbors
-    
+
     def get_distance(self, pos1_or_agent1, pos2_or_agent2) -> float:
         """Calculate Manhattan distance between two positions or agents."""
         # Handle different input types
@@ -257,19 +257,19 @@ class GridEnvironment(Environment):
             # Agent IDs
             if self.df.is_empty():
                 return float('inf')
-                
+
             agent1_rows = self.df.filter(pl.col('id') == pos1_or_agent1)
             agent2_rows = self.df.filter(pl.col('id') == pos2_or_agent2)
-            
+
             if agent1_rows.is_empty() or agent2_rows.is_empty():
                 return float('inf')
-                
+
             pos1 = agent1_rows['grid_position'].item()
             pos2 = agent2_rows['grid_position'].item()
-            
+
             if pos1 is None or pos2 is None:
                 return float('inf')
-        
+
         # Calculate Manhattan distance
         if self.torus:
             # Handle torus wrapping
@@ -281,23 +281,23 @@ class GridEnvironment(Environment):
             return distance
         else:
             return sum(abs(p1 - p2) for p1, p2 in zip(pos1, pos2))
-    
+
     def is_valid_position(self, position):
         """Check if a position is valid in the grid."""
         if len(position) != len(self.dimensions):
             return False
-        
+
         for coord, dim in zip(position, self.dimensions):
             if not (0 <= coord < dim):
                 return False
-        
+
         return True
-    
+
     def random_position(self):
         """Get a random position in the grid."""
         rng = getattr(self.model, 'rng', None) or np.random.default_rng()
         return tuple(int(rng.integers(0, dim)) for dim in self.dimensions)
-    
+
     def empty_positions(self) -> List[Tuple[int, int]]:
         """Return a list of empty positions."""
         occupied = set()
@@ -408,18 +408,18 @@ class GridEnvironment(Environment):
         """Move an agent to a new grid position."""
         if new_position.topology_type != 'grid':
             raise ValueError("Position must be of type 'grid'")
-            
+
         # Validate position
         if len(new_position.coordinates) != len(self.dimensions):
             raise ValueError("Position dimensions don't match grid dimensions")
-            
+
         coords = list(new_position.coordinates)
         for i, (coord, dim) in enumerate(zip(coords, self.dimensions)):
             if not (0 <= coord < dim):
                 if not self.torus:
                     raise ValueError("Position out of bounds")
                 coords[i] = coord % dim
-                
+
         # Update agent position
         if hasattr(self, 'df') and not self.df.is_empty():
             # Ensure tuple is treated as object
@@ -433,11 +433,11 @@ class GridEnvironment(Environment):
 
 class SpaceEnvironment(Environment):
     """N-dimensional continuous space environment."""
-    
+
     def __init__(self, model, bounds: List[Tuple[float, float]], torus: bool = False):
         """
         Initialize continuous space environment.
-        
+
         Args:
             model: Reference to the model
             bounds: List of (min, max) tuples for each dimension
@@ -447,7 +447,7 @@ class SpaceEnvironment(Environment):
         self.bounds = bounds
         self.dimensions = len(bounds)
         self.torus = torus
-        
+
         # Initialise space-specific columns on the environment's frame. Chain
         # both onto self.df so neither overwrites the other (the previous code
         # re-read model.agents_df for the second column, dropping the first).
@@ -461,7 +461,7 @@ class SpaceEnvironment(Environment):
                 self.df = self.df.with_columns(
                     pl.lit(0.0).alias('space_distance')
                 )
-    
+
     def positions_array(self):
         """Return ``(ids, positions)`` over agents that have a position set.
 
@@ -540,7 +540,7 @@ class SpaceEnvironment(Environment):
         new = [mapping.get(int(i), p) for i, p in
                zip(self.df['id'].to_list(), self.df['space_position'].to_list())]
         self.df = self.df.with_columns(pl.Series('space_position', new, dtype=pl.Object))
-    
+
     def get_distance(self, pos1_or_agent1, pos2_or_agent2) -> float:
         """Calculate Euclidean distance between two positions or agents."""
         # Handle different input types
@@ -551,32 +551,32 @@ class SpaceEnvironment(Environment):
             # Agent IDs
             if self.df.is_empty():
                 return float('inf')
-                
+
             pos1_rows = self.df.filter(pl.col('id') == pos1_or_agent1)
             pos2_rows = self.df.filter(pl.col('id') == pos2_or_agent2)
-            
+
             if pos1_rows.is_empty() or pos2_rows.is_empty():
                 return float('inf')
-                
+
             pos1 = pos1_rows['space_position'].item()
             pos2 = pos2_rows['space_position'].item()
-            
+
             if pos1 is None or pos2 is None:
                 return float('inf')
-                
+
             return self._calculate_distance(pos1, pos2)
-    
+
     def is_valid_position(self, position):
         """Check if a position is within bounds."""
         if len(position) != self.dimensions:
             return False
-        
+
         for coord, (min_val, max_val) in zip(position, self.bounds):
             if not (min_val <= coord <= max_val):
                 return False
-        
+
         return True
-    
+
     def random_position(self):
         """Get a random position within bounds."""
         rng = getattr(self.model, 'rng', None) or np.random.default_rng()
@@ -585,20 +585,20 @@ class SpaceEnvironment(Environment):
         for min_val, max_val in self.bounds:
             coord = rng.uniform(min_val, max_val)
             position.append(coord)
-        
-        return position
-    
 
-    
+        return position
+
+
+
     def move_agent(self, agent_id: int, new_position: Position) -> None:
         """Move an agent to a new continuous position."""
         if new_position.topology_type != 'space':
             raise ValueError("Position must be of type 'space'")
-            
+
         # Validate position
         if len(new_position.coordinates) != self.dimensions:
             raise ValueError("Position dimensions don't match space dimensions")
-            
+
         coords = list(new_position.coordinates)
         for i, (coord, (min_val, max_val)) in enumerate(zip(coords, self.bounds)):
             if self.torus:
@@ -607,11 +607,11 @@ class SpaceEnvironment(Environment):
                 coords[i] = min_val + ((coord - min_val) % range_size)
             elif not (min_val <= coord <= max_val):
                 raise ValueError("Position out of bounds")
-                
+
         # Update agent position. set_position normalises to an Object column,
         # avoiding dtype conflicts between list- and object-typed positions.
         self.set_position([agent_id], [tuple(coords)])
-    
+
     def _calculate_distance(self, pos1: Tuple[float, ...], pos2: Tuple[float, ...]) -> float:
         """Calculate Euclidean distance between two positions."""
         if self.torus:
@@ -629,11 +629,11 @@ class SpaceEnvironment(Environment):
 
 class NetworkEnvironment(Environment):
     """Graph-based network environment."""
-    
+
     def __init__(self, model, graph: Optional[nx.Graph] = None):
         """
         Initialize network environment.
-        
+
         Args:
             model: Reference to the model
             graph: Optional initial network graph
@@ -643,7 +643,7 @@ class NetworkEnvironment(Environment):
             self.graph = graph
         else:
             self.graph = nx.Graph()
-        
+
         # Initialise network-specific columns on the model's DataFrame if needed.
         # Chain both onto df so the second column doesn't drop the first (the
         # previous code re-read model.agents_df for each, losing node_id).
@@ -654,25 +654,25 @@ class NetworkEnvironment(Environment):
             if 'network_distance' not in df.columns:
                 df = df.with_columns(pl.lit(0.0).alias('network_distance'))
             self.df = df
-    
+
     @property
     def nodes(self):
         """Get all nodes in the network."""
         return list(self.graph.nodes())
-    
+
     @property
     def edges(self):
         """Get all edges in the network."""
         return list(self.graph.edges())
-    
+
     def add_node(self, node_id, **attr):
         """Add a node to the network."""
         self.graph.add_node(node_id, **attr)
-    
+
     def remove_node(self, node_id):
         """Remove a node from the network."""
         self.graph.remove_node(node_id)
-    
+
     def get_neighbors(self, node_or_agent_id) -> List[int]:
         """Get neighboring nodes or agents in the network."""
         if isinstance(node_or_agent_id, int) and self.graph.has_node(node_or_agent_id):
@@ -682,21 +682,21 @@ class NetworkEnvironment(Environment):
             # Agent ID
             if self.df.is_empty():
                 return []
-                
+
             agent_rows = self.df.filter(pl.col('id') == node_or_agent_id)
             if agent_rows.is_empty():
                 return []
-                
+
             node_id = agent_rows['node_id'].item()
             if node_id is None:
                 return []
-                
+
             # Get neighbors from graph
             neighbor_nodes = list(self.graph.neighbors(node_id))
-            
+
             # Convert node IDs to agent IDs
             return self.df.filter(pl.col('node_id').is_in(neighbor_nodes))['id'].to_list()
-    
+
     def get_distance(self, node1_or_agent1, node2_or_agent2) -> float:
         """Calculate shortest path distance between two nodes or agents."""
         # Handle different input types
@@ -706,24 +706,24 @@ class NetworkEnvironment(Environment):
             # Agent IDs
             if self.df.is_empty():
                 return float('inf')
-                
+
             agent1_rows = self.df.filter(pl.col('id') == node1_or_agent1)
             agent2_rows = self.df.filter(pl.col('id') == node2_or_agent2)
-            
+
             if agent1_rows.is_empty() or agent2_rows.is_empty():
                 return float('inf')
-                
+
             node1 = agent1_rows['node_id'].item()
             node2 = agent2_rows['node_id'].item()
-            
+
             if node1 is None or node2 is None:
                 return float('inf')
-        
+
         try:
             return nx.shortest_path_length(self.graph, node1, node2)
         except nx.NetworkXNoPath:
             return float('inf')
-    
+
     def get_degree(self, node_or_agent_id):
         """Get the degree of a node or agent."""
         if isinstance(node_or_agent_id, int) and self.graph.has_node(node_or_agent_id):
@@ -732,17 +732,17 @@ class NetworkEnvironment(Environment):
             # Agent ID
             if self.df.is_empty():
                 return 0
-                
+
             agent_rows = self.df.filter(pl.col('id') == node_or_agent_id)
             if agent_rows.is_empty():
                 return 0
-                
+
             node_id = agent_rows['node_id'].item()
             if node_id is None or not self.graph.has_node(node_id):
                 return 0
-                
+
             return self.graph.degree(node_id)
-    
+
     def get_clustering(self, node_or_agent_id=None):
         """Get clustering coefficient for a node, agent, or the entire network."""
         if node_or_agent_id is None:
@@ -755,17 +755,17 @@ class NetworkEnvironment(Environment):
             # Agent ID
             if self.df.is_empty():
                 return 0.0
-                
+
             agent_rows = self.df.filter(pl.col('id') == node_or_agent_id)
             if agent_rows.is_empty():
                 return 0.0
-                
+
             node_id = agent_rows['node_id'].item()
             if node_id is None or not self.graph.has_node(node_id):
                 return 0.0
-                
+
             return nx.clustering(self.graph, node_id)
-    
+
     def random_node(self):
         """Get a random node from the network."""
         if not self.graph.nodes():
@@ -773,16 +773,16 @@ class NetworkEnvironment(Environment):
         rng = getattr(self.model, 'rng', None) or np.random.default_rng()
         nodes = self.nodes
         return nodes[int(rng.integers(0, len(nodes)))]
-    
+
     def move_agent(self, agent_id: int, new_position: Position) -> None:
         """Move an agent to a new node in the network."""
         if new_position.topology_type != 'network':
             raise ValueError("Position must be of type 'network'")
-            
+
         # Validate node exists
         if not self.graph.has_node(new_position.coordinates[0]):
             raise ValueError("Node does not exist in network")
-            
+
         # Update agent position
         if hasattr(self, 'df') and not self.df.is_empty():
             self.df = self.df.with_columns([
@@ -791,7 +791,7 @@ class NetworkEnvironment(Environment):
                 .otherwise(pl.col('node_id'))
                 .alias('node_id')
             ])
-    
+
     def add_edge(self, node1_or_agent1, node2_or_agent2, **attr) -> None:
         """Add an edge between two nodes or agents."""
         if isinstance(node1_or_agent1, int) and self.graph.has_node(node1_or_agent1):
@@ -801,21 +801,21 @@ class NetworkEnvironment(Environment):
             # Agent IDs
             if self.df.is_empty():
                 raise ValueError("No agents in environment")
-                
+
             agent1_rows = self.df.filter(pl.col('id') == node1_or_agent1)
             agent2_rows = self.df.filter(pl.col('id') == node2_or_agent2)
-            
+
             if agent1_rows.is_empty() or agent2_rows.is_empty():
                 raise ValueError("One or both agents not found")
-                
+
             node1 = agent1_rows['node_id'].item()
             node2 = agent2_rows['node_id'].item()
-            
+
             if node1 is None or node2 is None:
                 raise ValueError("Both agents must be assigned to nodes")
-        
+
         self.graph.add_edge(node1, node2, **attr)
-    
+
     def remove_edge(self, node1_or_agent1, node2_or_agent2) -> None:
         """Remove an edge between two nodes or agents."""
         if isinstance(node1_or_agent1, int) and self.graph.has_node(node1_or_agent1):
@@ -825,17 +825,17 @@ class NetworkEnvironment(Environment):
             # Agent IDs
             if self.df.is_empty():
                 raise ValueError("No agents in environment")
-                
+
             agent1_rows = self.df.filter(pl.col('id') == node1_or_agent1)
             agent2_rows = self.df.filter(pl.col('id') == node2_or_agent2)
-            
+
             if agent1_rows.is_empty() or agent2_rows.is_empty():
                 raise ValueError("One or both agents not found")
-                
+
             node1 = agent1_rows['node_id'].item()
             node2 = agent2_rows['node_id'].item()
-            
+
             if node1 is None or node2 is None:
                 raise ValueError("Both agents must be assigned to nodes")
-        
-        self.graph.remove_edge(node1, node2) 
+
+        self.graph.remove_edge(node1, node2)

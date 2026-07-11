@@ -73,11 +73,11 @@ function sir_step2!(agent, model)
     radius = 5.0
     trans_rate = 0.1
     recovery = 14
-    
+
     # Move
     agent.x = clamp(agent.x + speed * (2rand() - 1), 0.0, 100.0)
     agent.y = clamp(agent.y + speed * (2rand() - 1), 0.0, 100.0)
-    
+
     # Infection spread
     if agent.status == :I
         for other in allagents(model)

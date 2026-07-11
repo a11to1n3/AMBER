@@ -103,4 +103,4 @@ intersphinx_mapping = {
     'numpy': ('https://numpy.org/doc/stable/', None),
     'polars': ('https://docs.pola.rs/py-polars/html/', None),
     'networkx': ('https://networkx.org/documentation/stable/', None),
-} 
+}

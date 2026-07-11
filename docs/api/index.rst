@@ -54,7 +54,7 @@ Quick Reference
 **Environments:**
 
 * :class:`ambr.GridEnvironment` - 2D grid-based spatial environment
-* :class:`ambr.SpaceEnvironment` - Continuous 2D space environment  
+* :class:`ambr.SpaceEnvironment` - Continuous 2D space environment
 * :class:`ambr.NetworkEnvironment` - Graph/network-based environment
 
 **Data Structures:**
@@ -93,4 +93,4 @@ Quick Reference
 * :func:`ambr.gpu.get_array_module` - Resolve the CuPy/NumPy array module
 * :class:`ambr.GPUEnsembleRunner` - Batched (B × N) ensemble runner (NumPy fallback in CI)
 * :class:`ambr.BatchedWellMixedSIR` - Reference well-mixed SIR batched model
-* :func:`ambr.smac_batch_calibrate` - SMAC calibration over a batched ensemble 
+* :func:`ambr.smac_batch_calibrate` - SMAC calibration over a batched ensemble

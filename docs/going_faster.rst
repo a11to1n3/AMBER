@@ -108,9 +108,9 @@ Same code runs on **NumPy** if no GPU is present (automatic fallback).
 Rule of thumb
 -------------
 
-* **N ≲ 2k** — OOP is fine  
-* **2k–500k** — vectorized  
-* **dense interactions** — tensor  
-* **N ≳ 1M array math, or B≫1 calibration** — GPU helpers above  
+* **N ≲ 2k** — OOP is fine
+* **2k–500k** — vectorized
+* **dense interactions** — tensor
+* **N ≳ 1M array math, or B≫1 calibration** — GPU helpers above
 
 ``am.recommend(n)`` encodes that heuristic.

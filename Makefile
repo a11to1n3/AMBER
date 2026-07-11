@@ -1,4 +1,4 @@
-.PHONY: help install test test-fast test-slow test-coverage clean lint format type-check docs package check-dist release-check
+.PHONY: help install test test-fast test-slow test-coverage clean lint format type-check pre-commit-install pre-commit-run docs package check-dist release-check
 
 help:  ## Show this help message
 	@echo "Available commands:"
@@ -56,6 +56,12 @@ format:  ## Format code
 
 type-check:  ## Run type checking (gradual module set in pyproject.toml)
 	mypy
+
+pre-commit-install:  ## Install local git hooks (nbstripout, ruff)
+	pre-commit install
+
+pre-commit-run:  ## Run pre-commit on all files
+	pre-commit run --all-files
 
 docs:  ## Build Sphinx HTML docs into docs/_build/html
 	python -m sphinx -b html docs docs/_build/html

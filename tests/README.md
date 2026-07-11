@@ -8,7 +8,7 @@ The test suite is organized into several categories:
 
 ### Unit Tests
 - `test_base.py` - Tests for the BaseModel class
-- `test_agent.py` - Tests for the Agent class  
+- `test_agent.py` - Tests for the Agent class
 - `test_model.py` - Tests for the Model class
 - `test_experiment.py` - Tests for experiment framework (IntRange, Sample, Experiment)
 - `test_sequences.py` - Tests for AgentList class
@@ -16,7 +16,7 @@ The test suite is organized into several categories:
 - `test_optimization.py` - Tests for optimization functions and ParameterSpace
 - `test_init.py` - Tests for package initialization and exports
 
-### Integration Tests  
+### Integration Tests
 - `test_integration.py` - Tests combining multiple components and real-world workflows
 
 ### Configuration
@@ -66,7 +66,7 @@ pytest --cov=src/amber --cov-report=html
 # Run only unit tests
 pytest -m unit
 
-# Run only integration tests  
+# Run only integration tests
 pytest -m integration
 
 # Skip slow tests
@@ -115,18 +115,18 @@ import ambr as am
 
 class TestMyComponent:
     """Test cases for MyComponent class."""
-    
+
     def test_basic_functionality(self):
         """Test basic component functionality."""
         # Arrange
         component = am.MyComponent()
-        
-        # Act  
+
+        # Act
         result = component.do_something()
-        
+
         # Assert
         assert result is not None
-    
+
     @pytest.mark.slow
     def test_performance(self):
         """Test component performance with large inputs."""
@@ -191,4 +191,4 @@ When adding new features to AMBER:
 5. **Mark tests appropriately** (unit/integration/slow)
 6. **Document complex test scenarios** in docstrings
 
-For questions about testing, see the main AMBER documentation or raise an issue in the repository. 
+For questions about testing, see the main AMBER documentation or raise an issue in the repository.

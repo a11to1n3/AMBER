@@ -57,7 +57,9 @@ dev = [
     "black>=22.0.0",
     "flake8>=5.0.0",
     "ruff>=0.6.0",
-    "mypy>=1.0.0"
+    "mypy>=1.0.0",
+    "pre-commit>=3.5.0",
+    "nbstripout>=0.7.0"
 ]
 advanced = [
     # SMAC 2.4 imports sklearn.tree._tree.DTYPE, removed in scikit-learn 1.9

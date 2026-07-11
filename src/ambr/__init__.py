@@ -2,7 +2,7 @@
 AMBER: Agent-Based Modeling Environment and Research Framework
 
 A comprehensive Python framework for building, running, and analyzing agent-based models.
-AMBER provides tools for creating complex simulations with agents, environments, and 
+AMBER provides tools for creating complex simulations with agents, environments, and
 sophisticated experimental workflows.
 
 Key features:
@@ -14,16 +14,16 @@ Key features:
 
 Example:
     >>> import ambr as am
-    >>> 
+    >>>
     >>> class SimpleModel(am.Model):
     ...     def setup(self):
     ...         for i in range(10):
     ...             agent = am.Agent(self, i)
     ...             self.add_agent(agent)
-    ...     
+    ...
     ...     def step(self):
     ...         self.record_model('agent_count', len(self.agents))
-    >>> 
+    >>>
     >>> model = SimpleModel({'steps': 5})
     >>> results = model.run()
 """
@@ -46,7 +46,7 @@ from .sequences import AgentList
 from .environments import GridEnvironment, SpaceEnvironment, NetworkEnvironment
 from .experiment import Experiment, Sample, IntRange
 from .optimization import (
-    ParameterSpace, 
+    ParameterSpace,
     objective_function,
     grid_search,
     random_search,
