@@ -19,18 +19,18 @@ class Population:
     ``population.data = ...`` still works but is deprecated and invisible
     to ``Model.run(contract=...)``; use the view API instead.
     """
-    
+
     def __init__(self, schema: Dict[str, Type] = None):
         if schema is None:
             schema = {}
-            
+
         # Core columns that always exist
         self.schema = {
             'id': pl.Int64,
             'step': pl.Int64,
             **schema
         }
-        
+
         # Backing store. Prefer Model._set_frame / view API over assigning
         # ``.data`` (the public setter warns; use ``replace_frame`` internally).
         self._data = pl.DataFrame(schema=self.schema)
@@ -60,7 +60,7 @@ class Population:
     @property
     def size(self) -> int:
         return len(self._data)
-    
+
     def _align_and_concat(self, new_df: pl.DataFrame) -> pl.DataFrame:
         """
         Robustly concatenate new_df to self._data, handling type mismatches.
@@ -68,10 +68,10 @@ class Population:
         """
         if self._data.is_empty():
             return new_df
-        
+
         # Get union of all columns
         all_cols = set(self._data.columns) | set(new_df.columns)
-        
+
         # Align self._data: add missing columns from new_df
         for col in all_cols:
             if col not in self._data.columns:
@@ -82,12 +82,12 @@ class Population:
                 # Column exists in self._data but not new_df
                 dtype = self._data.schema[col]
                 new_df = new_df.with_columns(pl.lit(None).cast(dtype).alias(col))
-        
+
         # Handle type mismatches between matching columns
         for col in all_cols:
             left_type = self._data.schema[col]
             right_type = new_df.schema[col]
-            
+
             if left_type != right_type:
                 # Promote Null to concrete type
                 if left_type == pl.Null and right_type != pl.Null:
@@ -112,21 +112,21 @@ class Population:
                         )
                         self._data = self._data.with_columns(pl.col(col).cast(pl.Utf8))
                         new_df = new_df.with_columns(pl.col(col).cast(pl.Utf8))
-        
+
         # Ensure column order matches
         new_df = new_df.select(self._data.columns)
-        
+
         return pl.concat([self._data, new_df], how="vertical")
-        
+
     def add_agent(self, agent_id: int, step: int = 0, **attributes):
         """Adds a single agent to the population."""
         row = {'id': agent_id, 'step': step, **attributes}
-        
+
         # Ensure all schema columns are present
         for col, dtype in self.schema.items():
             if col not in row:
                 row[col] = None
-        
+
         new_row = pl.DataFrame([row])
         self._data = self._align_and_concat(new_row)
 
@@ -134,12 +134,12 @@ class Population:
         """Adds multiple agents efficiently."""
         start_id = self._data['id'].max() + 1 if not self._data.is_empty() else 0
         ids = range(start_id, start_id + count)
-        
+
         new_data = {
             'id': list(ids),
             'step': [step] * count
         }
-        
+
         for k, v in attributes.items():
             if isinstance(v, pl.Series):
                 if v.len() != count:
@@ -151,15 +151,15 @@ class Population:
                 new_data[k] = list(v) if isinstance(v, np.ndarray) else v
             else:
                 new_data[k] = [v] * count
-                
+
         # Fill missing schema columns
         for col in self.schema:
             if col not in new_data:
                 new_data[col] = [None] * count
-                
+
         new_df = pl.DataFrame(new_data)
         self._data = self._align_and_concat(new_df)
-        
+
     def get_agent_value(self, agent_id: int, column: str) -> Any:
         res = self._data.filter(pl.col("id") == agent_id).select(column)
         if res.is_empty():
@@ -304,17 +304,17 @@ class BatchUpdateContext:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if not self.updates:
             return
-            
+
         ids = list(self.updates.keys())
         cols = set()
         for u in self.updates.values():
             cols.update(u.keys())
-            
+
         final_data = {}
         for col in cols:
             vals = []
             for aid in ids:
                 vals.append(self.updates[aid].get(col, None))
             final_data[col] = vals
-            
+
         self.population._batch_update_by_ids(ids, final_data)

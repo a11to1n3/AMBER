@@ -20,21 +20,21 @@ Run multiple model configurations:
 .. code-block:: python
 
    from ambr import Experiment, Sample, IntRange
-   
+
    # Define parameter variations
    params = Sample({
        'n_agents': IntRange(50, 200),
        'steps': 100,
        'seed': [1, 2, 3, 4, 5]  # Multiple seeds for robustness
    })
-   
+
    # Create and run experiment
    experiment = Experiment(
        model_class=MyModel,
        parameters=params,
        iterations=20  # Number of parameter combinations
    )
-   
+
    results = experiment.run()
 
 Sample Class
@@ -54,7 +54,7 @@ Parameter sampling for experiments:
        'mutation_rate': [0.01, 0.05, 0.1],
        'selection_pressure': 0.8,  # Fixed value
    })
-   
+
    # Generate parameter combinations
    for params in sample.generate(n=50):
        model = MyModel(params)
@@ -73,9 +73,9 @@ Integer range specification:
 
    # Define integer ranges
    population_range = IntRange(50, 500)  # 50 to 500 inclusive
-   
+
    # Use in parameter definitions
    params = {
        'n_agents': population_range,
        'max_steps': IntRange(100, 1000)
-   } 
+   }

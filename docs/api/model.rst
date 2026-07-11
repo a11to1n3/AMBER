@@ -19,16 +19,16 @@ Basic Usage
 .. code-block:: python
 
    import ambr as am
-   
+
    class MyModel(am.Model):
        def setup(self):
            # Initialize agents and environment
            pass
-       
+
        def step(self):
            # Define what happens each time step
            pass
-   
+
    # Run the model
    model = MyModel({'steps': 100, 'seed': 42})
    results = model.run()
@@ -53,4 +53,4 @@ Key Methods
 **Execution:**
 
 * ``run()`` - Execute the full simulation and return results
-* ``run_step()`` - Execute a single time step 
+* ``run_step()`` - Execute a single time step

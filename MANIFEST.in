@@ -19,4 +19,3 @@ exclude architecture_diagram.png
 global-exclude *.aux *.bbl *.blg *.log *.out *.toc *.synctex.gz
 global-exclude __pycache__ *.py[cod] .DS_Store .coverage .coverage.* .!*.coverage
 global-exclude *.ipynb_checkpoints*
-

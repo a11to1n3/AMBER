@@ -29,11 +29,11 @@ def run_wealth_benchmark(n=100, steps=100, initial_wealth=1):
     env = simpy.Environment()
     # Shared state
     agents_data = [{'id': i, 'wealth': initial_wealth} for i in range(n)]
-    
+
     # Start processes
     for i in range(n):
         env.process(wealth_agent(env, i, agents_data))
-        
+
     env.run(until=steps)
 
 # =============================================================================
@@ -64,10 +64,10 @@ def run_walk_benchmark(n=100, steps=100, world_size=100.0, speed=1.0):
     env = simpy.Environment()
     agents_data = [{'id': i, 'x': 0, 'y': 0} for i in range(n)]
     params = {'world_size': world_size, 'speed': speed}
-    
+
     for i in range(n):
         env.process(walk_agent(env, i, agents_data, params))
-        
+
     env.run(until=steps)
 
 # =============================================================================
@@ -139,12 +139,12 @@ def run_sir_benchmark(
         'transmission_rate': transmission_rate,
         'recovery_time': recovery_time,
     }
-    
+
     for i in range(n):
         env.process(sir_agent(env, i, agents_data, params))
-        
+
     env.run(until=steps)
-    
+
     infected_count = sum(1 for a in agents_data if a['status'] == 1 or a['status'] == 2)
     print(f"  Final Infected: {infected_count}/{n}")
 
@@ -203,29 +203,29 @@ def run_schelling_benchmark(n=100, steps=100, density=0.8, fraction_a=0.5, toler
 
 if __name__ == "__main__":
     counts = [100, 500, 1000, 5000]
-    
+
     print("SimPy Benchmark")
     print("="*50)
-    
+
     # Wealth
     print("\nWealth Transfer:")
     for n in counts:
         start = time.time()
         run_wealth_benchmark(n, 100)
         print(f"  {n} agents: {time.time() - start:.3f}s")
-        
+
     # Walk
     print("\nRandom Walk:")
     for n in counts:
         start = time.time()
         run_walk_benchmark(n, 100)
         print(f"  {n} agents: {time.time() - start:.3f}s")
-        
+
     # SIR
     # SimPy overhead + O(N^2) loop inside a generator = EXTREMELY SLOW
     # We will limit to small counts
     print("\nSIR Epidemic:")
-    for n in [100, 500, 1000]: 
+    for n in [100, 500, 1000]:
         start = time.time()
         run_sir_benchmark(n, 100)
         print(f"  {n} agents: {time.time() - start:.3f}s")

@@ -19,18 +19,18 @@ Basic Usage
 .. code-block:: python
 
    import ambr as am
-   
+
    class MyAgent(am.Agent):
        def __init__(self, model, agent_id):
            super().__init__(model, agent_id)
            self.wealth = 10
            self.age = 0
-       
+
        def step(self):
            # Define agent behavior
            self.age += 1
            # ... other behaviors
-   
+
    # In your model's setup() — bulk-create tracked Python agents in one call.
    # add_agents(..., agent_class=...) instantiates and tracks the objects, so
    # you can iterate ``self.agents`` or reach one with ``self.agents.by_id(i)``.
@@ -44,12 +44,12 @@ You can create custom agent classes by inheriting from ``BaseAgent``:
 .. code-block:: python
 
    from ambr.base import BaseAgent
-   
+
    class CustomAgent(BaseAgent):
        def __init__(self, model, agent_id):
            super().__init__(model, agent_id)
            self.custom_property = "value"
-       
+
        def custom_method(self):
            # Your custom behavior
            pass
@@ -71,4 +71,4 @@ You can add any custom properties to agents by setting them as attributes:
 
    agent.wealth = 100
    agent.position = (5, 10)
-   agent.state = "active" 
+   agent.state = "active"

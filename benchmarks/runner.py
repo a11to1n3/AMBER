@@ -60,12 +60,12 @@ class BenchmarkResult:
 
 class BenchmarkRunner:
     """Unified benchmark runner for comparing ABM frameworks."""
-    
+
     AGENT_COUNTS = [100, 500, 1000, 5000, 10000]
     QUICK_AGENT_COUNTS = [100, 500]
     DEFAULT_STEPS = 100
     QUICK_STEPS = 20
-    
+
     MODEL_CONFIGS = {
         'wealth_transfer': {
             'initial_wealth': 1,
@@ -88,17 +88,17 @@ class BenchmarkRunner:
         'sir_epidemic': 'SIR Epidemic',
         'random_walk': 'Random Walk',
     }
-    
+
     def __init__(self, results_dir: str = None):
         self.results_dir = Path(results_dir or Path(__file__).parent / 'results')
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.results: List[BenchmarkResult] = []
         self._load_frameworks()
-    
+
     def _load_frameworks(self):
         """Load model implementations from each framework."""
         self.frameworks = {}
-        
+
         # Load AMBER models (both the legacy per-agent-loop variant, kept
         # for apples-to-apples comparison with AgentPy/Mesa, and the
         # vectorized view-API variant that the library actually ships).
@@ -109,7 +109,7 @@ class BenchmarkRunner:
             print("✅ AMBER models loaded (per-agent + vectorized)")
         except ImportError as e:
             print(f"⚠️  AMBER models not available: {e}")
-        
+
         # Load AgentPy models
         try:
             from models.agentpy_models import AGENTPY_MODELS
@@ -117,7 +117,7 @@ class BenchmarkRunner:
             print("✅ AgentPy models loaded")
         except ImportError as e:
             print(f"⚠️  AgentPy not available: {e}")
-        
+
         # Load Mesa models
         try:
             from models.mesa_models import MESA_MODELS
@@ -125,7 +125,7 @@ class BenchmarkRunner:
             print("✅ Mesa models loaded")
         except ImportError as e:
             print(f"⚠️  Mesa not available: {e}")
-    
+
     def _run_single_benchmark(
         self,
         framework: str,
@@ -135,22 +135,22 @@ class BenchmarkRunner:
         n_steps: int
     ) -> BenchmarkResult:
         """Run a single benchmark and measure performance."""
-        
+
         # Force garbage collection
         gc.collect()
-        
+
         # Prepare parameters
         config = self.MODEL_CONFIGS.get(model_name, {}).copy()
         config['n'] = n_agents
         config['steps'] = n_steps
         config['seed'] = 42
-        
+
         # Start memory tracking
         tracemalloc.start()
-        
+
         # Time the simulation
         start_time = time.perf_counter()
-        
+
         try:
             # AMBER and AgentPy accept dict, Mesa accepts kwargs
             if framework == 'Mesa':
@@ -171,17 +171,17 @@ class BenchmarkRunner:
             tracemalloc.stop()
             print(f"  ❌ Error: {e}")
             return None
-        
+
         end_time = time.perf_counter()
-        
+
         # Get memory stats
         current, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
-        
+
         execution_time = end_time - start_time
         peak_memory_mb = peak / 1024 / 1024
         time_per_step = execution_time / n_steps
-        
+
         return BenchmarkResult(
             framework=framework,
             model=model_name,
@@ -192,7 +192,7 @@ class BenchmarkRunner:
             time_per_step=round(time_per_step, 6),
             timestamp=datetime.now().isoformat()
         )
-    
+
     def run_benchmarks(
         self,
         agent_counts: List[int] = None,
@@ -202,15 +202,15 @@ class BenchmarkRunner:
         n_runs: int = 3
     ):
         """Run full benchmark suite."""
-        
+
         agent_counts = agent_counts or self.AGENT_COUNTS
         n_steps = n_steps or self.DEFAULT_STEPS
         models = models or list(self.MODEL_CONFIGS.keys())
         frameworks = frameworks or list(self.frameworks.keys())
-        
+
         total_runs = len(frameworks) * len(models) * len(agent_counts) * n_runs
         current_run = 0
-        
+
         print(f"\n{'='*60}")
         print(f"  AMBER vs AgentPy vs Mesa Performance Benchmark")
         print(f"{'='*60}")
@@ -221,24 +221,24 @@ class BenchmarkRunner:
         print(f"  Runs per config: {n_runs}")
         print(f"  Total benchmarks: {total_runs}")
         print(f"{'='*60}\n")
-        
+
         for model_name in models:
             print(f"\n📊 Model: {model_name.upper()}")
             print("-" * 40)
-            
+
             for n_agents in agent_counts:
                 print(f"\n  Agents: {n_agents}")
-                
+
                 for framework in frameworks:
                     if framework not in self.frameworks:
                         continue
-                    
+
                     model_registry = self.frameworks[framework]
                     if model_name not in model_registry:
                         continue
-                    
+
                     model_class = model_registry[model_name]
-                    
+
                     # Run multiple times and take average
                     run_results = []
                     for run_idx in range(n_runs):
@@ -248,7 +248,7 @@ class BenchmarkRunner:
                         )
                         if result:
                             run_results.append(result)
-                    
+
                     if run_results:
                         # Average the results, trimming the slowest run when
                         # enough samples are available to match the master runner.
@@ -266,35 +266,35 @@ class BenchmarkRunner:
                             timestamp=datetime.now().isoformat()
                         )
                         self.results.append(avg_result)
-                        
+
                         status = "✅"
                         print(f"    {status} {framework:10s}: {avg_result.execution_time:8.3f}s | {avg_result.peak_memory_mb:8.2f}MB")
-        
+
         print(f"\n{'='*60}")
         print(f"  Benchmark Complete!")
         print(f"{'='*60}\n")
-        
+
         return self.results
-    
+
     def save_results(self):
         """Save results to JSON and markdown files."""
-        
+
         # Save JSON
         json_path = self.results_dir / 'benchmark_results.json'
         with open(json_path, 'w') as f:
             json.dump([asdict(r) for r in self.results], f, indent=2)
         print(f"📄 Results saved to: {json_path}")
-        
+
         # Generate summary table
         self._generate_summary_table()
-        
+
         # Generate chart if matplotlib available
         if HAS_MATPLOTLIB:
             self._generate_charts()
-    
+
     def _generate_summary_table(self):
         """Generate markdown summary table."""
-        
+
         # Organize data by model and agent count
         summary = {}
         for r in self.results:
@@ -302,19 +302,19 @@ class BenchmarkRunner:
             if key not in summary:
                 summary[key] = {}
             summary[key][r.framework] = r
-        
+
         # Build table for each model
         md_content = "# Benchmark Results\n\n"
         md_content += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        
+
         for model_name in self.MODEL_CONFIGS.keys():
             md_content += f"## {self.MODEL_LABELS[model_name]}\n\n"
-            
+
             # Execution time table
             md_content += "### Execution Time (seconds)\n\n"
             headers = ["Agents"] + list(self.frameworks.keys())
             rows = []
-            
+
             agent_counts = sorted({r.n_agents for r in self.results if r.model == model_name})
             for n_agents in agent_counts:
                 key = (model_name, n_agents)
@@ -327,7 +327,7 @@ class BenchmarkRunner:
                     else:
                         row.append("-")
                 rows.append(row)
-            
+
             if rows:
                 if HAS_TABULATE:
                     md_content += tabulate(rows, headers, tablefmt="github") + "\n\n"
@@ -337,11 +337,11 @@ class BenchmarkRunner:
                     for row in rows:
                         md_content += "| " + " | ".join(row) + " |\n"
                     md_content += "\n"
-            
+
             # Memory usage table
             md_content += "### Peak Memory (MB)\n\n"
             rows = []
-            
+
             for n_agents in agent_counts:
                 key = (model_name, n_agents)
                 if key not in summary:
@@ -353,7 +353,7 @@ class BenchmarkRunner:
                     else:
                         row.append("-")
                 rows.append(row)
-            
+
             if rows:
                 if HAS_TABULATE:
                     md_content += tabulate(rows, headers, tablefmt="github") + "\n\n"
@@ -363,20 +363,20 @@ class BenchmarkRunner:
                     for row in rows:
                         md_content += "| " + " | ".join(row) + " |\n"
                     md_content += "\n"
-        
+
         # Calculate speedup comparison
         md_content += "## Performance Summary\n\n"
         md_content += self._calculate_speedup_summary()
-        
+
         # Save markdown
         md_path = self.results_dir / 'summary_table.md'
         with open(md_path, 'w') as f:
             f.write(md_content)
         print(f"📄 Summary saved to: {md_path}")
-    
+
     def _calculate_speedup_summary(self) -> str:
         """Calculate average speedup vs other frameworks."""
-        
+
         # Group by model and agent count
         summary = {}
         for r in self.results:
@@ -384,56 +384,56 @@ class BenchmarkRunner:
             if key not in summary:
                 summary[key] = {}
             summary[key][r.framework] = r.execution_time
-        
+
         # Calculate relative speedups against the vectorized AMBER path when available.
         baseline = 'AMBER (vectorized)' if any(
             r.framework == 'AMBER (vectorized)' for r in self.results
         ) else 'AMBER'
         speedups = {'AgentPy': [], 'Mesa': [], 'AMBER': []}
-        
+
         for key, times in summary.items():
             if baseline not in times:
                 continue
             for framework in speedups:
                 if framework != baseline and framework in times:
                     speedups[framework].append(times[framework] / times[baseline])
-        
+
         content = ""
         for framework, ratios in speedups.items():
             if not ratios:
                 continue
             avg = np.mean(ratios)
             content += f"- **{baseline} vs {framework}**: {avg:.2f}x {'faster' if avg > 1 else 'slower'}\n"
-        
+
         return content or "No comparison data available.\n"
-    
+
     def _generate_charts(self):
         """Generate performance comparison charts."""
-        
+
         # Create figure with subplots for each model
         n_models = len(self.MODEL_CONFIGS)
         fig, axes = plt.subplots(1, n_models, figsize=(5 * n_models, 4))
         if n_models == 1:
             axes = [axes]
-        
+
         colors = {
             'AMBER': '#60a5fa',
             'AMBER (vectorized)': '#2563eb',
             'AgentPy': '#dc2626',
             'Mesa': '#16a34a',
         }
-        
+
         for idx, model_name in enumerate(self.MODEL_CONFIGS.keys()):
             ax = axes[idx]
-            
+
             for framework in self.frameworks.keys():
-                model_results = [r for r in self.results 
+                model_results = [r for r in self.results
                                if r.model == model_name and r.framework == framework]
                 if model_results:
                     x = [r.n_agents for r in model_results]
                     y = [r.execution_time for r in model_results]
                     ax.plot(x, y, 'o-', label=framework, color=colors.get(framework, 'gray'), linewidth=2)
-            
+
             ax.set_xlabel('Number of Agents')
             ax.set_ylabel('Execution Time (s)')
             ax.set_title(self.MODEL_LABELS[model_name])
@@ -441,7 +441,7 @@ class BenchmarkRunner:
             ax.grid(True, alpha=0.3)
             ax.set_xscale('log')
             ax.set_yscale('log')
-        
+
         plt.tight_layout()
         chart_path = self.results_dir / 'scaling_chart.png'
         plt.savefig(chart_path, dpi=150)
@@ -458,11 +458,11 @@ def main():
     parser.add_argument('--runs', type=int, default=3, help='Runs per configuration')
     parser.add_argument('--models', type=str, nargs='+', help='Models to benchmark')
     parser.add_argument('--frameworks', type=str, nargs='+', help='Frameworks to benchmark')
-    
+
     args = parser.parse_args()
-    
+
     runner = BenchmarkRunner()
-    
+
     if args.quick:
         agent_counts = BenchmarkRunner.QUICK_AGENT_COUNTS
         n_steps = BenchmarkRunner.QUICK_STEPS
@@ -475,7 +475,7 @@ def main():
         agent_counts = args.agents or BenchmarkRunner.QUICK_AGENT_COUNTS
         n_steps = args.steps
         n_runs = args.runs
-    
+
     runner.run_benchmarks(
         agent_counts=agent_counts,
         n_steps=n_steps,
@@ -483,9 +483,9 @@ def main():
         frameworks=args.frameworks,
         n_runs=n_runs
     )
-    
+
     runner.save_results()
-    
+
     print("\n✅ Benchmark complete! Check the results/ directory for output.")
 
 

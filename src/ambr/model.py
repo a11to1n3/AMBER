@@ -253,7 +253,7 @@ class Model(BaseModel):
 
     def setup(self): pass
     def step(self): pass
-    
+
     def update(self):
         """Per-step hook, called after :meth:`step` with ``t`` already advanced.
 
@@ -443,11 +443,11 @@ class Model(BaseModel):
             # Column-oriented construction to avoid Polars concat ShapeErrors with sparse data
             all_keys = sorted(list(set().union(*(d.keys() for d in self._model_data))))
             data_dict = {k: [] for k in all_keys}
-            
+
             for d in self._model_data:
                 for k in all_keys:
                     data_dict[k].append(d.get(k, None))
-            
+
             series_list = []
             for k, v in data_dict.items():
                 try:
@@ -460,11 +460,11 @@ class Model(BaseModel):
                         # thorough fallback
                         s = pl.Series(k, v, dtype=pl.Object)
                 series_list.append(s)
-            
+
             model_df = pl.DataFrame(series_list)
         else:
             model_df = pl.DataFrame({'t': []})
-            
+
         results = RunResults(
             info={'steps': self.t, 'run_time': time.time() - start_time},
             # agents_df flushes the buffered write queue so OOP /

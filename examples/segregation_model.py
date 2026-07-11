@@ -44,7 +44,7 @@ if they are not.
 
 
 class Person(am.Agent):
-    
+
     def __init__(self, model, agent_id):
         super().__init__(model, agent_id)
         self.x = 0
@@ -52,7 +52,7 @@ class Person(am.Agent):
         self.group = 0
         self.share_similar = 0.0
         self.happy = False
-        
+
     def update_happiness(self):
         """ Be happy if rate of similar neighbors is high enough. """
         neighbors = self.model.get_neighbors(self.x, self.y)
@@ -60,25 +60,25 @@ class Person(am.Agent):
         ln = len(neighbors)
         self.share_similar = similar / ln if ln > 0 else 0
         self.happy = self.share_similar >= self.model.p['want_similar']
-        
+
     def find_new_home(self):
         """ Move to random free spot and update free spots efficiently. """
         if len(self.model.empty_spots) == 0:
             return  # No empty spots available
-        
+
         # Get available spots (excluding current position)
         available_spots = [spot for spot in self.model.empty_spots if spot != (self.x, self.y)]
-        
+
         if not available_spots:
             return  # No different spots available
-        
+
         # Choose new position
         new_spot = self.model.random.choice(available_spots)
-        
+
         # Add current position back to empty spots
         self.model.empty_spots.append((self.x, self.y))
         self.model.grid[self.x][self.y] = -1
-        
+
         # Move to new position
         self.x, self.y = new_spot
         self.model.grid[self.x][self.y] = self.id
@@ -90,18 +90,18 @@ Next, we define our model, which consists of our agents and a spatial grid envir
 
 
 class SegregationModel(am.Model):
-    
-    def setup(self):      
+
+    def setup(self):
         # Parameters
-        s = self.p['size'] 
+        s = self.p['size']
         n = self.n = int(self.p['density'] * (s ** 2))
-         
+
         # Create grid (2D array, -1 = empty, agent_id = occupied)
         self.grid = [[-1 for _ in range(s)] for _ in range(s)]
-        
+
         # Pre-calculate all empty spots for efficient agent placement
         self.empty_spots = [(x, y) for x in range(s) for y in range(s)]
-        
+
         # Create persistent agent objects with vectorized placement
         self.agent_objects = {}
         for i in range(n):
@@ -114,17 +114,17 @@ class SegregationModel(am.Model):
                 self.grid[agent.x][agent.y] = i
                 self.empty_spots.remove(spot)
             self.agent_objects[i] = agent
-        
+
         # Create AgentList for compatibility
         self.agents = am.AgentList(self, 0, Person)
         self.agents.agent_ids = list(range(n))
-        
+
         # Track agents needing DataFrame updates
         self._agents_to_update = set()
-        
+
         # Track simulation state
         self.simulation_finished = False
-        
+
         # Initialize DataFrame with minimal data (only record final states)
         self.agents_df = pl.DataFrame({
             'id': pl.Series([], dtype=pl.Int64),
@@ -140,7 +140,7 @@ class SegregationModel(am.Model):
         """Get list of empty spots on the grid (efficient)."""
         # Use the maintained list for efficiency
         return self.empty_spots
-    
+
     def get_neighbors(self, x, y):
         """Get neighbor agent IDs for a given position."""
         neighbors = []
@@ -154,43 +154,43 @@ class SegregationModel(am.Model):
                     if agent_id != -1:
                         neighbors.append(agent_id)
         return neighbors
-    
+
     def update(self):
         # Call parent update to increment time step
         super().update()
-        
+
         # Update list of unhappy people
         for agent in self.agent_objects.values():
             agent.update_happiness()
-        
+
         self.unhappy = [agent for agent in self.agent_objects.values() if not agent.happy]
-        
+
         # Check if simulation should finish (all agents happy)
-        if len(self.unhappy) == 0: 
+        if len(self.unhappy) == 0:
             self.simulation_finished = True
-            
+
     def step(self):
         # Skip step if simulation is finished
         if self.simulation_finished:
             return
-            
+
         # Move unhappy people to new location (with safety limit)
         moves_made = 0
         max_moves = min(len(self.unhappy), 50)  # Limit moves per step
-        
+
         for i, agent in enumerate(self.unhappy):
             if i >= max_moves:
                 break
             if len(self.empty_spots) > 0:  # Only move if there are empty spots
                 agent.find_new_home()
                 moves_made += 1
-    
+
     def reset_simulation(self):
         """Reset simulation state for fresh runs."""
         self.t = 0
         self.simulation_finished = False
         self._model_data = []
-    
+
     def run(self, steps = None):
         """Override run method to stop early when all agents are happy."""
         # Initialize model state
@@ -198,30 +198,30 @@ class SegregationModel(am.Model):
         self.simulation_finished = False
         if not hasattr(self, '_model_data'):
             self._model_data = []
-        
+
         # Call setup if needed
         if not hasattr(self, 'agent_objects'):
             self.setup()
-        
+
         max_steps = steps if steps is not None else self.p.get('steps', 100)
-        
+
         # Initialize unhappy agents list (first update)
         for agent in self.agent_objects.values():
             agent.update_happiness()
         self.unhappy = [agent for agent in self.agent_objects.values() if not agent.happy]
-        
+
         # Check if already finished at start
         if len(self.unhappy) == 0:
             self.simulation_finished = True
-        
+
         # Run simulation steps
         while self.t < max_steps and not self.simulation_finished:
             self.step()
             self.update()
-            
+
         # Record final state and return results
         self.end()
-        
+
         return {
             'info': {
                 'model_type': self.__class__.__name__,
@@ -232,7 +232,7 @@ class SegregationModel(am.Model):
             'agents': self.agents_df,
             'model': pl.DataFrame(self._model_data) if self._model_data else pl.DataFrame({'t': []})
         }
-    
+
     def _record_final_state(self):
         """Record final state of all agents to DataFrame (called only at end)."""
         agent_data = []
@@ -246,21 +246,21 @@ class SegregationModel(am.Model):
                 'share_similar': agent.share_similar,
                 'happy': agent.happy
             })
-        
+
         if agent_data:
             self.agents_df = pl.DataFrame(agent_data)
         else:
             self.agents_df = pl.DataFrame({
-                'id': [], 'step': [], 'x': [], 'y': [], 
+                'id': [], 'step': [], 'x': [], 'y': [],
                 'group': [], 'share_similar': [], 'happy': []
             })
-        
+
     def get_segregation(self):
         # Calculate average percentage of similar neighbors
         total_similar = sum(agent.share_similar for agent in self.agent_objects.values())
         return round(total_similar / self.n, 2)
-            
-    def end(self): 
+
+    def end(self):
         # Record final agent states (only done once at the end)
         self._record_final_state()
         # Measure segregation at the end of the simulation
@@ -324,22 +324,22 @@ for i in range(5):
     if len(model.unhappy) == 0:
         print(f"   - All agents happy after {i} manual steps!")
         break
-    
+
     print(f"   - Manual step {i}: {len(model.unhappy)} unhappy agents")
-    
+
     # Move some unhappy agents
     moves_made = 0
     max_moves = min(len(model.unhappy), 10)  # Limit for testing
-    
+
     for j, agent in enumerate(model.unhappy):
         if j >= max_moves:
             break
         if len(model.empty_spots) > 0:
             agent.find_new_home()
             moves_made += 1
-    
+
     print(f"     → Moved {moves_made} agents")
-    
+
     # Update happiness without time increment
     for agent in model.agent_objects.values():
         agent.update_happiness()
@@ -414,7 +414,7 @@ def plot_segregation_grid(model, ax):
     """Plot the current state of the segregation model."""
     size = model.p['size']
     grid_display = np.zeros((size, size))
-    
+
     # Fill grid with group values (-1 for empty, 0 and 1 for groups)
     for x in range(size):
         for y in range(size):
@@ -423,20 +423,20 @@ def plot_segregation_grid(model, ax):
                 grid_display[x][y] = -1  # Empty
             else:
                 grid_display[x][y] = model.agent_objects[agent_id].group
-    
+
     # Create color map: white for empty, different colors for groups
     import matplotlib.colors as mcolors
     colors = ['white', 'orange', 'lightblue']
     cmap = mcolors.ListedColormap(colors[:model.p['n_groups']+1])
     bounds = [-1.5, -0.5, 0.5, 1.5]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
-    
+
     ax.clear()
     im = ax.imshow(grid_display, cmap=cmap, norm=norm)
     ax.set_title(f"Segregation Model - Step: {model.t}, Segregation: {model.get_segregation()}")
     ax.set_xticks([])
     ax.set_yticks([])
-    
+
     return im
 
 # Plot final state if the simulation completed
@@ -533,19 +533,19 @@ experiment_data = []
 print("Running experiments...")
 for i, params in enumerate(parameter_combinations):
     print(f"Running combination {i+1}/{len(parameter_combinations)}: want_similar={params['want_similar']}, density={params['density']}")
-    
+
     # Run multiple iterations for each parameter combination
     for iteration in range(3):  # 3 iterations per combination
         # Create a copy of parameters with iteration info
         run_params = params.copy()
         run_params['iteration'] = iteration
         run_params['seed'] = 42 + i * 10 + iteration  # Different seed for each run
-        
+
         try:
             # Run the model
             model = SegregationModel(run_params)
             result = model.run()
-            
+
             # Extract key results into a standardized format
             experiment_row = {
                 'want_similar': float(params['want_similar']),
@@ -556,10 +556,10 @@ for i, params in enumerate(parameter_combinations):
                 'segregation': float(model.get_segregation()) if hasattr(model, 'get_segregation') else 0.0,
                 'run_id': i * 3 + iteration
             }
-            
+
             experiment_data.append(experiment_row)
             print(f"  ✅ Iteration {iteration}: segregation = {experiment_row['segregation']}")
-            
+
         except Exception as e:
             print(f"  ❌ Error in iteration {iteration}: {e}")
 
@@ -584,16 +584,16 @@ sns.set_theme()
 if len(combined_results) > 0 and 'segregation' in combined_results.columns:
     plt.figure(figsize=(10, 6))
     sns.lineplot(
-        data=combined_results, 
-        x='want_similar', 
-        y='segregation', 
+        data=combined_results,
+        x='want_similar',
+        y='segregation',
         hue='density'
     )
     plt.title('Segregation Levels by Individual Preferences and Population Density')
     plt.xlabel('Want Similar (Individual Preference)')
     plt.ylabel('Average Segregation Level')
     plt.show()
-    
+
     # Show summary statistics
     print("\nSummary Statistics:")
     summary = combined_results.group_by(['want_similar', 'density']).agg([

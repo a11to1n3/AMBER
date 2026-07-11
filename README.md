@@ -228,9 +228,9 @@ violation; `raise` stops on the first error. Mode `off` (default) adds zero over
 
 The monitor watches **two write paths** (and combinations):
 
-* **Buffered (OOP)** — `agent.col = …` / queued cell writes  
-* **Lane / view** — `agents.col = …`, `agents.set(...)`, `borrow`/`commit`  
-* **Cross-path** — same column via both OOP and view in one step → `cross_path_write`  
+* **Buffered (OOP)** — `agent.col = …` / queued cell writes
+* **Lane / view** — `agents.col = …`, `agents.set(...)`, `borrow`/`commit`
+* **Cross-path** — same column via both OOP and view in one step → `cross_path_write`
 
 `scatter_add` is the sanctioned multi-write reducer (not treated as a conflicting
 ordinary commit). Prefer those APIs over assigning `population.data` directly.
@@ -345,7 +345,7 @@ If you use AMBER in academic work, please cite the paper:
 }
 ```
 
-Paper: https://arxiv.org/abs/2601.16292  
+Paper: https://arxiv.org/abs/2601.16292
 
 (Source drafts and build artifacts for the manuscript are **not** kept in this
 repository — only the public citation.)
