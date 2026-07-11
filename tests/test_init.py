@@ -157,6 +157,7 @@ class TestPackageInitialization:
             # Tensor lane / GPU (0.4)
             'TensorLane', 'borrow_numeric', 'commit_columns',
             'GPU_AVAILABLE', 'get_array_module', 'to_device', 'to_host',
+            'RunResults',
         }
         
         # Check that we don't have unexpected exports

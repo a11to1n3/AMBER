@@ -79,6 +79,7 @@ Table of Contents
 
    installation
    quickstart
+   from_agentpy
    tutorial
    benchmarks
    examples/index
