@@ -186,12 +186,30 @@ Do **not** paste API tokens into chat or commit them. Configure OIDC once:
    * Workflow name: ``release.yml``
    * Environment name: ``pypi``
 
-3. On GitHub: create an Environment named ``pypi`` (Settings → Environments).
-   Optional: require reviewers before production deploys.
+3. On GitHub: Environment ``pypi`` already exists on this repo
+   (Settings → Environments). Optional: require reviewers before deploys.
+
+**Status (repo side):** GitHub Environment ``pypi`` is configured; the
+``Release`` workflow requests OIDC (``id-token: write``). **You must still
+add the matching Trusted Publisher row on PyPI** (step 1–2) if the next tag
+should upload automatically — that step requires project-owner login on
+pypi.org and cannot be done from CI alone.
 
 If Trusted Publishing is not configured yet, you can still upload manually
 with a *project-scoped* token (``twine upload``) and then switch to OIDC.
 Revoke any token that has been exposed.
+
+Lint & type checks
+~~~~~~~~~~~~~~~~~~
+
+CI runs a dedicated **Ruff + mypy** job on every PR:
+
+.. code-block:: bash
+
+   ruff check src/ambr
+   mypy   # module list configured in pyproject.toml [tool.mypy]
+
+``make lint`` / ``make type-check`` wrap the same tools for local use.
 
 Community Guidelines
 --------------------

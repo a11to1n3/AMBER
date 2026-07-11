@@ -10,7 +10,7 @@ Both forms return the same objects.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Iterator, Mapping, Optional
+from typing import Any
 
 
 class RunResults(dict):

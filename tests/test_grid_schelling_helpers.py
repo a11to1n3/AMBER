@@ -53,6 +53,32 @@ def test_empty_cells_in_radius_and_neighbors_radius_alias():
     assert (2, 2) not in n
 
 
+def test_schelling_vectorized_example_smoke():
+    """Canonical grid Schelling example (docs/environments_schelling.rst)."""
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "examples" / "schelling_vectorized.py"
+    spec = importlib.util.spec_from_file_location("schelling_vec", path)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+
+    res = mod.SchellingModel(
+        {
+            "grid_size": 8,
+            "n": 40,
+            "want_similar": 0.3,
+            "steps": 4,
+            "seed": 2,
+            "show_progress": False,
+        }
+    ).run()
+    assert res["info"]["steps"] == 4
+    assert "happy_frac" in res.model.columns
+    assert "grid_position" in res.agents.columns
+
+
 def test_segregation_model_smoke_runs():
     """Import path used by examples/smac_calibration_advanced.py."""
     import importlib.util

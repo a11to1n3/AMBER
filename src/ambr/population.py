@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING, Type
+from typing import Any, Dict, Optional, Union, TYPE_CHECKING, Type
 import warnings
 import polars as pl
 import numpy as np
@@ -6,7 +6,7 @@ import numpy as np
 from ._deprecation import warn_deprecated
 
 if TYPE_CHECKING:
-    from .agent import Agent
+    pass
 
 class Population:
     """
@@ -291,7 +291,7 @@ class BatchUpdateContext:
     """Context manager for buffering updates to minimize DataFrame copies."""
     def __init__(self, population: Population):
         self.population = population
-        self.updates = {}
+        self.updates: Dict[int, Dict[str, Any]] = {}
 
     def __enter__(self):
         return self
