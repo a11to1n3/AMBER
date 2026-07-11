@@ -192,7 +192,7 @@ claiming identical trajectories.
 
 ## Reproducing these numbers
 
-**One-command master run** (produces JSON, Markdown, and the log-log chart):
+**One-command master run** (produces Markdown, charts; raw JSON is local-only):
 
 ```bash
 python benchmarks/run_all_frameworks.py --agents 500 1000 5000 --steps 50 --runs 10
@@ -200,8 +200,8 @@ python benchmarks/run_all_frameworks.py --agents 500 1000 5000 --steps 50 --runs
 
 **Outputs:**
 
-- `results/benchmark_results_all.json` — raw per-(framework, model, n) timings
-- `results/summary_table_all.md` — the table above
+- `results/*.json` — raw timings (**gitignored**; regenerate when you need them)
+- `results/summary_table_all.md` — the table above (checked in when updated)
 - `results/scaling_chart_all.png` — the log-log chart above
 
 **Dependencies:**
@@ -233,10 +233,8 @@ python benchmarks/run_sir_schedule_variants.py --agents 500 1000 5000 --steps 50
     --modes agentsjl_actual_source_sync agentsjl_actual_source_async --resume-existing
 ```
 
-Outputs land in `results/sir_schedule_results.json` and
-`results/sir_schedule_results.md`. The current artifact records 42 measured
-CI-grade rows, three explicit async SimPy budget skips, and zero reference
-mismatches.
+Outputs land in `results/sir_schedule_results.md` (and a local
+`sir_schedule_results.json`, gitignored).
 
 The dynamic graph runner adds a bounded-confidence opinion workload with a
 deterministic sparse edge relation regenerated every step:
@@ -246,10 +244,8 @@ python benchmarks/run_dynamic_graph_variants.py --agents 500 1000 5000 \
     --seeds 42 77 123 --steps 20 --runs 5
 ```
 
-Outputs land in `results/dynamic_graph_results.json` and
-`results/dynamic_graph_results.md`. The current artifact records 63 measured
-rows across NumPy, Polars, a Python object loop, AMBER, Mesa, AgentPy, and
-Agents.jl, with zero reference mismatches.
+Outputs land in `results/dynamic_graph_results.md` (and a local
+`dynamic_graph_results.json`, gitignored).
 
 ## Three-framework registry runner
 
@@ -261,9 +257,10 @@ python benchmarks/runner.py --frameworks AMBER "AMBER (vectorized)" AgentPy Mesa
     --agents 500 1000 5000 --steps 50 --runs 10
 ```
 
-Outputs land in `results/benchmark_results.json` / `summary_table.md` /
-`scaling_chart.png` — the older three-framework filenames — so they don't
-overwrite the seven-framework artefacts produced by `run_all_frameworks.py`.
+Outputs land in `results/summary_table.md` / `scaling_chart.png` (and a
+local `benchmark_results.json`, gitignored) — older three-framework
+filenames, so they don't overwrite the seven-framework artefacts from
+`run_all_frameworks.py`.
 
 ## Architecture
 
