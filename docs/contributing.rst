@@ -212,6 +212,17 @@ CI runs a dedicated **Ruff + mypy** job on every PR:
 
 ``make lint`` / ``make type-check`` wrap the same tools for local use.
 
+Repo hygiene
+~~~~~~~~~~~~
+
+* Do **not** commit notebook outputs (clear cells before push, or use
+  ``nbstripout``). Example ``.ipynb`` files in ``examples/`` should stay small.
+* Do **not** commit manuscript drafts (``paper/`` is gitignored); cite the
+  public arXiv paper only.
+* Prefer ``pyproject.toml`` extras over hand-editing ``requirements*.txt``.
+* Package surface is enforced by ``MANIFEST.in`` and the release workflow
+  (sdist must not contain ``benchmarks/``, ``docs/``, ``paper/``, ``tests/``).
+
 Community Guidelines
 --------------------
 

@@ -1,21 +1,13 @@
-# Core dependencies
+# Convenience pin file for tools that do not read pyproject.toml
+# (e.g. some Read the Docs / legacy scripts). Prefer:
+#   pip install -e .
+#   pip install -e ".[dev,advanced,perf]"
+#
+# Keep in sync with [project] dependencies in pyproject.toml.
+
 polars>=0.20.0
 numpy>=1.20.0
-networkx>=2.5
-
-# Visualization
 matplotlib>=3.3.0
 seaborn>=0.11.0
-
-# Optional optimization dependencies
+networkx>=2.5
 scikit-optimize>=0.9.0
-
-# Development and documentation dependencies (optional)
-# Uncomment for development:
-# pytest>=6.0.0
-# pytest-cov>=2.0.0
-# sphinx>=4.0.0
-# sphinx-rtd-theme>=1.0.0
-# myst-parser>=0.18.0
-# nbsphinx>=0.8.0
-# jupyter>=1.0.0 
