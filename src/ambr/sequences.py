@@ -165,8 +165,17 @@ class _BaseView:
                 vals = values.to_numpy()
                 # Object / mixed columns fall through to the join path.
                 if base.dtype != object and vals.dtype != object:
-                    out = base.copy()
-                    out[positions] = vals
+                    out = np.ascontiguousarray(base.copy())
+                    pos_i = np.ascontiguousarray(positions, dtype=np.int64)
+                    vals_c = np.ascontiguousarray(vals, dtype=out.dtype)
+                    try:
+                        from .performance import HAS_NUMBA, scatter_write_1d
+                        if HAS_NUMBA:
+                            scatter_write_1d(out, pos_i, vals_c)
+                        else:
+                            out[pos_i] = vals_c
+                    except Exception:
+                        out[positions] = vals
                     model._set_frame(
                         df.with_columns(pl.Series(name, out, strict=False)),
                         written_columns=[name],
@@ -429,6 +438,12 @@ class _BaseView:
         }
 
         positions = _resolve_positions(model, df, ids.to_numpy())
+        # Prefer Numba scatter on CPU when available (esp. Apple Silicon / no CUDA).
+        try:
+            from .performance import HAS_NUMBA, scatter_add_1d
+        except Exception:  # pragma: no cover
+            HAS_NUMBA = False
+            scatter_add_1d = None  # type: ignore
 
         new_columns: List[pl.Series] = []
         for col_name, delta in delta_np.items():
@@ -440,7 +455,14 @@ class _BaseView:
                 base = base.astype(result_dtype, copy=True) if base.dtype != result_dtype else base.copy()
             else:
                 base = np.zeros(df.height, dtype=delta.dtype)
-            np.add.at(base, positions, delta)
+            if HAS_NUMBA and scatter_add_1d is not None and base.dtype != object:
+                # Contiguous arrays for nopython mode
+                base = np.ascontiguousarray(base)
+                pos_i = np.ascontiguousarray(positions, dtype=np.int64)
+                delta_c = np.ascontiguousarray(delta, dtype=base.dtype)
+                scatter_add_1d(base, pos_i, delta_c)
+            else:
+                np.add.at(base, positions, delta)
             new_columns.append(pl.Series(col_name, base, strict=False))
 
         model._set_frame(df.with_columns(new_columns))

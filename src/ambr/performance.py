@@ -144,6 +144,36 @@ class SpatialIndex:
 
 
 @jit(nopython=True, cache=True)
+def scatter_add_1d(
+    base: np.ndarray, positions: np.ndarray, delta: np.ndarray
+) -> np.ndarray:
+    """Accumulate ``delta`` into ``base`` at ``positions`` (Numba, duplicate-safe).
+
+    Same semantics as ``np.add.at(base, positions, delta)`` but often faster
+    for irregular ABM scatter patterns on CPU (including Apple Silicon).
+    Mutates and returns ``base``.
+    """
+    n = positions.shape[0]
+    for i in range(n):
+        base[positions[i]] += delta[i]
+    return base
+
+
+@jit(nopython=True, cache=True)
+def scatter_write_1d(
+    base: np.ndarray, positions: np.ndarray, values: np.ndarray
+) -> np.ndarray:
+    """Write ``values`` into ``base`` at ``positions`` (last write wins).
+
+    Mutates and returns ``base``. Used for subset column assigns.
+    """
+    n = positions.shape[0]
+    for i in range(n):
+        base[positions[i]] = values[i]
+    return base
+
+
+@jit(nopython=True, cache=True)
 def fast_distance_matrix(positions: np.ndarray) -> np.ndarray:
     """
     Compute pairwise distance matrix using Numba.

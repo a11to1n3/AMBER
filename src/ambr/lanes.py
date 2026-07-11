@@ -20,25 +20,38 @@ from typing import Any, Dict, List, Optional
 from .gpu import GPU_AVAILABLE, device_name, get_array_module, to_host
 from .results import RunResults
 
+try:
+    from .performance import HAS_NUMBA
+except Exception:  # pragma: no cover
+    HAS_NUMBA = False
+
 
 def status() -> Dict[str, Any]:
     """Return a machine/lane status dict (safe to print or log)."""
     gpu = bool(GPU_AVAILABLE)
+    numba = bool(HAS_NUMBA)
     return {
         "gpu_available": gpu,
+        "numba_available": numba,
         "device": device_name(),
         "array_module": "cupy" if gpu else "numpy",
         "lanes": {
             "oop": "AgentList + agent methods — always on",
             "vectorized": "agents.where / .at / .set / scatter_add — write this style",
             "tensor": "agents.borrow / .commit — dense NumPy interaction kernels",
+            "cpu_jit": "Numba accelerates scatter_add / subset writes when installed",
             "gpu_single": "ArrayKernelModel — one large run on CuPy/NumPy arrays",
             "gpu_ensemble": "GPUEnsembleRunner — B parameter sets in one batch",
         },
         "enable_gpu": (
             "CuPy is active"
             if gpu
-            else "pip install cupy-cuda12x   # pick the wheel matching your CUDA"
+            else "pip install cupy-cuda12x   # NVIDIA + CUDA only (not Mac GPU)"
+        ),
+        "enable_numba": (
+            "Numba is active (CPU JIT)"
+            if numba
+            else "pip install numba   # recommended on Mac / CPU-only machines"
         ),
     }
 
@@ -49,8 +62,13 @@ def print_status() -> None:
     if s["gpu_available"]:
         print(f"GPU: yes ({s['device']})")
     else:
-        print("GPU: no — using NumPy/CPU")
-        print(f"  enable: {s['enable_gpu']}")
+        print("GPU: no — using NumPy/CPU (Mac Metal/MPS not used)")
+        print(f"  enable CUDA GPU: {s['enable_gpu']}")
+    if s["numba_available"]:
+        print("Numba: yes (scatter_add / subset writes JIT-accelerated)")
+    else:
+        print("Numba: no")
+        print(f"  enable: {s['enable_numba']}")
     print("Lanes:")
     for name, desc in s["lanes"].items():
         print(f"  {name:12}  {desc}")
@@ -64,6 +82,11 @@ def recommend(n_agents: int, *, ensemble: bool = False) -> str:
     match the public benchmarks' qualitative breakpoints.
     """
     n = int(n_agents)
+    numba_note = (
+        " Numba is on (CPU scatter JIT)."
+        if HAS_NUMBA
+        else " Install numba for faster CPU scatter/subset writes."
+    )
     if ensemble:
         if GPU_AVAILABLE:
             return (
@@ -71,32 +94,37 @@ def recommend(n_agents: int, *, ensemble: bool = False) -> str:
                 "(best for calibration / many short runs)."
             )
         return (
-            "No GPU: use Experiment / ParallelRunner on CPU, or install CuPy "
-            "for GPUEnsembleRunner."
+            "No CUDA GPU: use Experiment / ParallelRunner on CPU"
+            + ("" if HAS_NUMBA else ", and pip install numba")
+            + ". Mac GPUs (MPS) are not used by AMBER."
         )
     if n < 2_000:
         return (
             "OOP (AgentList + methods) or light vectorized is fine; "
             "GPU will usually be slower (transfer overhead)."
+            + numba_note
         )
     if n < 50_000:
         return (
             "Prefer vectorized: agents.where / .at / scatter_add "
-            "(this is AMBER's default fast path)."
+            "(default CPU fast path)."
+            + numba_note
         )
     if n < 500_000:
         return (
-            "Vectorized or tensor (borrow/commit) if you have dense interactions; "
-            "try ArrayKernelModel if the whole step is array math."
+            "Vectorized or tensor (borrow/commit) for dense interactions; "
+            "ArrayKernelModel if the whole step is array math."
+            + numba_note
         )
     if GPU_AVAILABLE:
         return (
-            "Large N: use ArrayKernelModel (single run) so state stays on device; "
-            "vectorized Polars is still fine if the step is simple filters/updates."
+            "Large N: use ArrayKernelModel so state stays on device; "
+            "vectorized Polars is still fine for simple filters/updates."
         )
     return (
-        "Large N on CPU: stay vectorized; install CuPy and use ArrayKernelModel "
-        "when the step is mostly array kernels."
+        "Large N on CPU (e.g. Mac): stay vectorized + install numba; "
+        "use ArrayKernelModel for array-heavy steps. "
+        "AMBER does not use Apple MPS — CUDA/CuPy only for GPU."
     )
 
 

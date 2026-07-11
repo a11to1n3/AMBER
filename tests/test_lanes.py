@@ -8,14 +8,16 @@ from ambr.lanes import ArrayKernelModel, status, recommend, print_status
 def test_status_and_recommend():
     s = status()
     assert "gpu_available" in s
+    assert "numba_available" in s
     assert "lanes" in s
     assert "vectorized" in s["lanes"]
+    assert "cpu_jit" in s["lanes"]
     tip = recommend(10_000)
-    assert "vectorized" in tip.lower() or "oop" in tip.lower()
+    assert "vectorized" in tip.lower() or "oop" in tip.lower() or "numba" in tip.lower()
     tip_big = recommend(2_000_000)
     assert isinstance(tip_big, str) and len(tip_big) > 10
     tip_ens = recommend(1000, ensemble=True)
-    assert "Ensemble" in tip_ens or "Experiment" in tip_ens or "GPU" in tip_ens
+    assert "Ensemble" in tip_ens or "Experiment" in tip_ens or "GPU" in tip_ens or "numba" in tip_ens
 
 
 def test_print_status_smoke(capsys):

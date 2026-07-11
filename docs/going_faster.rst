@@ -16,6 +16,31 @@ Check this machine
    print(am.recommend(100_000))          # single large run
    print(am.recommend(1_000, ensemble=True))  # many short runs / calibration
 
+CPU acceleration with Numba (great on Mac)
+------------------------------------------
+
+Modern Macs have **no CUDA**, so AMBER cannot use the GPU lane there. For
+CPU speed, install Numba (optional ``perf`` extra)::
+
+   pip install 'ambr[perf]'
+   # or: pip install numba
+
+When ``HAS_NUMBA`` is true, AMBER JIT-compiles:
+
+* ``scatter_add`` accumulations
+* subset column writes (``view.col = ...`` / ``set`` on filtered views)
+
+Your vectorized model code does **not** change — acceleration is automatic.
+``am.print_status()`` reports whether Numba is active.
+
+For custom array kernels, reuse the same optional stack::
+
+   from ambr.performance import HAS_NUMBA, jit  # no-op decorator if missing
+
+   @jit(nopython=True, cache=True)
+   def my_kernel(x, y):
+       ...
+
 Lane 1 — OOP (AgentPy-shaped)
 -----------------------------
 
@@ -50,7 +75,8 @@ See :doc:`api/tensor_lane` and ``examples/flocking_tensor.py``.
 Lane 4 — GPU
 ------------
 
-Install CuPy (match your CUDA), then either:
+Requires an **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install CuPy matching
+your CUDA, then either:
 
 **A. Single large run —** :class:`~ambr.lanes.ArrayKernelModel`::
 
