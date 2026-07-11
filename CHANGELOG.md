@@ -26,7 +26,8 @@
   constant renamed `INFECTED`.
 - **Repo hygiene:** clear outputs from example notebooks (~26 MB → ~50 KB);
   drop unused root ``architecture_diagram.png``; tighten ``.gitignore`` /
-  ``MANIFEST.in``; point ``requirements*.txt`` at ``pyproject.toml`` extras.
+  ``MANIFEST.in``; point ``requirements*.txt`` at ``pyproject.toml`` extras;
+  drop tracked ``benchmarks/results/*.json`` (regenerate locally; charts/md stay).
 
 ## v0.4.1 - 2026-07-11
 
