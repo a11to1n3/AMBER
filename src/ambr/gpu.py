@@ -58,3 +58,14 @@ def synchronize() -> None:
     """Block until all queued GPU work has finished (for honest timing)."""
     if GPU_AVAILABLE:
         _cp.cuda.Stream.null.synchronize()
+
+
+def require_gpu() -> None:
+    """Raise a clear error if CuPy/CUDA is not available."""
+    if not GPU_AVAILABLE:
+        raise RuntimeError(
+            "GPU requested but CuPy/CUDA is not available. "
+            "Install a CuPy wheel matching your CUDA toolkit, e.g.\n"
+            "  pip install cupy-cuda12x\n"
+            "Then verify with: import ambr; ambr.print_status()"
+        )

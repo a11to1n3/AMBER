@@ -390,6 +390,15 @@ class _BaseView:
             written_columns=names,
         )
 
+    def update_where(self, predicate, **columns: Any) -> None:
+        """Filter then write — one-liner sugar for the vectorized lane.
+
+        Equivalent to ``self.where(predicate).set(**columns)``::
+
+            agents.update_where(agents.wealth > 0, wealth=agents.wealth - 1)
+        """
+        self.where(predicate).set(**columns)
+
     # --- scatter-add --------------------------------------------------------
 
     def scatter_add(self, **increments: Any) -> None:

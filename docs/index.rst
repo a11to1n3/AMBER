@@ -80,6 +80,7 @@ Table of Contents
    installation
    quickstart
    from_agentpy
+   going_faster
    tutorial
    benchmarks
    examples/index

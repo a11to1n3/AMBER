@@ -66,8 +66,9 @@ from .performance import (
     HAS_NUMBA,
 )
 from .tensor_lane import TensorLane, borrow_numeric, commit_columns
-from .gpu import GPU_AVAILABLE, get_array_module, to_device, to_host
+from .gpu import GPU_AVAILABLE, get_array_module, to_device, to_host, require_gpu, synchronize
 from .results import RunResults
+from .lanes import ArrayKernelModel, status, print_status, recommend
 
 try:
     __version__ = _metadata_version('ambr')
@@ -122,5 +123,12 @@ __all__ = [
     'get_array_module',
     'to_device',
     'to_host',
+    'require_gpu',
+    'synchronize',
     'RunResults',
+    # Progressive speed lanes
+    'ArrayKernelModel',
+    'status',
+    'print_status',
+    'recommend',
 ]
