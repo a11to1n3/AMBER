@@ -9,6 +9,11 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+[0.4.2] - 2026-07-11
+--------------------
+
+Hygiene, CI quality, and docs release on top of 0.4.1.
+
 Added
 ~~~~~
 - GPU ensemble CPU tests (``GPUEnsembleRunner`` / ``BatchedWellMixedSIR``) and
@@ -17,11 +22,16 @@ Added
 - Canonical Schelling example + ``docs/environments_schelling.rst``.
 - ``docs/deprecations.rst`` (removed in 1.0 table).
 - Ruff + mypy CI job (gradual mypy module set).
+- pre-commit hooks: nbstripout + ruff.
 
 Changed
 ~~~~~~~
-- Docs / README: public arXiv paper citation retained; manuscript drafts stay
-  out of the package repository (``paper/`` ignored).
+- Git history rewrite (drop paper drafts / notebook bloat from history).
+- Branch protection on ``main`` / ``dev`` (required CI checks).
+- Docs / README: public arXiv paper citation; manuscript drafts stay out of
+  the package repository (``paper/`` ignored).
+- Repo hygiene: stripped notebook outputs; no tracked benchmark JSON; tighter
+  ``.gitignore`` / ``MANIFEST.in``.
 
 [0.4.1] - 2026-07-11
 --------------------

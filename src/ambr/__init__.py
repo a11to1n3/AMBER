@@ -79,7 +79,7 @@ from .lanes import ArrayKernelModel, status, print_status, recommend
 try:
     __version__ = _metadata_version('ambr')
 except _PackageNotFoundError:
-    __version__ = '0.4.1'
+    __version__ = '0.4.2'
 
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'

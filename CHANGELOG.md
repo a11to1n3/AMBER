@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.2 - 2026-07-11
+
+Hygiene, CI quality, and docs release on top of 0.4.1.
+
 ### Added
 
 - **GPU ensemble tests** (`tests/test_gpu_ensemble.py`) covering
@@ -15,19 +19,16 @@
   guide `docs/environments_schelling.rst`.
 - **Deprecations guide** `docs/deprecations.rst` (canonical vs legacy → 1.0).
 - **Ruff + mypy CI job**; gradual mypy module set in `pyproject.toml`.
+- **pre-commit** hooks: nbstripout + ruff (``pre-commit install``).
 
 ### Changed
 
 - **Git history rewrite** (purge paper drafts, notebook bloat, build artifacts
   from history; re-clone or ``git reset --hard origin/dev``).
-- **pre-commit** hooks: nbstripout + ruff (``pre-commit install``).
 - **Branch protection** on ``main`` / ``dev``: require ``Ruff + mypy`` and
   Ubuntu 3.12 tests; no force-push.
-
-- Docs / README: keep the public arXiv **citation** for the paper; do **not**
-  co-locate manuscript drafts in the repo (``.gitignore`` still excludes
-  ``paper/`` and build artifacts).
-- `.gitignore`: track `docs/api/*.rst`; ignore local paper drafts only.
+- Docs / README: public arXiv **citation** for the paper; do **not** co-locate
+  manuscript drafts (``.gitignore`` excludes ``paper/`` and build artifacts).
 - Ruff-clean `src/ambr` (unused imports / small fixes); SIR batch status
   constant renamed `INFECTED`.
 - **Repo hygiene:** clear outputs from example notebooks (~26 MB → ~50 KB);
