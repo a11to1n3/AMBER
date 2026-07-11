@@ -162,8 +162,9 @@ Before tagging a release:
    ``src/ambr/__init__.py`` and ``docs/conf.py`` fallbacks in sync).
 3. Run ``make release-check`` from a clean checkout. This builds the wheel and
    source distribution, runs ``twine check``, and executes the test suite.
-4. Inspect the source distribution if local generated artifacts exist; paper
-   drafts and ``paper.zip`` must remain ignored and excluded from the package.
+4. Inspect the source distribution: only package metadata and ``src/ambr``
+   should ship (benchmarks, docs, examples, and local manuscript drafts stay
+   out via ``MANIFEST.in`` / ``.gitignore``).
 5. Create and push an annotated ``vX.Y.Z`` tag from the release commit on
    ``main``. The ``Release`` workflow (``.github/workflows/release.yml``):
 

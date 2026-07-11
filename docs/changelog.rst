@@ -9,6 +9,17 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+Added
+~~~~~
+- GPU ensemble CPU tests (``GPUEnsembleRunner`` / ``BatchedWellMixedSIR``) and
+  public package exports for the ensemble helpers.
+- CI installs ``ambr[perf]`` on Ubuntu + Python 3.12 (Numba scatter path).
+
+Changed
+~~~~~~~
+- Docs / README: software citation while a new manuscript is prepared; paper
+  tree is not co-located in the package repo.
+
 [0.4.1] - 2026-07-11
 --------------------
 

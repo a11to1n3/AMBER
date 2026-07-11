@@ -68,6 +68,11 @@ from .performance import (
 )
 from .tensor_lane import TensorLane, borrow_numeric, commit_columns
 from .gpu import GPU_AVAILABLE, get_array_module, to_device, to_host, require_gpu, synchronize
+from .gpu_ensemble import (
+    GPUEnsembleRunner,
+    BatchedWellMixedSIR,
+    smac_batch_calibrate,
+)
 from .results import RunResults
 from .lanes import ArrayKernelModel, status, print_status, recommend
 
@@ -127,6 +132,9 @@ __all__ = [
     'to_host',
     'require_gpu',
     'synchronize',
+    'GPUEnsembleRunner',
+    'BatchedWellMixedSIR',
+    'smac_batch_calibrate',
     'RunResults',
     # Progressive speed lanes
     'ArrayKernelModel',
