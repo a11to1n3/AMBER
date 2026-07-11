@@ -314,17 +314,21 @@ am.print_status()
 
 Working examples are available in the `examples/` directory:
 
-- **Wealth Transfer Model**: Economic inequality simulation
-- **Virus Spread Model**: Epidemiological SIR model
-- **Flocking Simulation**: Boids flocking behavior
-- **Forest Fire Model**: Cellular automata fire spread
-- **Network Simulations**: Graph-based agent interactions
+- **Schelling (grid)** — `examples/schelling_vectorized.py` (canonical occupancy helpers)
+- **Wealth Transfer** — economic inequality / dual-lane quickstart
+- **Virus Spread** — epidemiological SIR model
+- **Flocking** — Boids + optional tensor-lane variant
+- **Forest Fire** — cellular automata fire spread
+- **GPU quickstart** — `ArrayKernelModel` single-run arrays
+- **SMAC calibration** — basic / advanced Schelling multi-objective
 
 ## 📖 Documentation
 
 - **Docs**: https://ambr.readthedocs.io/
 - **Going faster** (lanes / Numba / GPU): [docs/going_faster.rst](docs/going_faster.rst)
+- **Environments & Schelling**: [docs/environments_schelling.rst](docs/environments_schelling.rst)
 - **From AgentPy**: [docs/from_agentpy.rst](docs/from_agentpy.rst)
+- **Deprecations (→ 1.0)**: [docs/deprecations.rst](docs/deprecations.rst)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
 ## 📝 How to cite?

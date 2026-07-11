@@ -14,6 +14,9 @@ Added
 - GPU ensemble CPU tests (``GPUEnsembleRunner`` / ``BatchedWellMixedSIR``) and
   public package exports for the ensemble helpers.
 - CI installs ``ambr[perf]`` on Ubuntu + Python 3.12 (Numba scatter path).
+- Canonical Schelling example + ``docs/environments_schelling.rst``.
+- ``docs/deprecations.rst`` (removed in 1.0 table).
+- Ruff + mypy CI job (gradual mypy module set).
 
 Changed
 ~~~~~~~

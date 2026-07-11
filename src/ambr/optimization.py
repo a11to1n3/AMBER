@@ -1,9 +1,7 @@
-from typing import Type, Dict, Any, List, Callable, Optional, Union, Tuple
+from typing import Type, Dict, Any, List, Callable, Optional
 import polars as pl
 import numpy as np
 import itertools
-import random
-import time
 from .model import Model
 
 # SMAC is an optional dependency. Probe a real import path (not just the
@@ -321,7 +319,7 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
     )
 
     try:
-        incumbent = smac.optimize()
+        smac.optimize()
     except Exception:
         # Configuration space exhausted — proceed with whatever SMAC3
         # evaluated so far (runhistory still has the partial results).
