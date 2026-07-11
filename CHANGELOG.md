@@ -18,6 +18,12 @@
 
 ### Changed
 
+- **Git history rewrite** (purge paper drafts, notebook bloat, build artifacts
+  from history; re-clone or ``git reset --hard origin/dev``).
+- **pre-commit** hooks: nbstripout + ruff (``pre-commit install``).
+- **Branch protection** on ``main`` / ``dev``: require ``Ruff + mypy`` and
+  Ubuntu 3.12 tests; no force-push.
+
 - Docs / README: keep the public arXiv **citation** for the paper; do **not**
   co-locate manuscript drafts in the repo (``.gitignore`` still excludes
   ``paper/`` and build artifacts).

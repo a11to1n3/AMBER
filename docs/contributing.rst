@@ -212,6 +212,22 @@ CI runs a dedicated **Ruff + mypy** job on every PR:
 
 ``make lint`` / ``make type-check`` wrap the same tools for local use.
 
+
+History rewrite (2026-07)
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The repository history was rewritten once to drop large notebook outputs,
+paper drafts, and other local-only blobs (``.git`` ~160 MB → ~3 MB on a
+fresh clone). If your local clone predates that rewrite::
+
+   git fetch origin
+   git checkout dev
+   git reset --hard origin/dev
+   # or re-clone: git clone https://github.com/a11to1n3/AMBER.git
+
+Do **not** merge old local branches that still contain the pre-rewrite
+history without rebasing onto the new ``origin/dev``.
+
 Repo hygiene
 ~~~~~~~~~~~~
 
