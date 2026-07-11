@@ -1,39 +1,57 @@
-from typing import Any, Dict, List, Type, Optional
+"""Core simulation model: population store, write flush, and run loop.
+
+Write architecture (single source of truth = Polars ``agents_df``)
+-----------------------------------------------------------------
+* **OOP path** — ``Agent.__setattr__`` queues into ``_pending_writes``;
+  :meth:`_flush_pending_writes` applies them (uses :mod:`ambr._id_index`).
+* **Vectorized path** — view API in :mod:`ambr.sequences` calls
+  :meth:`_set_frame` directly (scatter / set / column assign).
+* **Tensor path** — :mod:`ambr.tensor_lane` borrow/commit also uses
+  :meth:`_set_frame`.
+
+Id-position caches (``_id_pos_cache``, ``_ids_arange_cache``) are owned here
+but filled by :mod:`ambr._id_index`; :meth:`_bump_id_version` invalidates them.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Type, Optional, Set, Tuple
 import polars as pl
-import random
 import warnings
 import numpy as np
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from .base import BaseModel
 from .population import Population
 from ._deprecation import warn_deprecated
+from ._id_index import resolve_positions
 from .contract import (
-    CONTRACT_MODES,
-    SEVERITY_ERROR,
-    SEVERITY_WARNING,
     ContractCertificate,
-    ContractViolation,
+    ContractMonitor,
     ContractViolationError,
 )
+from .results import RunResults
+
 
 class Model(BaseModel):
-    """Base class for all simulation models, using DataFrames for data storage."""
+    """Base class for all simulation models (Polars-backed agent table)."""
 
     #: Declarative model-level metrics, evaluated once per step into the
     #: ``'model'`` results frame. Maps a column name to a ``callable(model)``,
-    #: the name of a model attribute/method, or a constant. Overridable per
-    #: subclass; complements imperative ``record_model``.
-    model_reporters: Dict[str, Any] = {}
+    #: the name of a model attribute/method, or a constant. Override on the
+    #: *subclass* (do not mutate this class attribute -- default is ``None``
+    #: to avoid shared mutable state). Complements imperative ``record_model``.
+    model_reporters: Optional[Dict[str, Any]] = None
     #: Declarative per-agent columns to snapshot each step into the (opt-in)
-    #: ``'agent_vars'`` long-format results frame. Empty by default (no cost).
-    agent_reporters: List[str] = []
+    #: ``'agent_vars'`` long-format results frame. Empty / ``None`` = no cost.
+    #: Override on the subclass; do not mutate the base attribute.
+    agent_reporters: Optional[List[str]] = None
     #: When True, capture a ``t=0`` row of the reporters before the first step.
     record_initial: bool = False
-    #: Optional typed parameter schema ``{'name': (type, default)}``. When set,
-    #: ``self.p.name`` is pre-coerced to ``type`` at init (missing -> default),
-    #: replacing scattered ``int(self.p.get('name', ...))`` boilerplate.
-    params: Dict[str, Any] = {}
+    #: Optional typed parameter schema ``{'name': (type, default)}``. When set
+    #: on the subclass, ``self.p.name`` is pre-coerced to ``type`` at init
+    #: (missing -> default). Default ``None`` avoids shared mutable state.
+    params: Optional[Dict[str, Any]] = None
 
     def __init__(self, parameters: Dict[str, Any]):
         """Initialize a new model.
@@ -51,37 +69,44 @@ class Model(BaseModel):
         # it to invalidate cached id→row-position lookups.
         self._id_version: int = 0
 
-        # --- snapshot-view contract conformance checking (see contract.py) ---
-        # Mode is one of CONTRACT_MODES; 'off' adds zero per-write overhead.
-        self._contract_mode: str = "off"
-        self.contract_certificates: List[ContractCertificate] = []
-        # Active only while a step body runs under a non-'off' mode.
-        self._contract_active: bool = False
-        # Per-step bookkeeping for duplicate-write detection on the buffered
-        # (OOP) write path, plus the step-entry snapshot for lifecycle diffing.
-        self._contract_write_counts: Dict[Any, int] = {}
-        self._contract_dup_cells: set = set()
-        self._contract_entry_schema: Optional[Dict[str, str]] = None
-        self._contract_entry_ids: Optional[set] = None
-        # Per-step bookkeeping for the vectorized lane/view write path
-        # (``population.data = df.with_columns(...)``), which bypasses
-        # ``_queue_write``. The tensor lane reports its commits/borrows here so
-        # duplicate commits and read-after-write are visible to the contract.
-        self._contract_commit_counts: Dict[str, int] = {}
-        self._contract_committed: set = set()
-        self._contract_raw_cols: set = set()
+        # Snapshot-view contract monitor (see contract.py). Mode 'off' adds
+        # zero per-write overhead.
+        self._contract = ContractMonitor()
 
         super().__init__(parameters)  # sets self.random / self.rng / self.nprandom
         self.t = 0
         self._start_time = None
         self._last_progress_time = None
-        self._show_progress = parameters.get('show_progress', True)
+        # Quiet by default (library-friendly); set show_progress=True for CLI demos.
+        self._show_progress = parameters.get('show_progress', False)
         self._model_data = []
         self._agent_vars = []  # per-step agent snapshots when agent_reporters is set
 
         from .sequences import AgentList
         self.agents = AgentList(self, [])
-    
+
+    # --- public contract surface (stable for tests / callers) ---------------
+
+    @property
+    def _contract_mode(self) -> str:
+        return self._contract.mode
+
+    @_contract_mode.setter
+    def _contract_mode(self, value: str) -> None:
+        self._contract.mode = value
+
+    @property
+    def contract_certificates(self) -> List[ContractCertificate]:
+        return self._contract.certificates
+
+    @contract_certificates.setter
+    def contract_certificates(self, value: List[ContractCertificate]) -> None:
+        self._contract.certificates = value
+
+    @property
+    def _contract_active(self) -> bool:
+        return self._contract.active
+
     @property
     def agents_df(self) -> pl.DataFrame:
         self._flush_pending_writes()
@@ -93,7 +118,12 @@ class Model(BaseModel):
         self._set_frame(value)
         self._bump_id_version()
 
-    def _set_frame(self, df: pl.DataFrame) -> None:
+    def _set_frame(
+        self,
+        df: pl.DataFrame,
+        *,
+        written_columns: Optional[List[str]] = None,
+    ) -> None:
         """Internal single write seam for the agent table.
 
         All columnar writes (the view API in ``sequences.py`` and the tensor
@@ -101,27 +131,36 @@ class Model(BaseModel):
         the backing store stays encapsulated. Does not bump the id-version
         (column-value writes keep the id set stable); callers that change the
         id set (e.g. the ``agents_df`` setter, ``add_agents``) bump explicitly.
+
+        When ``written_columns`` is provided and the contract is active, those
+        columns are recorded as lane/view commits (``scatter_add`` deliberately
+        omits this -- it is the sanctioned multi-write reducer).
         """
-        self.population.data = df
+        self.population.replace_frame(df)
+        if written_columns is not None and self._contract.active:
+            self._contract.record_commit(written_columns)
 
     def _queue_write(self, column: str, agent_id: Any, value: Any) -> None:
         self._pending_writes.setdefault(column, {})[agent_id] = value
         # Contract: count ordinary writes per (column, id) within a step so a
         # second write to an already-written cell (which the buffer would
         # silently clobber) is detectable as a partial-map conflict.
-        if self._contract_active:
-            key = (column, agent_id)
-            count = self._contract_write_counts.get(key, 0) + 1
-            self._contract_write_counts[key] = count
-            if count == 2:
-                self._contract_dup_cells.add(key)
+        self._contract.record_buffered_write(column, agent_id)
 
     def _bump_id_version(self) -> None:
+        """Invalidate id→row caches after the agent id set changes."""
         self._id_version += 1
+        # Caches filled by ambr._id_index.resolve_positions / ids_are_arange.
+        self._id_pos_cache = None
+        self._ids_arange_cache = None
 
     def _flush_pending_writes(self) -> None:
-        """Apply all queued ``Agent.record()`` / ``update_data()`` writes
-        as a single ``df.update(on='id')`` hash join."""
+        """Apply all queued ``Agent`` attribute writes into ``population.data``.
+
+        Fast path: map ids → rows once via :func:`~ambr._id_index.resolve_positions`
+        and scatter into Python lists (preserves ``None``; cheaper than a wide
+        Polars update). Fallback: ``df.update(on='id')`` hash join.
+        """
         if not self._pending_writes:
             return
         # Clear before the write so an exception can't leave a stale buffer
@@ -131,23 +170,21 @@ class Model(BaseModel):
 
         df = self.population.data
 
-        # If the DataFrame is empty or 'id' is null-typed, initialise it
-        # with an Int64 id column so the update join key types match.
-        if df.is_empty() or 'id' not in df.columns:
-            # Build the full DataFrame from the pending writes instead.
+        # Empty / missing id: build the frame entirely from the buffer.
+        if df.is_empty() or "id" not in df.columns:
             touched_ids = list({aid for col_map in pending.values() for aid in col_map})
-            data_cols: Dict[str, list] = {'id': touched_ids}
+            data_cols: Dict[str, list] = {"id": touched_ids}
             for col, id_to_val in pending.items():
                 data_cols[col] = [id_to_val.get(aid, None) for aid in touched_ids]
-            self.population.data = pl.DataFrame(
+            self.population.replace_frame(pl.DataFrame(
                 [pl.Series(k, v, strict=False) for k, v in data_cols.items()]
-            )
+            ))
             self._bump_id_version()
             return
 
-        # Ensure id column is not null-typed (Polars update requires matching types).
-        if df['id'].dtype == pl.Null:
-            df = df.with_columns(pl.col('id').cast(pl.Int64))
+        # Polars update requires matching join-key types.
+        if df["id"].dtype == pl.Null:
+            df = df.with_columns(pl.col("id").cast(pl.Int64))
 
         missing = [c for c in pending if c not in df.columns]
         if missing:
@@ -155,20 +192,40 @@ class Model(BaseModel):
                 [pl.Series(c, [None] * df.height, strict=False) for c in missing]
             )
 
-        # df.update(on='id') skips null cells, so untouched (col, id) pairs
-        # retain their current value.
         touched_ids = list({aid for col_map in pending.values() for aid in col_map})
-        update_cols: Dict[str, list] = {'id': touched_ids}
+
+        # Fast path: shared id→row index + list scatter (keeps None, not nan).
+        try:
+            ids_np = np.asarray(touched_ids)
+            positions = resolve_positions(self, df, ids_np)
+            new_cols = []
+            for col, id_to_val in pending.items():
+                base = (
+                    df[col].to_list()
+                    if col in df.columns
+                    else [None] * df.height
+                )
+                for aid, pos in zip(touched_ids, positions):
+                    if aid in id_to_val:
+                        base[int(pos)] = id_to_val[aid]
+                new_cols.append(pl.Series(col, base, strict=False))
+            self.population.replace_frame(df.with_columns(new_cols))
+            return
+        except Exception:
+            pass
+
+        # Fallback: df.update(on='id') hash join.
+        update_cols: Dict[str, list] = {"id": touched_ids}
         for col, id_to_val in pending.items():
             update_cols[col] = [id_to_val.get(aid, None) for aid in touched_ids]
         update_df = pl.DataFrame(
             [pl.Series(k, v, strict=False) for k, v in update_cols.items()]
         )
-        self.population.data = df.update(update_df, on='id', how='left')
+        self.population.replace_frame(df.update(update_df, on="id", how="left"))
 
-    # --- snapshot-view contract conformance checking ------------------------
+    # --- snapshot-view contract seams ---------------------------------------
 
-    def _contract_snapshot(self):
+    def _contract_snapshot(self) -> Tuple[Dict[str, str], Set[Any]]:
         """Return ({column: dtype-str}, id-set) of the committed population.
 
         The schema carries dtypes (not just names) so that a mid-step dtype
@@ -183,126 +240,13 @@ class Model(BaseModel):
             ids = set()
         return schema, ids
 
-    def _contract_begin_step(self) -> None:
-        """Snapshot pre-step structure and arm per-write duplicate tracking."""
-        self._contract_entry_schema, self._contract_entry_ids = self._contract_snapshot()
-        self._contract_write_counts = {}
-        self._contract_dup_cells = set()
-        self._contract_commit_counts = {}
-        self._contract_committed = set()
-        self._contract_raw_cols = set()
-        self._contract_active = True
-
-    def _contract_record_commit(self, columns) -> None:
-        """Record a vectorized lane/view commit of ``columns`` this step.
-
-        Called by the tensor lane (``commit_columns`` / ``TensorLane.commit`` /
-        ``write_result``) when the contract is active, so the conformance check
-        can witness writes that bypass the ``_queue_write`` seam.
-        """
-        if not self._contract_active:
-            return
-        for c in columns:
-            self._contract_commit_counts[c] = self._contract_commit_counts.get(c, 0) + 1
-            self._contract_committed.add(c)
-
     def _contract_record_borrow(self, column: str) -> None:
-        """Record a lane borrow of ``column``; flag it if already committed."""
-        if not self._contract_active:
-            return
-        if column in self._contract_committed:
-            self._contract_raw_cols.add(column)
+        """Record a lane borrow of ``column``; flag it if already committed.
 
-    def _contract_end_step(self, cert: "ContractCertificate") -> None:
-        """Finalise ``cert`` by comparing the committed end-of-step state to
-        the step-entry snapshot and folding in any duplicate-write findings."""
-        self._contract_active = False
-        exit_schema, exit_ids = self._contract_snapshot()
-
-        # (1) Duplicate unreduced writes on the buffered (OOP) path.
-        if self._contract_dup_cells:
-            cols = sorted({c for c, _ in self._contract_dup_cells})
-            ids = sorted({i for _, i in self._contract_dup_cells})
-            cert.add(ContractViolation(
-                "duplicate_write",
-                f"{len(self._contract_dup_cells)} (column, id) cell(s) received more "
-                f"than one ordinary write within the step; under simultaneous "
-                f"activation the later write clobbers the earlier (partial-map "
-                f"conflict). Use agents.at[ids].scatter_add(...) to accumulate.",
-                severity=SEVERITY_ERROR,
-                columns=cols,
-                ids=ids,
-            ))
-
-        # (2) Schema mutation across the step (names added/removed or dtype drift).
-        if self._contract_entry_schema is not None:
-            entry = self._contract_entry_schema
-            added = set(exit_schema) - set(entry)
-            removed = set(entry) - set(exit_schema)
-            retyped = sorted(
-                c for c in (set(entry) & set(exit_schema)) if entry[c] != exit_schema[c]
-            )
-            if removed:
-                cert.add(ContractViolation(
-                    "schema_mutation",
-                    f"column(s) removed mid-step ({sorted(removed)}); reads issued "
-                    f"during the step may reference a column that no longer exists.",
-                    severity=SEVERITY_ERROR,
-                    columns=sorted(removed),
-                ))
-            if retyped:
-                cert.add(ContractViolation(
-                    "schema_mutation",
-                    f"column dtype(s) changed mid-step "
-                    f"({[(c, entry[c], exit_schema[c]) for c in retyped]}); a write "
-                    f"silently altered a column's type, breaking schema stability.",
-                    severity=SEVERITY_ERROR,
-                    columns=retyped,
-                ))
-            if added:
-                cert.add(ContractViolation(
-                    "schema_mutation",
-                    f"column(s) added mid-step ({sorted(added)}); a vectorized read "
-                    f"of these earlier in the step would see no stable snapshot.",
-                    severity=SEVERITY_WARNING,
-                    columns=sorted(added),
-                ))
-
-        # (2b) Vectorized lane/view conflicts (writes that bypass _queue_write).
-        dup_commits = sorted(c for c, n in self._contract_commit_counts.items() if n > 1)
-        if dup_commits:
-            cert.add(ContractViolation(
-                "duplicate_write",
-                f"column(s) {dup_commits} were committed more than once within the "
-                f"step via the lane/view path; the later commit clobbers the earlier "
-                f"under simultaneous activation. Commit each column exactly once.",
-                severity=SEVERITY_ERROR,
-                columns=dup_commits,
-            ))
-        if self._contract_raw_cols:
-            raw = sorted(self._contract_raw_cols)
-            cert.add(ContractViolation(
-                "read_after_write",
-                f"column(s) {raw} were borrowed after being committed within the same "
-                f"step; a snapshot rule must read step-entry state, not post-write "
-                f"state. Borrow all inputs before committing any output.",
-                severity=SEVERITY_ERROR,
-                columns=raw,
-            ))
-
-        # (3) Population mutation (births/deaths) across the step.
-        if self._contract_entry_ids is not None:
-            born = exit_ids - self._contract_entry_ids
-            died = self._contract_entry_ids - exit_ids
-            if born or died:
-                cert.add(ContractViolation(
-                    "population_mutation",
-                    f"agent population changed mid-step (added={len(born)}, "
-                    f"removed={len(died)}); verify lifecycle rules read the "
-                    f"step-entry snapshot rather than partially-updated state.",
-                    severity=SEVERITY_WARNING,
-                    ids=sorted(born | died),
-                ))
+        Commits go through :meth:`_set_frame` (``written_columns=``); only
+        borrows need this separate seam.
+        """
+        self._contract.record_borrow(column)
 
     def setup(self): pass
     def step(self): pass
@@ -336,7 +280,7 @@ class Model(BaseModel):
         constant. Runs before :meth:`update`, so an imperative ``record_model``
         of the same key wins.
         """
-        reporters = getattr(self, 'model_reporters', None)
+        reporters = type(self).model_reporters
         if not reporters:
             return
         for name, spec in reporters.items():
@@ -352,7 +296,7 @@ class Model(BaseModel):
 
     def _snapshot_agent_reporters(self) -> None:
         """Append a per-agent snapshot of ``agent_reporters`` columns (opt-in)."""
-        cols = getattr(self, 'agent_reporters', None)
+        cols = type(self).agent_reporters
         if not cols:
             return
         df = self.agents_df
@@ -405,27 +349,26 @@ class Model(BaseModel):
         is appended to ``self.contract_certificates``.
         """
         self._ensure_setup()
-        if self._contract_mode == "off":
+        mon = self._contract
+        if mon.mode == "off":
             self.step()
             self._advance_and_record()
             return
 
-        cert = ContractCertificate(self.t)
-        self._contract_begin_step()
+        mon.begin_step(self._contract_snapshot())
         try:
             self.step()
         finally:
-            self._contract_end_step(cert)
-        self.contract_certificates.append(cert)
+            cert = mon.end_step(self.t, self._contract_snapshot())
 
-        if self._contract_mode == "warn":
+        if mon.mode == "warn":
             for v in cert.violations:
                 warnings.warn(
                     f"[step {cert.step}] {v.kind}: {v.detail}",
                     UserWarning,
                     stacklevel=2,
                 )
-        elif self._contract_mode == "raise" and not cert.ok:
+        elif mon.mode == "raise" and not cert.ok:
             raise ContractViolationError(cert)
 
         self._advance_and_record()
@@ -434,8 +377,11 @@ class Model(BaseModel):
         self,
         steps: Optional[int] = None,
         contract: str = "off",
-    ) -> Dict[str, pl.DataFrame]:
+    ) -> RunResults:
         """Run the simulation.
+
+        Returns a :class:`~ambr.results.RunResults` mapping (dict subclass).
+        Use ``results['agents']`` or ``results.agents`` interchangeably.
 
         Args:
             steps: number of steps to run (defaults to ``self.p['steps']`` or 100).
@@ -447,13 +393,7 @@ class Model(BaseModel):
                 ``'raise'`` (raise :class:`~ambr.contract.ContractViolationError`
                 on the first step with an error-severity violation).
         """
-        if contract not in CONTRACT_MODES:
-            raise ValueError(
-                f"contract must be one of {CONTRACT_MODES}, got {contract!r}"
-            )
-        self._contract_mode = contract
-        if contract != "off":
-            self.contract_certificates = []
+        self._contract.reset_run(contract)
 
         start_time = time.time()
         max_steps = steps if steps is not None else self.p.get('steps', 100)
@@ -465,7 +405,7 @@ class Model(BaseModel):
 
         self._ensure_setup()
 
-        if getattr(self, 'record_initial', False):
+        if self.record_initial:
             self._record_initial_state()
 
         # Use run_step() to execute exactly one model step per loop iteration.
@@ -484,16 +424,16 @@ class Model(BaseModel):
 
     # --- Helper methods ---
     def _print_start_info(self, max_steps):
-        print(f"🚀 Simulation: {self.__class__.__name__}")
-        print(f"⏱️  Steps: {max_steps:,}")
+        print(f"Simulation: {self.__class__.__name__}")
+        print(f"Steps: {max_steps:,}")
 
     def _print_end_info(self, start_time, max_steps):
         total_time = time.time() - start_time
-        print(f"\n✅ Done. Time: {timedelta(seconds=int(total_time))}")
+        print(f"\nDone. Time: {timedelta(seconds=int(total_time))}")
         if total_time > 0:
-            print(f"📈 Rate: {max_steps/total_time:.1f} steps/s")
+            print(f"Rate: {max_steps/total_time:.1f} steps/s")
         else:
-            print(f"📈 Rate: Inf steps/s")
+            print("Rate: Inf steps/s")
 
     def _collect_results(self, start_time, max_steps):
         if self._model_data:
@@ -522,14 +462,16 @@ class Model(BaseModel):
         else:
             model_df = pl.DataFrame({'t': []})
             
-        results = {
-            'info': {'steps': self.t, 'run_time': time.time() - start_time},
-            'agents': self.population.data,
-            'model': model_df
-        }
-        if self._contract_mode != "off":
-            results['contract'] = self.contract_certificates
-        if getattr(self, '_agent_vars', None):
+        results = RunResults(
+            info={'steps': self.t, 'run_time': time.time() - start_time},
+            # agents_df flushes the buffered write queue so OOP /
+            # update_agent_data writes land in the returned frame.
+            agents=self.agents_df,
+            model=model_df,
+        )
+        if self._contract.mode != "off":
+            results['contract'] = self._contract.certificates
+        if self._agent_vars:
             results['agent_vars'] = pl.concat(self._agent_vars, how='vertical_relaxed')
         return results
 
@@ -611,22 +553,36 @@ class Model(BaseModel):
         return self.agents
 
     def get_agent_data(self, agent_id: Any) -> pl.DataFrame:
-        """Return a 1-row DataFrame with the current state of ``agent_id``."""
-        return self.population.data.filter(pl.col('id') == agent_id)
+        """Return a 1-row DataFrame with the current state of ``agent_id``.
+
+        Uses :attr:`agents_df` so pending buffered writes are flushed first.
+        """
+        return self.agents_df.filter(pl.col('id') == agent_id)
 
     def update_agent_data(self, agent_id: int, data: Dict[str, Any]):
-        """Update data for a single agent."""
-        for key, value in data.items():
-            self.population.set_agent_value(agent_id, key, value)
-        
-    def batch_update_agents(self, agent_ids: list, data: dict):
-        """Batch update multiple agents at once for better performance.
-        
-        Args:
-            agent_ids: List of agent IDs to update
-            data: Dictionary of column names and values (or lists of values)
+        """Deprecated: use ``agent.<col> = value`` or ``agents.at[id].set(...)``.
+
+        Still routes through :meth:`_queue_write` so the snapshot-view contract
+        can witness the writes.
         """
-        self.population.batch_update_by_ids(agent_ids, data)
+        warn_deprecated(
+            "Model.update_agent_data(...)",
+            "agent.<col> = value or agents.at[id].set(**cols)",
+        )
+        for key, value in data.items():
+            self._queue_write(key, agent_id, value)
+
+    def batch_update_agents(self, agent_ids: list, data: dict):
+        """Deprecated: use ``agents.at[ids].set(**data)`` (or column assign).
+
+        Still equivalent to ``self.agents.at[agent_ids].set(**data)`` so
+        multi-column updates stay atomic and contract-observed.
+        """
+        warn_deprecated(
+            "Model.batch_update_agents(...)",
+            "agents.at[ids].set(**cols) or agents.where(...).set(**cols)",
+        )
+        self.agents.at[agent_ids].set(**data)
 
     def _print_progress(self, current_step: int, total_steps: int, force: bool = False):
         pass

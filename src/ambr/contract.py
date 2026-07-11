@@ -11,18 +11,22 @@ It witnesses violations on *two* write paths:
 
 * the **buffered (OOP) path** -- per-agent ``Agent.__setattr__`` writes routed
   through ``Model._queue_write``; and
-* the **vectorized lane/view path** -- ``population.data = df.with_columns(...)``,
-  which bypasses ``_queue_write`` but is reported to the model by the tensor
-  lane (``commit_columns`` / ``TensorLane``).
+* the **vectorized lane/view path** -- whole-column writes via
+  ``agents.col = ...`` / ``agents.commit(...)`` / :class:`~ambr.tensor_lane.TensorLane`,
+  which bypass ``_queue_write`` but report commits to :class:`ContractMonitor`.
 
 The checks:
 
 * **duplicate unreduced write** -- the same ``(column, agent_id)`` cell received
   more than one *ordinary* (non-scatter) write within a step (buffered path), or
-  the same column was committed more than once within a step (lane path). Under
-  simultaneous activation the later write silently clobbers the earlier one (a
-  "partial map" conflict). The sanctioned fix is a commutative reducer
+  the same column was committed more than once within a step (lane/view path).
+  Under simultaneous activation the later write silently clobbers the earlier
+  one (a "partial map" conflict). The sanctioned fix is a commutative reducer
   (``agents.at[ids].scatter_add(col=delta)``) or committing each column once.
+* **cross-path write** -- the same column received both a buffered (OOP)
+  write and a whole-column lane/view commit within one step. The flush order
+  makes the later path win; under simultaneous activation that is still a
+  partial-map conflict.
 * **read-after-write (lane path)** -- a column borrowed *after* it was committed
   in the same step; a snapshot rule must read step-entry state.
 * **schema / population mutation** -- the column set, a column's *dtype*, or the
@@ -34,18 +38,25 @@ The checks:
 This is a conformance *monitor*, not a prover, with two known limits: (1) the
 schema/population diff is **endpoint-only** -- a mutation that is introduced and
 reverted within a single step is not caught; (2) raw ``population.data = ...``
-writes that bypass both ``_queue_write`` *and* the tensor lane are invisible to
-the conflict check. Cell-level read-after-write within the buffered view API
-remains the job of the (separate) static analyzer.
+writes that bypass both ``_queue_write`` and the reported lane/view seams are
+invisible to the conflict check (``Population.data = ...`` is deprecated and
+warns; prefer ``agents.col = ...`` / ``agents.set`` / ``agents.commit``).
+Cell-level read-after-write within the buffered view API remains the job of
+the (separate) static analyzer.
 """
 
-from typing import Any, Iterable, List, Optional
+from __future__ import annotations
+
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 SEVERITY_ERROR = "error"
 SEVERITY_WARNING = "warning"
 
 #: Valid values for ``Model.run(contract=...)``.
 CONTRACT_MODES = ("off", "check", "warn", "raise")
+
+# Snapshot type: ({column: dtype-str}, id-set)
+Snapshot = Tuple[Dict[str, str], Set[Any]]
 
 
 class ContractViolation:
@@ -108,9 +119,11 @@ class ContractCertificate:
     def __repr__(self) -> str:
         if self.clean:
             return f"<ContractCertificate step={self.step} ok (no violations)>"
+        n_err = sum(1 for v in self.violations if v.severity == SEVERITY_ERROR)
+        n_warn = len(self.violations) - n_err
         return (
             f"<ContractCertificate step={self.step} "
-            f"errors={len(self.errors())} warnings={len(self.warnings())}>"
+            f"errors={n_err} warnings={n_warn}>"
         )
 
 
@@ -124,3 +137,202 @@ class ContractViolationError(RuntimeError):
         super().__init__(
             f"[step {certificate.step}] snapshot-contract violation -- {msg}"
         )
+
+
+class ContractMonitor:
+    """Per-model runtime monitor for the snapshot-view contract.
+
+    Owns per-step bookkeeping and certificate construction so :class:`~ambr.model.Model`
+    only needs a thin seam (``_queue_write``, view/lane commits, ``run_step``).
+    """
+
+    def __init__(self) -> None:
+        self.mode: str = "off"
+        self.certificates: List[ContractCertificate] = []
+        self.active: bool = False
+        # Buffered (OOP) path
+        self._write_counts: Dict[Any, int] = {}
+        self._dup_cells: Set[Any] = set()
+        self._buffered_cols: Set[str] = set()
+        # Lane / whole-column path
+        self._commit_counts: Dict[str, int] = {}
+        self._committed: Set[str] = set()
+        self._raw_cols: Set[str] = set()
+        # Columns touched by both buffered and lane/view paths in this step
+        self._cross_path_cols: Set[str] = set()
+        # Step-entry snapshot for schema / population diff
+        self._entry_schema: Optional[Dict[str, str]] = None
+        self._entry_ids: Optional[Set[Any]] = None
+
+    def reset_run(self, mode: str) -> None:
+        """Configure mode for a new ``Model.run`` and clear prior certificates."""
+        if mode not in CONTRACT_MODES:
+            raise ValueError(
+                f"contract must be one of {CONTRACT_MODES}, got {mode!r}"
+            )
+        self.mode = mode
+        if mode != "off":
+            self.certificates = []
+
+    def begin_step(self, snapshot: Snapshot) -> None:
+        """Arm tracking for a step body; ``snapshot`` is step-entry state."""
+        self._entry_schema, self._entry_ids = snapshot
+        self._write_counts = {}
+        self._dup_cells = set()
+        self._buffered_cols = set()
+        self._commit_counts = {}
+        self._committed = set()
+        self._raw_cols = set()
+        self._cross_path_cols = set()
+        self.active = True
+
+    def end_step(self, step: int, snapshot: Snapshot) -> ContractCertificate:
+        """Disarm tracking and return the certificate for ``step``."""
+        self.active = False
+        exit_schema, exit_ids = snapshot
+        cert = ContractCertificate(step)
+        self._check_duplicate_buffered(cert)
+        self._check_cross_path(cert)
+        self._check_schema(cert, exit_schema)
+        self._check_lane_conflicts(cert)
+        self._check_population(cert, exit_ids)
+        self.certificates.append(cert)
+        return cert
+
+    def record_buffered_write(self, column: str, agent_id: Any) -> None:
+        """Count an ordinary OOP-path write; second write to a cell is a conflict."""
+        if not self.active:
+            return
+        key = (column, agent_id)
+        count = self._write_counts.get(key, 0) + 1
+        self._write_counts[key] = count
+        if count == 2:
+            self._dup_cells.add(key)
+        self._buffered_cols.add(column)
+        if column in self._committed:
+            self._cross_path_cols.add(column)
+
+    def record_commit(self, columns: Iterable[str]) -> None:
+        """Record a whole-column lane/view commit of ``columns`` this step."""
+        if not self.active:
+            return
+        for c in columns:
+            self._commit_counts[c] = self._commit_counts.get(c, 0) + 1
+            self._committed.add(c)
+            if c in self._buffered_cols:
+                self._cross_path_cols.add(c)
+
+    def record_borrow(self, column: str) -> None:
+        """Record a lane borrow of ``column``; flag if already committed."""
+        if not self.active:
+            return
+        if column in self._committed:
+            self._raw_cols.add(column)
+
+    # --- internal checks ----------------------------------------------------
+
+    def _check_duplicate_buffered(self, cert: ContractCertificate) -> None:
+        if not self._dup_cells:
+            return
+        cols = sorted({c for c, _ in self._dup_cells})
+        ids = sorted({i for _, i in self._dup_cells})
+        cert.add(ContractViolation(
+            "duplicate_write",
+            f"{len(self._dup_cells)} (column, id) cell(s) received more "
+            f"than one ordinary write within the step; under simultaneous "
+            f"activation the later write clobbers the earlier (partial-map "
+            f"conflict). Use agents.at[ids].scatter_add(...) to accumulate.",
+            severity=SEVERITY_ERROR,
+            columns=cols,
+            ids=ids,
+        ))
+
+    def _check_cross_path(self, cert: ContractCertificate) -> None:
+        if not self._cross_path_cols:
+            return
+        cols = sorted(self._cross_path_cols)
+        cert.add(ContractViolation(
+            "cross_path_write",
+            f"column(s) {cols} were written via both the buffered (OOP) path "
+            f"and the lane/view path within the same step; under simultaneous "
+            f"activation the later path clobbers the earlier. Use one write "
+            f"path per column per step (or scatter_add for accumulation).",
+            severity=SEVERITY_ERROR,
+            columns=cols,
+        ))
+
+    def _check_schema(
+        self, cert: ContractCertificate, exit_schema: Dict[str, str]
+    ) -> None:
+        if self._entry_schema is None:
+            return
+        entry = self._entry_schema
+        added = set(exit_schema) - set(entry)
+        removed = set(entry) - set(exit_schema)
+        retyped = sorted(
+            c for c in (set(entry) & set(exit_schema)) if entry[c] != exit_schema[c]
+        )
+        if removed:
+            cert.add(ContractViolation(
+                "schema_mutation",
+                f"column(s) removed mid-step ({sorted(removed)}); reads issued "
+                f"during the step may reference a column that no longer exists.",
+                severity=SEVERITY_ERROR,
+                columns=sorted(removed),
+            ))
+        if retyped:
+            cert.add(ContractViolation(
+                "schema_mutation",
+                f"column dtype(s) changed mid-step "
+                f"({[(c, entry[c], exit_schema[c]) for c in retyped]}); a write "
+                f"silently altered a column's type, breaking schema stability.",
+                severity=SEVERITY_ERROR,
+                columns=retyped,
+            ))
+        if added:
+            cert.add(ContractViolation(
+                "schema_mutation",
+                f"column(s) added mid-step ({sorted(added)}); a vectorized read "
+                f"of these earlier in the step would see no stable snapshot.",
+                severity=SEVERITY_WARNING,
+                columns=sorted(added),
+            ))
+
+    def _check_lane_conflicts(self, cert: ContractCertificate) -> None:
+        dup_commits = sorted(c for c, n in self._commit_counts.items() if n > 1)
+        if dup_commits:
+            cert.add(ContractViolation(
+                "duplicate_write",
+                f"column(s) {dup_commits} were committed more than once within the "
+                f"step via the lane/view path; the later commit clobbers the earlier "
+                f"under simultaneous activation. Commit each column exactly once.",
+                severity=SEVERITY_ERROR,
+                columns=dup_commits,
+            ))
+        if self._raw_cols:
+            raw = sorted(self._raw_cols)
+            cert.add(ContractViolation(
+                "read_after_write",
+                f"column(s) {raw} were borrowed after being committed within the same "
+                f"step; a snapshot rule must read step-entry state, not post-write "
+                f"state. Borrow all inputs before committing any output.",
+                severity=SEVERITY_ERROR,
+                columns=raw,
+            ))
+
+    def _check_population(
+        self, cert: ContractCertificate, exit_ids: Set[Any]
+    ) -> None:
+        if self._entry_ids is None:
+            return
+        born = exit_ids - self._entry_ids
+        died = self._entry_ids - exit_ids
+        if born or died:
+            cert.add(ContractViolation(
+                "population_mutation",
+                f"agent population changed mid-step (added={len(born)}, "
+                f"removed={len(died)}); verify lifecycle rules read the "
+                f"step-entry snapshot rather than partially-updated state.",
+                severity=SEVERITY_WARNING,
+                ids=sorted(born | died),
+            ))

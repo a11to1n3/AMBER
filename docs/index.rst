@@ -22,10 +22,14 @@ AMBER Documentation
 Features
 --------
 
+* **AgentPy-shaped OOP + vectorized lanes** on the same model (see
+  :doc:`from_agentpy` and :doc:`going_faster`)
 * **Vectorized view API**: update the whole population in a handful of Polars
   expressions — no per-agent loops, regardless of population size
 * **Snapshot-view contract**: opt-in runtime checking that the columnar fast
   path preserves the intended update schedule (the zero-overhead default is off)
+* **CPU acceleration**: optional Numba (``pip install 'ambr[perf]'``) for
+  ``scatter_add`` / subset writes — recommended on Mac without CUDA
 * **GPU backend**: a CuPy array backend with a NumPy fallback, plus a batched
   ensemble that runs ``B`` simulations in one device pass for calibration
 * **Flexible environments**: grid, continuous space, and network topologies
@@ -33,6 +37,7 @@ Features
 * **Declarative reporting & typed params**: ``model_reporters`` / ``agent_reporters``
   and a class-level ``params`` schema
 * **Reproducible**: one canonical seeded RNG (``self.rng``); deterministic runs
+* **RunResults**: ``results.agents`` and ``results['agents']`` both work
 
 Quick Start
 -----------
@@ -67,8 +72,11 @@ Create your first model:
    # Run the model
    model = WealthModel({'steps': 50, 'seed': 42})
    results = model.run()
+   print(results.model)       # also results['model']
+   print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
+See :doc:`changelog` for what is new in **0.4.1**.
 
 Table of Contents
 -----------------
@@ -79,6 +87,8 @@ Table of Contents
 
    installation
    quickstart
+   from_agentpy
+   going_faster
    tutorial
    benchmarks
    examples/index

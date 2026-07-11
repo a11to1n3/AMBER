@@ -1,5 +1,79 @@
 # Changelog
 
+## Unreleased
+
+## v0.4.1 - 2026-07-11
+
+Polish release on top of 0.4.0: clearer AgentPy-shaped UX, progressive speed
+lanes (including Mac-friendly Numba), contract/write-path hardening, SMAC
+install reliability, and Schelling/grid helpers.
+
+### Added
+
+- **UX / AgentPy lane:** `RunResults` (dict + `results.agents` attr access),
+  `agents.random()`, quieter default (`show_progress=False`), and
+  `docs/from_agentpy.rst` (side-by-side migration + product judgement).
+- **Easier speed lanes:** `am.print_status()` / `am.recommend(n)`,
+  `ArrayKernelModel` (single-run GPU/CPU arrays), `agents.update_where(...)`,
+  and `docs/going_faster.rst` + `examples/gpu_quickstart.py`.
+- **Numba CPU path:** optional `ambr[perf]` (`numba`); JIT `scatter_add` and
+  subset column writes when installed (strong default for Mac / no-CUDA).
+  Status/recommend report Numba; `am.numba_jit` re-exports the decorator.
+- **Shared write helpers:** `ambr._id_index` (id→row cache) and
+  `performance.apply_scatter_add` / `apply_scatter_write` (one path for the
+  view API and OOP flush).
+- **Grid occupancy helpers** on `GridEnvironment` for Schelling-style models:
+  `get_random_empty_cell`, `get_agent_at_pos`, `add_agent` / `add_agent_from_id`,
+  `remove_agent_from_pos`, `get_empty_cells_in_radius`, and `get_neighbors(..., radius=)`
+  (Moore neighbourhood alias). Restores `examples/smac_calibration_advanced.py`.
+- **MultiObjectiveSMAC CI smoke** (`tests/test_multiobjective_smac.py`, skipped
+  without the `advanced` / smac extra).
+- **SMAC install constraint:** `ambr[advanced]` pins `scikit-learn>=1.6.1,<1.9`
+  so SMAC 2.4 can import (`sklearn.tree._tree.DTYPE` removed in sklearn 1.9;
+  automl/SMAC3#1314). Clearer error if SMAC import fails.
+
+### Changed
+
+- **Contract monitor extraction.** Runtime snapshot-view bookkeeping moved from
+  `Model` into `ambr.contract.ContractMonitor`. `Model` keeps a thin public
+  surface (`contract_certificates`, `_contract_mode`) for callers and tests.
+- **Unified write/contract seam.** Whole-column view writes
+  (`agents.col = ...`) and tensor-lane commits report through
+  `Model._set_frame(..., written_columns=...)`, so same-step double commits on
+  the view path are visible to `contract="check"|"warn"|"raise"`. `scatter_add`
+  still does not count as an ordinary multi-write (sanctioned reducer).
+- **Cross-path detection.** Same-step writes that mix the buffered (OOP) path
+  and the lane/view path on one column raise `cross_path_write`.
+- **Atomic `agents.set`.** Multi-column `set(...)` / deprecated `update_data`
+  apply in one frame update with one contract commit per column.
+- **Safer class defaults.** `Model.model_reporters` / `agent_reporters` /
+  `params` default to `None` (no shared mutable `{}` / `[]` on the base class).
+- `update_agent_data` / `batch_update_agents` route through the buffered and
+  view write seams (contract-observed) instead of raw `Population` mutators.
+- `Environment.df` routes through a real `Model._set_frame` when available;
+  deprecated `Agent.record` / `update_data` go through `__setattr__` so the
+  instance cache and write queue stay aligned.
+- Public package exports for `ContractMonitor`, `TensorLane`, `borrow_numeric`,
+  `commit_columns`, GPU helpers, `RunResults`, `ArrayKernelModel`, and lane
+  helpers (`status`, `print_status`, `recommend`).
+- **Canonical-verb docs.** Quickstart / sequences API / README document the
+  small select → write → scatter_add → borrow/commit surface; extra batch
+  aliases are not the performance path. Examples prefer `agents.at[...].set`
+  over deprecated `update_agent_data`.
+- **Write-path performance.** Filtered `view.col = …` uses id→row scatter into
+  column arrays when ids are unique; OOP flush uses the same position map;
+  contiguous `0..N-1` id layout is cached per id-version. `MultiObjectiveSMAC`
+  rebuilt on per-objective `SMACOptimizer` (no broken Abstract MO path).
+
+### Deprecated
+
+- `Model.update_agent_data` → `agent.<col> = value` or `agents.at[id].set(...)`
+- `Model.batch_update_agents` → `agents.at[ids].set(...)`
+- `Population.set_agent_value` / `batch_update` / `batch_update_by_ids` →
+  view `set` / column assign (still functional until 1.0)
+- Assigning `Population.data = ...` → view write path (setter warns; internal
+  `replace_frame` is the quiet Model seam)
+
 ## v0.4.0 - 2026-06-27
 
 The 0.4 release settles the public API on one canonical verb per task (legacy

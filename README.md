@@ -70,13 +70,42 @@ Regenerate with `python benchmarks/plot_scaling_with_gpu_schelling.py`.
 
 ## 🚀 Quick Start
 
+AMBER supports an **AgentPy-shaped OOP lane** and a **vectorized lane** on the
+same model. Start with whichever feels natural.
+
+**AgentPy-shaped (method broadcast, `AgentList`):**
+
 ```python
 import ambr as am
-import numpy as np
 
-# Define a model with the vectorized view API — no per-agent loops.
+class WealthAgent(am.Agent):
+    def setup(self):
+        self.wealth = 1
+    def transfer(self):
+        if self.wealth > 0:
+            other = self.model.agents.by_id(self.model.agents.random())
+            other.wealth += 1
+            self.wealth -= 1
+
 class WealthModel(am.Model):
-    # Declarative metric: evaluated once per step into results['model'].
+    def setup(self):
+        self.agents = am.AgentList(self, self.p.n, WealthAgent)
+    def step(self):
+        self.agents.transfer()
+    def update(self):
+        self.record_model('total', int(self.agents.wealth.sum()))
+
+results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).run()
+print(results.model)      # also results['model']
+print(results.agents.head())
+```
+
+**Vectorized (columnar; best at large N):**
+
+```python
+import ambr as am
+
+class WealthModel(am.Model):
     model_reporters = {'total_wealth': lambda m: int(m.agents.wealth.sum())}
 
     def setup(self):
@@ -88,20 +117,49 @@ class WealthModel(am.Model):
         recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
         self.agents.at[recipients].scatter_add(wealth=1)
 
-model = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
-results = model.run()
-print(results['model'].tail(5))   # per-step total_wealth
-print(results['agents'].head(10)) # final agent state
+results = WealthModel({'steps': 100, 'seed': 42}).run()
+print(results.model.tail(5))
+print(results.agents.head(10))
+```
+
+Coming from AgentPy? See [`docs/from_agentpy.rst`](docs/from_agentpy.rst).
+
+**Going faster / GPU** — no magic switch; pick a lane (see
+[`docs/going_faster.rst`](docs/going_faster.rst)):
+
+```python
+import ambr as am
+am.print_status()                 # GPU? which lane?
+print(am.recommend(1_000_000))  # one-line suggestion
+
+# Easiest GPU/CPU array model (CuPy if available, else NumPy):
+class Drift(am.ArrayKernelModel):
+    def init_state(self, xp, n, rng, p):
+        return {"x": rng.random(n, dtype=xp.float32)}
+    def step_state(self, xp, state, rng, p):
+        state["x"] = state["x"] + 0.01
+        return state
+    def metrics(self, xp, state):
+        return {"mean_x": float(am.to_host(state["x"].mean()))}
+
+print(Drift({"n": 100_000, "steps": 20}).run().info)
 ```
 
 `self.rng` is the canonical seeded RNG (a NumPy `Generator`); `self.random` is
-the stdlib one. Both are seeded from the `seed` parameter.
+the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
+off by default (`show_progress=True` to re-enable).
 
+> **New in 0.4.1:** [AgentPy-shaped UX](docs/from_agentpy.rst) (`RunResults`,
+> `agents.random()`), [progressive speed lanes](docs/going_faster.rst)
+> (`am.print_status()`, `am.recommend(n)`, `ArrayKernelModel`), optional
+> **Numba** CPU path (`pip install 'ambr[perf]'` — great on Mac), contract /
+> write-path hardening, SMAC install pin, and Schelling grid helpers. See the
+> [changelog](CHANGELOG.md).
+>
 > **New in 0.4:** a runtime [snapshot-view contract](#-snapshot-view-contract)
 > checker, a [GPU backend + batched calibration](#-gpu-backend--batched-calibration),
 > one [canonical verb per task](#-canonical-api-04) (legacy spellings still work),
-> declarative `model_reporters`, and a typed `params` schema. See the
-> [changelog](CHANGELOG.md).
+> declarative `model_reporters`, and a typed `params` schema.
 >
 > **New in 0.3.0:** Setting ``agent.wealth = 5`` on a Python Agent
 > automatically syncs to the DataFrame. You can freely mix OOP-style
@@ -128,22 +186,27 @@ def step(self):
 ## 🧭 Canonical API (0.4)
 
 AMBER 0.4 settles on one obvious verb per task. The legacy spellings still work
-(they emit a `DeprecationWarning` and are scheduled for removal in 1.0); set
+(they emit a `DeprecationWarning` and are scheduled for removal in **1.0**); set
 `AMBER_SUPPRESS_DEPRECATIONS=1` to silence them in benchmark / reproducibility runs.
+Batch performance comes from these verbs (columnar writes), not from extra public
+`batch_*` helpers.
 
-| Task | Canonical | Legacy (deprecated) |
-|------|-----------|---------------------|
+| Task | Canonical | Legacy (deprecated → 1.0) |
+|------|-----------|---------------------------|
 | NumPy RNG | `self.rng` | `self.nprandom` |
 | Record a model metric | `model_reporters = {...}` or `record_model(k, v)` | `record(k, v)` |
 | Filter agents | `agents.where(expr)` / `agents[mask]` / `agents.at[ids]` | `agents.select(...)` |
-| Per-agent write | `agent.col = v` | `agent.record(...)`, `agent.update_data(...)` |
-| Bulk write | `agents.set(**cols)` | `agents.record(...)`, `agents.update_data(...)` |
+| Per-agent write | `agent.col = v` | `agent.record(...)`, `agent.update_data(...)`, `update_agent_data` |
+| Bulk / multi-column write | `agents.set(**cols)` or `view.col = …` | `agents.record` / `update_data`, `batch_update_agents`, `Population.batch_*` |
+| Accumulate (duplicate ids) | `agents.at[ids].scatter_add(...)` | double ordinary writes in one step |
+| Array kernels | `agents.borrow` / `agents.commit` (or `TensorLane`) | hand-maintained parallel NumPy buffers |
 | Read agent objects | iterate `model.agents`, `agents.by_id(i)` | `agents.agents`, `agents.agent_ids` |
-| Bulk numpy round-trip | `agents.numpy(...)` + `agents.set(...)` (or `borrow`/`commit`) | `.to_numpy()` + per-column assign |
+| Bulk numpy round-trip | `agents.numpy(...)` + `agents.set(...)` | `.to_numpy()` + per-column assign only |
 | Typed parameters | `params = {'n': (int, 200)}`, then `self.p.n` | `int(self.p.get('n', 200))` |
 | Grid wrap | `GridEnvironment(torus=True)` | `wrap=` / `.wrap` |
+| Agent table assign | view / `_set_frame` | `population.data = ...` (setter warns) |
 
-`update()` is now a **pure hook** — overriding it no longer requires
+`update()` is a **pure hook** — overriding it no longer requires
 `super().update()`. Declare `model_reporters` / `agent_reporters` for
 declarative metrics, and set `record_initial = True` to capture a `t=0` row.
 
@@ -161,9 +224,16 @@ for cert in results["contract"]:
 ```
 
 `check` records a `ContractCertificate` per step; `warn` also emits a warning per
-violation; `raise` stops on the first one (e.g. a same-step read-after-write, or a
-duplicate ordinary assignment that no snapshot rewrite can reproduce). Mode `off`
-(the default) adds zero overhead.
+violation; `raise` stops on the first error. Mode `off` (default) adds zero overhead.
+
+The monitor watches **two write paths** (and combinations):
+
+* **Buffered (OOP)** — `agent.col = …` / queued cell writes  
+* **Lane / view** — `agents.col = …`, `agents.set(...)`, `borrow`/`commit`  
+* **Cross-path** — same column via both OOP and view in one step → `cross_path_write`  
+
+`scatter_add` is the sanctioned multi-write reducer (not treated as a conflicting
+ordinary commit). Prefer those APIs over assigning `population.data` directly.
 
 ## 🎮 GPU backend & batched calibration
 
@@ -214,19 +284,31 @@ GPU batched ensemble above for derivative-free calibration at scale.
 
 ```bash
 pip install ambr
+
+# Optional extras
+pip install 'ambr[perf]'       # Numba CPU scatter (recommended on Mac)
+pip install 'ambr[advanced]'   # SMAC optimization
+```
+
+```python
+import ambr as am
+print(am.__version__)   # 0.4.1+
+am.print_status()
 ```
 
 ## 🏗️ Features
 
-- **Simple API**: Intuitive interface for agent-based modeling
-- **High Performance**: Efficient data handling with Polars DataFrames
-- **Snapshot-view contract**: runtime conformance checking that columnar updates preserve the intended schedule
+- **Simple API**: AgentPy-shaped OOP lane + vectorized columnar views on one model
+- **High Performance**: Polars DataFrames; optional Numba (`ambr[perf]`) for scatters
+- **Speed lanes**: `am.print_status()` / `am.recommend(n)` / `ArrayKernelModel`
+- **Snapshot-view contract**: runtime checking that columnar updates preserve the intended schedule
 - **GPU backend**: CuPy array backend + batched ensemble for parameter sweeps and calibration
 - **Optimization**: grid / random / Bayesian (SMAC) search, plus GPU-batched calibration
 - **Declarative reporting**: `model_reporters` / `agent_reporters` and a typed `params` schema
 - **Environments**: Support for grid, network, and continuous space environments
 - **Experiments**: Run multiple simulations with parameter sampling
 - **Random Number Generation**: Reproducible simulations with controlled randomness
+- **RunResults**: `results.agents` and `results['agents']` both work
 
 ## 📚 Examples
 

@@ -4,6 +4,7 @@ Supports different types of spatial and network topologies.
 """
 
 from typing import Dict, List, Optional, Tuple, Union
+from types import MethodType
 import polars as pl
 import numpy as np
 import networkx as nx
@@ -49,22 +50,24 @@ class Environment(ABC):
     def df(self, value: pl.DataFrame) -> None:
         """Replace the model's agent DataFrame.
 
-        Routes through ``model.population.data`` when available so the
-        ``_id_version`` cache stays consistent. Falls back to writing
-        ``model.agents_df`` directly (for mock models) or a private
-        store.
+        Prefers a real ``model._set_frame`` bound method (the single write
+        seam) so the contract monitor and pending-write buffer stay consistent.
+        Falls back to a plain attribute write (mock models) or a private store.
+        ``unittest.mock.Mock`` auto-creates callables for missing attrs, so we
+        require a true bound method rather than ``callable(...)``.
         """
         model = self.model
-        # Check for a *real* Population manager, not a Mock attribute.
-        pop = getattr(model, 'population', None)
-        if pop is not None and hasattr(pop, 'data') and isinstance(
-            getattr(pop, 'data', None), pl.DataFrame
-        ):
-            pop.data = value
+        set_frame = getattr(model, '_set_frame', None) if model is not None else None
+        if isinstance(set_frame, MethodType):
+            # Clear any pending OOP buffer -- environment writes are authoritative.
+            if hasattr(model, '_pending_writes'):
+                model._pending_writes = {}
+            set_frame(value)
             bump = getattr(model, '_bump_id_version', None)
-            if bump is not None:
+            if isinstance(bump, MethodType):
                 bump()
-        elif model is not None and hasattr(model, 'agents_df'):
+            return
+        if model is not None and hasattr(model, 'agents_df'):
             # Plain attribute (e.g. Mock model) — write directly.
             object.__setattr__(model, 'agents_df', value)
             self._df = value
@@ -151,14 +154,20 @@ class GridEnvironment(Environment):
             positions = list(itertools.product(*ranges))
         return positions
     
-    def get_neighbors(self, position_or_agent_id, include_diagonal=False, distance=1):
+    def get_neighbors(self, position_or_agent_id, include_diagonal=False, distance=1,
+                      radius: Optional[int] = None):
         """Get neighboring positions or agents.
-        
+
         Args:
             position_or_agent_id: Either a position tuple or agent ID
             include_diagonal: Whether to include diagonal neighbors
-            distance: Maximum distance for neighbors
+            distance: Maximum Chebyshev/orthogonal distance for neighbors
+            radius: Alias for ``distance``; when set, also enables diagonal
+                (Moore) neighbourhood — common Schelling-style usage.
         """
+        if radius is not None:
+            distance = int(radius)
+            include_diagonal = True
         if isinstance(position_or_agent_id, (tuple, list)):
             # Position-based neighbor search
             position = position_or_agent_id
@@ -295,13 +304,106 @@ class GridEnvironment(Environment):
         if hasattr(self, 'df') and not self.df.is_empty() and 'grid_position' in self.df.columns:
             # Handle both list and tuple types from Polars
             if self.df['grid_position'].dtype == pl.Object:
-                occupied = set(self.df['grid_position'].to_list())
+                occupied = {
+                    tuple(p) if isinstance(p, list) else p
+                    for p in self.df['grid_position'].to_list()
+                    if p is not None
+                }
             else:
                 # Likely list type, convert to tuples
-                occupied = set(tuple(p) if isinstance(p, list) else p for p in self.df['grid_position'].to_list())
-            
+                occupied = set(
+                    tuple(p) if isinstance(p, list) else p
+                    for p in self.df['grid_position'].to_list()
+                    if p is not None
+                )
+
         return [pos for pos in self.positions if pos not in occupied]
-    
+
+    def get_random_empty_cell(self) -> Optional[Tuple[int, ...]]:
+        """Return a random unoccupied cell, or ``None`` if the grid is full."""
+        empty = self.empty_positions()
+        if not empty:
+            return None
+        rng = getattr(self.model, 'rng', None) or np.random.default_rng()
+        return empty[int(rng.integers(0, len(empty)))]
+
+    def _normalize_pos(self, pos) -> Tuple:
+        if pos is None:
+            return None
+        return tuple(pos) if isinstance(pos, list) else tuple(pos)
+
+    def get_agent_at_pos(self, pos) -> Optional[int]:
+        """Return the agent id at ``pos``, or ``None`` if empty / unknown."""
+        pos = self._normalize_pos(pos)
+        if self.df.is_empty() or 'grid_position' not in self.df.columns:
+            return None
+        for aid, p in zip(self.df['id'].to_list(), self.df['grid_position'].to_list()):
+            if p is None:
+                continue
+            if self._normalize_pos(p) == pos:
+                return int(aid)
+        return None
+
+    def _ensure_grid_position_column(self) -> None:
+        df = self.df
+        if df.is_empty():
+            return
+        if 'grid_position' not in df.columns:
+            self.df = df.with_columns(
+                pl.Series('grid_position', [None] * df.height, dtype=pl.Object)
+            )
+
+    def add_agent_from_id(self, agent_id: int, pos) -> None:
+        """Place (or move) agent ``agent_id`` onto ``pos`` (must be empty or same agent)."""
+        pos = self._normalize_pos(pos)
+        if not self.is_valid_position(pos):
+            raise ValueError(f"invalid grid position {pos!r}")
+        occupant = self.get_agent_at_pos(pos)
+        if occupant is not None and occupant != agent_id:
+            raise ValueError(f"position {pos} already occupied by agent {occupant}")
+        self._ensure_grid_position_column()
+        if self.df.is_empty() or agent_id not in self.df['id'].to_list():
+            raise KeyError(f"agent {agent_id} not in model population")
+        self.df = self.df.with_columns(
+            pl.when(pl.col('id') == agent_id)
+            .then(pl.lit(pos, dtype=pl.Object))
+            .otherwise(pl.col('grid_position'))
+            .alias('grid_position')
+        )
+
+    def add_agent(self, agent, pos) -> None:
+        """Place an :class:`~ambr.agent.Agent` (or raw id) at ``pos``."""
+        agent_id = getattr(agent, 'id', agent)
+        self.add_agent_from_id(int(agent_id), pos)
+
+    def remove_agent_from_pos(self, pos) -> Optional[int]:
+        """Clear occupancy at ``pos``. Returns the agent id that was there, if any."""
+        pos = self._normalize_pos(pos)
+        agent_id = self.get_agent_at_pos(pos)
+        if agent_id is None:
+            return None
+        self._ensure_grid_position_column()
+        self.df = self.df.with_columns(
+            pl.when(pl.col('id') == agent_id)
+            .then(pl.lit(None, dtype=pl.Object))
+            .otherwise(pl.col('grid_position'))
+            .alias('grid_position')
+        )
+        return agent_id
+
+    def get_empty_cells_in_radius(self, pos, radius: int) -> List[Tuple]:
+        """Empty cells within Chebyshev distance ``radius`` of ``pos`` (excl. ``pos``)."""
+        pos = self._normalize_pos(pos)
+        radius = int(radius)
+        empty = self.empty_positions()
+        out = []
+        for cell in empty:
+            if cell == pos:
+                continue
+            if max(abs(a - b) for a, b in zip(cell, pos)) <= radius:
+                out.append(cell)
+        return out
+
     def move_agent(self, agent_id: int, new_position: Position) -> None:
         """Move an agent to a new grid position."""
         if new_position.topology_type != 'grid':

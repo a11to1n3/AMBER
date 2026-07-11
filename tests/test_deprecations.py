@@ -74,6 +74,41 @@ def test_agent_record_and_update_data_deprecated():
     assert m.agents.frame["x"].to_list() == [4]
 
 
+def test_model_update_agent_data_and_batch_update_deprecated():
+    m = am.Model({"show_progress": False})
+    m.add_agents(3, wealth=np.zeros(3, dtype=int))
+    _warns_and(lambda: m.update_agent_data(0, {"wealth": 5}))
+    assert m.get_agent_data(0)["wealth"].item() == 5
+    _warns_and(lambda: m.batch_update_agents([1, 2], {"wealth": [7, 8]}))
+    assert m.agents.frame["wealth"].to_list() == [5, 7, 8]
+
+
+def test_population_mutators_deprecated():
+    m = am.Model({"show_progress": False})
+    m.add_agents(2, wealth=np.array([1, 2]))
+    pop = m.population
+    _warns_and(lambda: pop.set_agent_value(0, "wealth", 9))
+    assert pop.data.filter(pl.col("id") == 0)["wealth"].item() == 9
+    _warns_and(lambda: pop.batch_update({"wealth": [3, 4]}))
+    assert pop.data["wealth"].to_list() == [3, 4]
+    _warns_and(lambda: pop.batch_update_by_ids([0], {"wealth": [1]}))
+    assert pop.data["wealth"].to_list() == [1, 4]
+
+
+def test_population_data_assign_deprecated_replace_frame_quiet():
+    m = am.Model({"show_progress": False})
+    m.add_agents(2, wealth=np.array([1, 2]))
+    df = m.agents_df.with_columns((pl.col("wealth") + 1).alias("wealth"))
+    _warns_and(lambda: setattr(m.population, "data", df))
+    assert m.population.data["wealth"].to_list() == [2, 3]
+    # Quiet internal seam used by Model._set_frame
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        m.population.replace_frame(df.with_columns(pl.lit(0).alias("wealth")))
+        assert not any(issubclass(x.category, DeprecationWarning) for x in w)
+    assert m.population.data["wealth"].to_list() == [0, 0]
+
+
 def test_suppress_env_silences(monkeypatch):
     monkeypatch.setenv("AMBER_SUPPRESS_DEPRECATIONS", "1")
     m = am.Model({"show_progress": False})
