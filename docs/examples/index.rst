@@ -8,12 +8,12 @@ Getting Started Examples
 
 **Wealth Transfer Model**
    A classic agent-based model demonstrating wealth redistribution dynamics. Agents randomly exchange money, leading to emergent wealth inequality patterns.
-   
+
    - Script: ``examples/wealth_transfer.py``
 
 **Segregation Model**
    Implementation of Schelling's segregation model showing how individual preferences can lead to population-level segregation patterns.
-   
+
    - Script: ``examples/segregation_model.py``
 
 Advanced Examples
@@ -21,22 +21,22 @@ Advanced Examples
 
 **Virus Spread Simulation**
    Epidemiological model simulating disease spread through a population with different intervention strategies.
-   
+
    - Script: ``examples/virus_spread_simulation.py``
 
 **Forest Fire Model**
    Cellular automaton model of wildfire spread with environmental factors and firefighting interventions.
-   
+
    - Script: ``examples/forest_fire_simulation.py``
 
 **Flocking Simulation**
    Boids-style flocking behavior demonstrating emergent collective motion from simple local rules.
-   
+
    - Script: ``examples/flocking_simulation.py``
 
 **Button Network Simulation**
    Network-based model exploring information diffusion and social influence in connected populations.
-   
+
    - Script: ``examples/button_network_simulation.py``
 
 Interactive Examples
@@ -44,7 +44,7 @@ Interactive Examples
 
 **Interactive Wealth Transfer**
    Enhanced version of the wealth transfer model with interactive controls and real-time visualization.
-   
+
    - Script: ``examples/interactive_wealth_transfer.py``
 
 Parameter Optimization & Calibration
@@ -52,17 +52,17 @@ Parameter Optimization & Calibration
 
 **Simple SMAC Calibration**
    Introduction to SMAC optimization with AMBER - the easiest way to get started with automated parameter tuning.
-   
+
    - Script: ``examples/smac_calibration_simple.py``
 
 **Comprehensive SMAC Calibration**
    Advanced single-objective optimization using AMBER's built-in SMACOptimizer with multiple strategies and analysis tools.
-   
+
    - Script: ``examples/smac_calibration_basic.py``
 
 **Multi-Objective SMAC Optimization**
    Sophisticated multi-objective optimization using AMBER's MultiObjectiveSMAC for finding Pareto-optimal solutions.
-   
+
    - Script: ``examples/smac_calibration_advanced.py``
 
 Running the Examples
@@ -84,7 +84,7 @@ Some examples may require additional dependencies:
 .. code-block:: bash
 
    pip install matplotlib seaborn plotly jupyter
-   
+
    # For optimization examples
    pip install smac ConfigSpace
 
@@ -103,7 +103,7 @@ Learning Path
 We recommend following this sequence for learning AMBER:
 
 1. **Start with Wealth Transfer** - Learn basic model structure and agent interactions
-2. **Try Segregation Model** - Understand spatial environments and agent movement  
+2. **Try Segregation Model** - Understand spatial environments and agent movement
 3. **Explore Virus Spread** - See how to model state changes and interventions
 4. **Advanced Models** - Forest fire, flocking, and network models for complex behaviors
 5. **Interactive Examples** - Learn about real-time visualization and user interaction
@@ -118,4 +118,4 @@ All example source code can be found in the project repository under the ``examp
 
 - **Educational** - Clear, well-commented code that teaches AMBER concepts
 - **Runnable** - Complete scripts that work out of the box
-- **Extensible** - Easy to modify and build upon for your own projects 
+- **Extensible** - Easy to modify and build upon for your own projects

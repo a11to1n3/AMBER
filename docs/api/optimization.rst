@@ -20,7 +20,7 @@ Define parameter ranges for optimization:
 .. code-block:: python
 
    from ambr import ParameterSpace, IntRange
-   
+
    space = ParameterSpace({
        'n_agents': IntRange(50, 200),
        'learning_rate': [0.01, 0.1, 0.5],
@@ -81,4 +81,4 @@ Intelligent parameter search using Bayesian optimization:
        minimize=False,
        n_calls=30,
        n_runs=5
-   ) 
+   )

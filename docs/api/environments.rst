@@ -23,11 +23,11 @@ The GridEnvironment provides a 2D grid-based space where agents can be positione
 
    # Create a 10x10 grid
    grid = am.GridEnvironment(model, size=(10, 10))
-   
+
    # Place an agent
    position = grid.random_position()
    agent.position = position
-   
+
    # Get neighbors
    neighbors = grid.get_neighbors(position)
 
@@ -46,11 +46,11 @@ The SpaceEnvironment provides continuous 2D space with configurable boundaries.
 
    # Create continuous space
    space = am.SpaceEnvironment(model, bounds=[(0, 100), (0, 100)])
-   
+
    # Place an agent
    position = (25.5, 37.2)
    agent.position = position
-   
+
    # Get neighbors within radius
    neighbors = space.get_neighbors(position, radius=5.0)
 
@@ -68,13 +68,13 @@ The NetworkEnvironment provides graph-based topology for agent interactions.
 .. code-block:: python
 
    import networkx as nx
-   
+
    # Create network from NetworkX graph
    G = nx.erdos_renyi_graph(100, 0.1)
    network = am.NetworkEnvironment(model, G)
-   
+
    # Place agent on node
    agent.node = 42
-   
+
    # Get connected neighbors
-   neighbors = network.get_neighbors(42) 
+   neighbors = network.get_neighbors(42)

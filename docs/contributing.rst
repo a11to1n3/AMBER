@@ -81,10 +81,10 @@ Development Workflow
 
       # Run all tests
       pytest tests/
-      
+
       # Run specific test file
       pytest tests/test_model.py
-      
+
       # Run with coverage
       pytest tests/ --cov=ambr
 
@@ -215,8 +215,11 @@ CI runs a dedicated **Ruff + mypy** job on every PR:
 Repo hygiene
 ~~~~~~~~~~~~
 
-* Do **not** commit notebook outputs (clear cells before push, or use
-  ``nbstripout``). Example ``.ipynb`` files in ``examples/`` should stay small.
+* Install git hooks once: ``pip install -e ".[dev]" && pre-commit install``
+  (or ``make pre-commit-install``). Commits then run **nbstripout** (strip
+  notebook outputs) and **ruff** on ``src/ambr``.
+* Do **not** commit notebook outputs. Example ``.ipynb`` files in
+  ``examples/`` should stay small.
 * Do **not** commit manuscript drafts (``paper/`` is gitignored); cite the
   public arXiv paper only.
 * Prefer ``pyproject.toml`` extras over hand-editing ``requirements*.txt``.

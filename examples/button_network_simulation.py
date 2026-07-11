@@ -40,20 +40,20 @@ The Button model simulates the random connection of buttons (nodes) with threads
 
 class ButtonAgent(am.Agent):
     """A button agent that can be connected to other buttons via threads."""
-    
+
     def __init__(self, model, agent_id):
         super().__init__(model, agent_id)
         self.node_id = agent_id  # Node ID in the network graph
-    
+
     def setup(self):
         pass
 
 class ButtonModel(am.Model):
     """A model of randomly connecting buttons demonstrating network phase transitions."""
-    
+
     def setup(self):
         """Initialize the model with buttons and an empty network."""
-        
+
         # Initialize DataFrame with network-specific columns
         self.agents_df = pl.DataFrame({
             'id': pl.Series([], dtype=pl.Int64),
@@ -61,43 +61,43 @@ class ButtonModel(am.Model):
             'degree': pl.Series([], dtype=pl.Int64),
             'cluster_size': pl.Series([], dtype=pl.Int64)
         })
-        
+
         # Create button agents
         self.button_agents = {}
         for i in range(self.p['n']):
             agent = ButtonAgent(self, i)
             agent.setup()
             self.button_agents[i] = agent
-        
+
         # Create network graph
         self.graph = nx.Graph()
         self.graph.add_nodes_from(range(self.p['n']))
-        
+
         # Initialize thread counter
         self.threads = 0
-        
+
         # Record initial state
         self._record_all_agents()
-        
+
     def _record_all_agents(self):
         """Record current network state of all agents."""
         agent_data = []
-        
+
         # Calculate connected components
         clusters = list(nx.connected_components(self.graph))
         cluster_sizes = {node: len(cluster) for cluster in clusters for node in cluster}
-        
+
         for agent_id, agent in self.button_agents.items():
             degree = self.graph.degree(agent_id)
             cluster_size = cluster_sizes.get(agent_id, 1)
-            
+
             agent_data.append({
                 'id': agent_id,
                 'step': self.t,
                 'degree': degree,
                 'cluster_size': cluster_size
             })
-        
+
         if agent_data:
             new_data = pl.DataFrame(agent_data)
             self.agents_df = pl.concat([self.agents_df, new_data])
@@ -105,7 +105,7 @@ class ButtonModel(am.Model):
     def update(self):
         """Update model state and record metrics."""
         super().update()
-        
+
         # Calculate network metrics
         if self.graph.number_of_nodes() > 0:
             # Find largest connected component
@@ -116,41 +116,41 @@ class ButtonModel(am.Model):
                 max_cluster_size = 1.0 / self.p['n']  # Single isolated nodes
         else:
             max_cluster_size = 0.0
-        
+
         # Calculate threads to buttons ratio
         threads_to_button_ratio = self.threads / self.p['n']
-        
+
         # Record model-level metrics
         self.record_model('max_cluster_size', max_cluster_size)
         self.record_model('threads_to_button', threads_to_button_ratio)
         self.record_model('total_threads', self.threads)
         self.record_model('num_components', nx.number_connected_components(self.graph))
-        
+
         # Record agent states
         self._record_all_agents()
-    
+
     def step(self):
         """Add random connections between buttons."""
-        
+
         # Create random edges based on speed parameter
         connections_per_step = int(self.p['n'] * self.p['speed'])
-        
+
         for _ in range(connections_per_step):
             # Select two random buttons
             button_ids = list(self.button_agents.keys())
             if len(button_ids) >= 2:
                 button1, button2 = self.random.sample(button_ids, 2)
-                
+
                 # Add edge if it doesn't exist
                 if not self.graph.has_edge(button1, button2):
                     self.graph.add_edge(button1, button2)
                     self.threads += 1
-    
+
     def get_network_stats(self):
         """Get current network statistics for analysis."""
         clusters = list(nx.connected_components(self.graph))
         cluster_sizes = [len(cluster) for cluster in clusters]
-        
+
         return {
             'num_nodes': self.graph.number_of_nodes(),
             'num_edges': self.graph.number_of_edges(),
@@ -281,9 +281,9 @@ plt.figure(figsize=(12, 8))
 # Main plot: Phase transition curves for different network sizes
 plt.subplot(2, 2, 1)
 sns.lineplot(
-    data=model_data_pd, 
-    x='threads_to_button', 
-    y='max_cluster_size', 
+    data=model_data_pd,
+    x='threads_to_button',
+    y='max_cluster_size',
     hue='n',
     marker='o',
     markersize=4
@@ -346,4 +346,3 @@ summary_stats = model_data.group_by('n').agg([
 ])
 
 print(summary_stats)
-
