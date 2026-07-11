@@ -279,6 +279,31 @@ class _BaseView:
         except ValueError:
             return results
 
+    def random(self, n: int = 1, replace: bool = False):
+        """Sample agent id(s) from this view (AgentPy-style helper).
+
+        Returns a single id when ``n == 1``, otherwise a list of ids.
+        Uses ``model.rng`` when available.
+        """
+        ids = self._ids_series().to_list()
+        if not ids:
+            raise ValueError("cannot sample from an empty agent view")
+        n = int(n)
+        if n < 1:
+            raise ValueError("n must be >= 1")
+        model = self.__dict__["model"]
+        rng = getattr(model, "rng", None)
+        if rng is None:
+            rng = np.random.default_rng()
+        if n == 1 and not replace:
+            return int(rng.choice(ids))
+        if not replace and n > len(ids):
+            raise ValueError(
+                f"cannot sample {n} unique agents from a view of size {len(ids)}"
+            )
+        picked = rng.choice(ids, size=n, replace=replace)
+        return [int(x) for x in np.atleast_1d(picked)]
+
     def apply(self, func: Callable[[Agent], Any]) -> pl.Series:
         return pl.Series([func(a) for a in self])
 
