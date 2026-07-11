@@ -20,8 +20,8 @@ Added
 
 Changed
 ~~~~~~~
-- Docs / README: software citation while a new manuscript is prepared; paper
-  tree is not co-located in the package repo.
+- Docs / README: public arXiv paper citation retained; manuscript drafts stay
+  out of the package repository (``paper/`` ignored).
 
 [0.4.1] - 2026-07-11
 --------------------
