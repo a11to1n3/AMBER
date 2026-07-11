@@ -38,6 +38,7 @@ from .contract import (
     ContractCertificate,
     ContractViolation,
     ContractViolationError,
+    ContractMonitor,
     CONTRACT_MODES,
 )
 from .base import BaseModel, BaseAgent
@@ -63,12 +64,17 @@ from .performance import (
     check_performance_deps,
     HAS_SCIPY,
     HAS_NUMBA,
+    jit as numba_jit,
 )
+from .tensor_lane import TensorLane, borrow_numeric, commit_columns
+from .gpu import GPU_AVAILABLE, get_array_module, to_device, to_host, require_gpu, synchronize
+from .results import RunResults
+from .lanes import ArrayKernelModel, status, print_status, recommend
 
 try:
     __version__ = _metadata_version('ambr')
 except _PackageNotFoundError:
-    __version__ = '0.4.0'
+    __version__ = '0.4.1'
 
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'
@@ -82,12 +88,13 @@ __all__ = [
     'ContractCertificate',
     'ContractViolation',
     'ContractViolationError',
+    'ContractMonitor',
     'CONTRACT_MODES',
     'BaseModel',
     'BaseAgent',
     'AgentList',
     'GridEnvironment',
-    'SpaceEnvironment', 
+    'SpaceEnvironment',
     'NetworkEnvironment',
     'Experiment',
     'Sample',
@@ -109,4 +116,21 @@ __all__ = [
     'check_performance_deps',
     'HAS_SCIPY',
     'HAS_NUMBA',
+    'numba_jit',
+    # Tensor lane / GPU (0.4)
+    'TensorLane',
+    'borrow_numeric',
+    'commit_columns',
+    'GPU_AVAILABLE',
+    'get_array_module',
+    'to_device',
+    'to_host',
+    'require_gpu',
+    'synchronize',
+    'RunResults',
+    # Progressive speed lanes
+    'ArrayKernelModel',
+    'status',
+    'print_status',
+    'recommend',
 ]

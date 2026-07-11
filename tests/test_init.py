@@ -153,7 +153,13 @@ class TestPackageInitialization:
             'HAS_SMAC',
             # Snapshot-view contract conformance checking
             'ContractCertificate', 'ContractViolation', 'ContractViolationError',
-            'CONTRACT_MODES',
+            'ContractMonitor', 'CONTRACT_MODES',
+            # Tensor lane / GPU (0.4)
+            'TensorLane', 'borrow_numeric', 'commit_columns',
+            'GPU_AVAILABLE', 'get_array_module', 'to_device', 'to_host',
+            'RunResults',
+            'ArrayKernelModel', 'status', 'print_status', 'recommend',
+            'require_gpu', 'synchronize', 'numba_jit',
         }
         
         # Check that we don't have unexpected exports

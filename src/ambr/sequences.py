@@ -1,20 +1,33 @@
-"""AgentList and view-based subset types.
+"""AgentList and view-based subset types (vectorized / OOP agent API).
 
-The full population view lives at ``model.agents``. Filtered and scatter
-views are produced by ``agents.where(...)`` / ``agents[mask]`` /
-``agents.at[ids]``. All views route column reads/writes through
-``model.agents_df`` so the DataFrame is the single source of truth.
+Architecture
+------------
+* ``model.agents`` is an :class:`AgentList` — the full population view.
+* Filtered / scatter views come from ``agents.where(...)``, ``agents[mask]``,
+  and ``agents.at[ids]``.
+* All column reads/writes go through ``model.agents_df`` / ``model._set_frame``
+  so Polars remains the single source of truth.
+
+Write path (DRY)
+----------------
+Columnar writes share helpers in this module plus:
+
+* :mod:`ambr._id_index` — id → row position (cached per id-version)
+* :mod:`ambr.performance` — ``apply_scatter_write`` / ``apply_scatter_add``
 """
 
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import numpy as np
 import polars as pl
 
 from ._deprecation import warn_deprecated
-
+from ._id_index import resolve_positions
 from .agent import Agent
 from .model import Model
+from .performance import apply_scatter_add, apply_scatter_write
 
 
 # Names that must live on the Python instance, not as DataFrame columns.
@@ -28,31 +41,89 @@ _INTERNAL_ATTRS = frozenset({
 })
 
 
+# =============================================================================
+# Shared value / frame helpers (used by _write_column, set, scatter_add)
+# =============================================================================
+
+
+def _require_length(name: str, length: int, n: int) -> None:
+    """Raise if a value's length does not match the view length ``n``."""
+    if length != n:
+        raise ValueError(
+            f"length {length} for {name!r} does not match view length {n}"
+        )
+
+
 def _normalize_delta(name: str, value: Any, n: int) -> np.ndarray:
-    """Coerce a scatter_add / _write_column value into a length-``n`` ndarray."""
+    """Coerce a scatter_add value into a length-``n`` ndarray."""
     if isinstance(value, pl.Series):
-        if value.len() != n:
-            raise ValueError(
-                f"length {value.len()} for {name!r} does not match view length {n}"
-            )
+        _require_length(name, value.len(), n)
         return value.to_numpy()
     if isinstance(value, np.ndarray):
-        if len(value) != n:
-            raise ValueError(
-                f"length {len(value)} for {name!r} does not match view length {n}"
-            )
+        _require_length(name, len(value), n)
         return value
     if isinstance(value, list):
-        if len(value) != n:
-            raise ValueError(
-                f"length {len(value)} for {name!r} does not match view length {n}"
-            )
+        _require_length(name, len(value), n)
         return np.asarray(value)
+    # Scalar broadcast.
     return np.full(n, value)
 
 
+def _value_to_series(name: str, value: Any, n: int) -> pl.Series:
+    """Coerce assignment value to a Polars Series of length ``n``."""
+    if isinstance(value, pl.Series):
+        series = value
+    else:
+        data = (
+            value
+            if isinstance(value, (list, np.ndarray))
+            else [value] * n
+        )
+        series = pl.Series(name, data, strict=False)
+    if series.len() != n:
+        raise ValueError(
+            f"Cannot assign Series of length {series.len()} to view of length {n}"
+            + (f" for column {name!r}" if name else "")
+        )
+    return series
+
+
+def _ensure_columns(df: pl.DataFrame, names: List[str]) -> pl.DataFrame:
+    """Add missing columns as null-filled so updates can target them."""
+    missing = [c for c in names if c not in df.columns]
+    if not missing:
+        return df
+    return df.with_columns(
+        [pl.Series(c, [None] * df.height, strict=False) for c in missing]
+    )
+
+
+def _is_full_population(ids: pl.Series, df: pl.DataFrame) -> bool:
+    """True when ``ids`` is exactly the full agent table order (fast path)."""
+    return ids.len() == df.height and ids.equals(df["id"])
+
+
+def _commit_with_columns(
+    model: Model,
+    df: pl.DataFrame,
+    series_list: List[pl.Series],
+    *,
+    written_columns: Optional[List[str]] = None,
+) -> None:
+    """Single seam: ``with_columns`` + optional contract commit."""
+    model._set_frame(
+        df.with_columns(series_list),
+        written_columns=written_columns,
+    )
+
+
 class _BaseView:
-    """Attribute/assignment protocol shared by every view type."""
+    """Attribute/assignment protocol shared by every view type.
+
+    Subclasses implement :meth:`_ids_series` (the agents this view covers).
+    Reads join against ``model.agents_df``; writes go through
+    :meth:`_write_column` / :meth:`set` / :meth:`scatter_add`.
+    """
 
     # Subclasses override.
     def _ids_series(self) -> pl.Series:
@@ -70,16 +141,13 @@ class _BaseView:
             raise AttributeError(name)
         df = model.agents_df
         if name not in df.columns:
-            # Backward-compat fallback: if the name is a callable method
-            # on the underlying agents, return a wrapper that dispatches
-            # to each agent and collects results into a numpy array.
+            # Backward-compat: callable methods on tracked Agent objects.
             root = self._root()
-            agents = getattr(root, '_agent_objects', None)
+            agents = getattr(root, "_agent_objects", None)
             if agents:
                 first = agents[0] if agents else None
                 method = getattr(first, name, None) if first is not None else None
                 if callable(method):
-                    import numpy as np
                     def _dispatch(*args, **kwargs):
                         results = [getattr(a, name)(*args, **kwargs) for a in self]
                         try:
@@ -92,11 +160,11 @@ class _BaseView:
                 f"available columns: {df.columns}"
             )
         ids = self._ids_series()
-        if ids.len() == df.height and ids.equals(df["id"]):
+        # Full population: return the column without a join.
+        if _is_full_population(ids, df):
             return df[name]
-        # Align the returned Series with the view's id order so that
-        # duplicate-id scatter views still return a length-matched column.
-        # When name is "id", skip the join to avoid duplicate column error.
+        # Align Series with the view's id order (scatter views may repeat ids).
+        # When name is "id", skip the join to avoid a duplicate-column error.
         if name == "id":
             return ids
         ids_df = pl.DataFrame([ids.rename("id")])
@@ -115,6 +183,13 @@ class _BaseView:
 
         Accepts scalars, ``pl.Series`` / ``np.ndarray`` / list matching
         ``len(view)``, and ``pl.Expr`` evaluated over the view's rows.
+
+        Path selection (fast → slow):
+
+        1. Polars expression → filter + join
+        2. Full population → single ``with_columns``
+        3. Unique subset + numeric column → Numba/NumPy scatter-write
+        4. Fallback → ``df.update(on='id')``
         """
         model = self.__dict__["model"]
         model._flush_pending_writes()
@@ -123,40 +198,56 @@ class _BaseView:
         n = ids.len()
         df = model.agents_df
 
+        # --- expression path ------------------------------------------------
         if isinstance(value, pl.Expr):
             sub = df.filter(pl.col("id").is_in(ids.to_list())).select(
                 pl.col("id"), value.alias("__new__")
             )
-            if name not in df.columns:
-                df = df.with_columns(pl.Series(name, [None] * df.height, strict=False))
+            df = _ensure_columns(df, [name])
             joined = df.join(sub, on="id", how="left").with_columns(
                 pl.when(pl.col("__new__").is_not_null())
                 .then(pl.col("__new__"))
                 .otherwise(pl.col(name))
                 .alias(name)
             ).drop("__new__")
-            model._set_frame(joined)
+            model._set_frame(joined, written_columns=[name])
             return
 
-        values = value if isinstance(value, pl.Series) else pl.Series(
-            name,
-            [value] * n if not isinstance(value, (list, np.ndarray)) else value,
-            strict=False,
-        )
-        if values.len() != n:
-            raise ValueError(
-                f"Cannot assign Series of length {values.len()} to view of length {n}"
+        values = _value_to_series(name, value, n)
+
+        # --- whole-population fast path -------------------------------------
+        if _is_full_population(ids, df):
+            _commit_with_columns(
+                model, df, [values.alias(name)], written_columns=[name]
             )
-
-        # Whole-population fast path: one with_columns, no join.
-        if n == df.height and ids.equals(df["id"]):
-            model._set_frame(df.with_columns(values.alias(name)))
             return
 
-        if name not in df.columns:
-            df = df.with_columns(pl.Series(name, [None] * df.height, strict=False))
+        # --- subset scatter-write (unique ids, existing numeric column) -----
+        ids_np = ids.to_numpy()
+        if n > 0 and len(np.unique(ids_np)) == n and name in df.columns:
+            try:
+                positions = resolve_positions(model, df, ids_np)
+                base = df[name].to_numpy()
+                vals = values.to_numpy()
+                # Object / mixed columns fall through to the join path.
+                if base.dtype != object and vals.dtype != object:
+                    out = apply_scatter_write(base.copy(), positions, vals)
+                    _commit_with_columns(
+                        model,
+                        df,
+                        [pl.Series(name, out, strict=False)],
+                        written_columns=[name],
+                    )
+                    return
+            except (KeyError, TypeError, ValueError):
+                pass
+
+        # --- general update join --------------------------------------------
+        df = _ensure_columns(df, [name])
         update_df = pl.DataFrame([ids.rename("id"), values.rename(name)])
-        model._set_frame(df.update(update_df, on="id", how="left"))
+        model._set_frame(
+            df.update(update_df, on="id", how="left"), written_columns=[name]
+        )
 
     @property
     def ids(self) -> pl.Series:
@@ -255,6 +346,31 @@ class _BaseView:
         except ValueError:
             return results
 
+    def random(self, n: int = 1, replace: bool = False):
+        """Sample agent id(s) from this view (AgentPy-style helper).
+
+        Returns a single id when ``n == 1``, otherwise a list of ids.
+        Uses ``model.rng`` when available.
+        """
+        ids = self._ids_series().to_list()
+        if not ids:
+            raise ValueError("cannot sample from an empty agent view")
+        n = int(n)
+        if n < 1:
+            raise ValueError("n must be >= 1")
+        model = self.__dict__["model"]
+        rng = getattr(model, "rng", None)
+        if rng is None:
+            rng = np.random.default_rng()
+        if n == 1 and not replace:
+            return int(rng.choice(ids))
+        if not replace and n > len(ids):
+            raise ValueError(
+                f"cannot sample {n} unique agents from a view of size {len(ids)}"
+            )
+        picked = rng.choice(ids, size=n, replace=replace)
+        return [int(x) for x in np.atleast_1d(picked)]
+
     def apply(self, func: Callable[[Agent], Any]) -> pl.Series:
         return pl.Series([func(a) for a in self])
 
@@ -268,8 +384,7 @@ class _BaseView:
     def update_data(self, data: Dict[str, Any]) -> None:
         """Deprecated alias for a multi-column write (``view.set(**cols)``)."""
         warn_deprecated("AgentList.update_data(data)", "view.set(**cols)")
-        for k, v in data.items():
-            self._write_column(k, v)
+        self.set(**data)
 
     # --- ergonomic read / write --------------------------------------------
 
@@ -284,12 +399,61 @@ class _BaseView:
         return arrays[0] if len(columns) == 1 else arrays
 
     def set(self, **columns: Any) -> None:
-        """Write one or more whole columns over this view's agents.
+        """Write one or more whole columns over this view's agents atomically.
 
-        ``agents.set(x=nx, y=ny)`` replaces ``agents.x = nx; agents.y = ny``.
+        ``agents.set(x=nx, y=ny)`` is a single ``with_columns`` / update (one
+        contract commit per column), not a loop of independent assignments.
+        Expression values (``pl.Expr``) fall back to per-column writes.
         """
-        for name, value in columns.items():
-            self._write_column(name, value)
+        if not columns:
+            return
+        # Expressions need the per-column path (filter + eval).
+        if any(isinstance(v, pl.Expr) for v in columns.values()):
+            for name, value in columns.items():
+                self._write_column(name, value)
+            return
+
+        model = self.__dict__["model"]
+        model._flush_pending_writes()
+        ids = self._ids_series()
+        n = ids.len()
+        df = model.agents_df
+
+        series_by_name: Dict[str, pl.Series] = {
+            name: _value_to_series(name, value, n)
+            for name, value in columns.items()
+        }
+        names = list(series_by_name)
+
+        # Whole-population: one with_columns for all columns.
+        if _is_full_population(ids, df):
+            _commit_with_columns(
+                model,
+                df,
+                [s.alias(name) for name, s in series_by_name.items()],
+                written_columns=names,
+            )
+            return
+
+        # Subset: ensure columns exist, then hash-join update.
+        df = _ensure_columns(df, names)
+        update_df = pl.DataFrame(
+            [ids.rename("id")]
+            + [s.rename(name) for name, s in series_by_name.items()]
+        )
+        model._set_frame(
+            df.update(update_df, on="id", how="left"),
+            written_columns=names,
+        )
+
+    def update_where(self, predicate, **columns: Any) -> None:
+        """Filter then write — one-liner sugar for the vectorized lane.
+
+        Equivalent to ``self.where(predicate).set(**columns)``::
+
+            agents.update_where(agents.wealth > 0, wealth=agents.wealth - 1)
+        """
+        self.where(predicate).set(**columns)
 
     # --- scatter-add --------------------------------------------------------
 
@@ -299,6 +463,11 @@ class _BaseView:
         ``view.at[[1, 1, 3]].scatter_add(wealth=1)`` gives agent ``1`` a +2
         and agent ``3`` a +1. Accepts the same value shapes as column
         assignment.
+
+        Uses :func:`ambr._id_index.resolve_positions` and
+        :func:`ambr.performance.apply_scatter_add` (Numba on CPU when installed).
+        Deliberately omits ``written_columns`` so the contract treats scatter
+        as the sanctioned multi-write reducer (not a partial-map conflict).
         """
         if not increments:
             return
@@ -309,63 +478,27 @@ class _BaseView:
         n = ids.len()
         df = model.agents_df
         if n == 0:
-            missing = [c for c in increments if c not in df.columns]
-            if missing:
-                model._set_frame(df.with_columns(
-                    [pl.Series(c, [None] * df.height, strict=False) for c in missing]
-                ))
+            # Empty view: only ensure columns exist (no rows to update).
+            model._set_frame(_ensure_columns(df, list(increments)))
             return
 
         delta_np: Dict[str, np.ndarray] = {
             col: _normalize_delta(col, val, n) for col, val in increments.items()
         }
-
-        positions = _resolve_positions(model, df, ids.to_numpy())
+        positions = resolve_positions(model, df, ids.to_numpy())
 
         new_columns: List[pl.Series] = []
         for col_name, delta in delta_np.items():
             if col_name in df.columns:
-                base = df[col_name].to_numpy()
-                # np.add.at won't upcast the output dtype, so expand first
-                # when we're adding e.g. a float delta to an int column.
-                result_dtype = np.result_type(base.dtype, delta.dtype)
-                base = base.astype(result_dtype, copy=True) if base.dtype != result_dtype else base.copy()
+                # Copy so we never mutate Polars' backing buffer in place.
+                base = df[col_name].to_numpy().copy()
             else:
                 base = np.zeros(df.height, dtype=delta.dtype)
-            np.add.at(base, positions, delta)
-            new_columns.append(pl.Series(col_name, base, strict=False))
+            out = apply_scatter_add(base, positions, delta)
+            new_columns.append(pl.Series(col_name, out, strict=False))
 
+        # No written_columns — scatter_add is the multi-write reducer.
         model._set_frame(df.with_columns(new_columns))
-
-
-def _resolve_positions(model: Model, df: pl.DataFrame, ids_np: np.ndarray) -> np.ndarray:
-    """Map view ids to row positions in ``df``, caching the lookup by id version."""
-    df_ids_np = df["id"].to_numpy()
-    # Contiguous [0, N) fast path (the common case after add_agents).
-    if (
-        df_ids_np.dtype.kind in ("i", "u")
-        and df_ids_np.size == df.height
-        and df_ids_np.size > 0
-        and df_ids_np[0] == 0
-        and df_ids_np[-1] == df_ids_np.size - 1
-        and np.array_equal(df_ids_np, np.arange(df_ids_np.size))
-    ):
-        return np.asarray(ids_np, dtype=np.int64)
-
-    # General case: reuse the id→position hash table across scatter_add calls
-    # within the same step, invalidating whenever the id column changes.
-    cached: Optional[Tuple[int, Dict[int, int]]] = getattr(model, "_id_pos_cache", None)
-    version = getattr(model, "_id_version", 0)
-    if cached is None or cached[0] != version:
-        id_to_pos = {int(v): i for i, v in enumerate(df_ids_np)}
-        model._id_pos_cache = (version, id_to_pos)
-    else:
-        id_to_pos = cached[1]
-    return np.fromiter(
-        (id_to_pos[int(v)] for v in ids_np),
-        dtype=np.int64,
-        count=int(ids_np.size),
-    )
 
 
 class _AtIndexer:

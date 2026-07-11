@@ -62,15 +62,37 @@ You should see the version number printed without any errors.
 Optional Dependencies
 ---------------------
 
-For enhanced functionality, you may want to install:
+AMBER extras (install what you need):
 
-* **jupyter** - For interactive development and analysis
-* **plotly** - For interactive visualizations
-* **tqdm** - For progress bars in long simulations
+.. code-block:: bash
+
+   # CPU acceleration (Numba + SciPy) — recommended on Mac / no-CUDA machines
+   pip install 'ambr[perf]'
+
+   # SMAC Bayesian / multi-objective optimization (pins scikit-learn for SMAC 2.4)
+   pip install 'ambr[advanced]'
+
+   # Interactive example notebooks
+   pip install 'ambr[examples]'
+
+   # Documentation build tools
+   pip install 'ambr[docs]'
+
+Other useful packages:
+
+* **jupyter** - interactive development
+* **plotly** - interactive visualizations
+* **cupy-cuda12x** - NVIDIA CUDA GPU array backend (not Apple Metal/MPS)
 
 .. code-block:: bash
 
    pip install jupyter plotly tqdm
+
+Verify lanes after install::
+
+   import ambr as am
+   am.print_status()
+   print(am.recommend(10_000))
 
 Troubleshooting
 ---------------
@@ -87,8 +109,15 @@ Common Issues
 **Performance Issues**: For large simulations, consider:
 
 * Using the latest version of Polars
+* ``pip install 'ambr[perf]'`` for Numba-accelerated ``scatter_add`` / subset writes
 * Installing numpy with accelerated BLAS libraries
 * Running on systems with sufficient RAM
+* For large-N array kernels on NVIDIA GPUs, see :doc:`going_faster` (CuPy)
+
+**SMAC / advanced install**: If SMAC fails with a scikit-learn ``DTYPE`` error,
+reinstall the pinned extra::
+
+   pip install 'ambr[advanced]'
 
 **Jupyter Setup**: For interactive development with Jupyter:
 
