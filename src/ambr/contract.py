@@ -1,11 +1,9 @@
 """Runtime conformance checking for AMBER's snapshot-view contract.
 
-This module implements the *runtime* half of the view contract described in the
-AMBER paper (the propositions classifying which agent-rule classes preserve
-their schedule semantics under columnar / simultaneous-update execution). It
-turns that contract from prose into a falsifiable, per-step artifact: a
-:class:`ContractCertificate` that witnesses whether the writes committed during
-a step are admissible under simultaneous-activation semantics.
+This module turns simultaneous-update admissibility into a falsifiable,
+per-step artifact: a :class:`ContractCertificate` that witnesses whether the
+writes committed during a step preserve snapshot semantics under columnar
+execution (the “view contract”).
 
 It witnesses violations on *two* write paths:
 
