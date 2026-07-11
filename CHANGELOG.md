@@ -18,10 +18,10 @@
 
 ### Changed
 
-- Docs / README cleanup: software citation (manuscript in prep); removed
-  outdated arXiv paper link; contributing release notes no longer assume a
-  co-located paper tree.
-- `.gitignore`: track `docs/api/*.rst`; ignore local `paper/` drafts only.
+- Docs / README: keep the public arXiv **citation** for the paper; do **not**
+  co-locate manuscript drafts in the repo (``.gitignore`` still excludes
+  ``paper/`` and build artifacts).
+- `.gitignore`: track `docs/api/*.rst`; ignore local paper drafts only.
 - Ruff-clean `src/ambr` (unused imports / small fixes); SIR batch status
   constant renamed `INFECTED`.
 
