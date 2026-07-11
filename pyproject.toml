@@ -121,12 +121,13 @@ select = ["E4", "E7", "E9", "F"]
 "tests/*" = ["F401", "F811"]
 
 [tool.mypy]
-python_version = "3.11"
+# Match CI lint job (Python 3.12). Newer NumPy stubs use 3.12-only syntax.
+python_version = "3.12"
 ignore_missing_imports = true
 warn_unused_configs = true
-# Gradual adoption: CI type-checks the modules listed below (see workflow).
+# Gradual adoption: type-check only this curated list (see also workflow).
 # model/sequences/optimization remain dynamic ABM surfaces — expand over time.
-packages = []
+explicit_package_bases = true
 files = [
     "src/ambr/results.py",
     "src/ambr/_deprecation.py",
