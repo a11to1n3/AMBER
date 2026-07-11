@@ -13,6 +13,10 @@ Added
 ~~~~~
 - UX / AgentPy lane: ``RunResults`` attribute access, ``agents.random()``,
   default ``show_progress=False``, and ``docs/from_agentpy.rst``.
+- Easier speed lanes: ``am.print_status()`` / ``am.recommend(n)``,
+  ``ArrayKernelModel``, ``agents.update_where``, ``docs/going_faster.rst``.
+- Optional Numba CPU path (``ambr[perf]``): JIT ``scatter_add`` / subset
+  writes; status reports Numba (useful on Mac without CUDA).
 - Grid occupancy helpers on ``GridEnvironment`` for Schelling-style models
   (``get_random_empty_cell``, ``get_agent_at_pos``, ``add_agent_from_id``,
   ``remove_agent_from_pos``, ``get_empty_cells_in_radius``,
