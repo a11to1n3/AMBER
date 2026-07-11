@@ -37,7 +37,7 @@ coverage.xml
 # Documentation builds only (hand-written docs/api/*.rst are tracked)
 docs/_build/
 
-# Local manuscript drafts (not part of the package; new paper lives elsewhere)
+# Manuscript drafts / LaTeX build artifacts — never commit (cite the public paper only)
 paper/
 paper.*
 paper.zip

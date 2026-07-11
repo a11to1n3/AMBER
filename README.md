@@ -325,6 +325,7 @@ Working examples are available in the `examples/` directory:
 ## 📖 Documentation
 
 - **Docs**: https://ambr.readthedocs.io/
+- **Paper**: https://arxiv.org/abs/2601.16292
 - **Going faster** (lanes / Numba / GPU): [docs/going_faster.rst](docs/going_faster.rst)
 - **Environments & Schelling**: [docs/environments_schelling.rst](docs/environments_schelling.rst)
 - **From AgentPy**: [docs/from_agentpy.rst](docs/from_agentpy.rst)
@@ -333,19 +334,21 @@ Working examples are available in the `examples/` directory:
 
 ## 📝 How to cite?
 
-If you use AMBER in academic work, please cite the software (a new manuscript is
-in preparation; this entry will be updated when it is available):
+If you use AMBER in academic work, please cite the paper:
 
 ```bibtex
-@software{ambr,
-  title        = {AMBER: Agent-based Modeling with Blazingly Efficient Records},
-  author       = {Pham, Anh-Duy},
-  year         = {2026},
-  version      = {0.4.1},
-  url          = {https://github.com/a11to1n3/AMBER},
-  note         = {Python package for columnar agent-based modeling}
+@article{pham2026amber,
+  title={AMBER: A Columnar Architecture for High-Performance Agent-Based Modeling in Python},
+  author={Pham, Anh-Duy},
+  journal={arXiv preprint arXiv:2601.16292},
+  year={2026}
 }
 ```
+
+Paper: https://arxiv.org/abs/2601.16292  
+
+(Source drafts and build artifacts for the manuscript are **not** kept in this
+repository — only the public citation.)
 
 ## 🤝 Contributing
 
