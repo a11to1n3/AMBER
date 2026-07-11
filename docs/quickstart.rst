@@ -3,20 +3,56 @@ Quick Start Guide
 
 This guide will get you up and running with AMBER in just a few minutes.
 
-The vectorized mindset
-----------------------
+Two lanes, one model
+--------------------
 
-AMBER stores the entire population as a Polars DataFrame under the hood, so
-the fast path is to update **many agents in one expression** instead of
-looping over individuals. The view API is built around three moves:
+AMBER keeps an **AgentPy-shaped OOP lane** (agents, lists, method calls) and a
+**vectorized lane** (columnar views) on the same ``Model``. Start with the lane
+that matches how you think; scale with the other.
 
-* ``self.agents`` — a view of the whole population
-* ``self.agents.where(predicate)`` — a view of agents matching a condition
-* ``self.agents.at[ids]`` — a view of specific agents by id
+Coming from AgentPy? See :doc:`from_agentpy`.
 
-On any view, ``view.col`` returns a Polars Series sourced from
-``self.agents_df``, and ``view.col = value`` queues a columnar update that
-lands in the DataFrame on the next flush.
+Lane A — AgentPy-shaped (intuitive first model)
+-----------------------------------------------
+
+.. code-block:: python
+
+   import ambr as am
+
+   class WealthAgent(am.Agent):
+       def setup(self):
+           self.wealth = 1
+
+       def transfer(self):
+           if self.wealth > 0:
+               other = self.model.agents.by_id(self.model.agents.random())
+               other.wealth += 1
+               self.wealth -= 1
+
+   class WealthModel(am.Model):
+       def setup(self):
+           self.agents = am.AgentList(self, self.p.n, WealthAgent)
+
+       def step(self):
+           self.agents.transfer()  # call the method on every agent
+
+       def update(self):
+           self.record_model('total', int(self.agents.wealth.sum()))
+
+   results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).run()
+   print(results.model)     # or results['model']
+   print(results.agents.head())
+
+Lane B — vectorized (fast path at scale)
+----------------------------------------
+
+AMBER stores the population as a Polars DataFrame. The view API is three moves:
+
+* ``self.agents`` — whole population
+* ``self.agents.where(predicate)`` — filter
+* ``self.agents.at[ids]`` — select by id
+
+``view.col`` is a Series; ``view.col = value`` writes back through the model.
 
 Canonical verbs (learn these)
 -----------------------------

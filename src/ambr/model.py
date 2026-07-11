@@ -12,6 +12,7 @@ from .contract import (
     ContractMonitor,
     ContractViolationError,
 )
+from .results import RunResults
 
 class Model(BaseModel):
     """Base class for all simulation models, using DataFrames for data storage."""
@@ -57,7 +58,8 @@ class Model(BaseModel):
         self.t = 0
         self._start_time = None
         self._last_progress_time = None
-        self._show_progress = parameters.get('show_progress', True)
+        # Quiet by default (library-friendly); set show_progress=True for CLI demos.
+        self._show_progress = parameters.get('show_progress', False)
         self._model_data = []
         self._agent_vars = []  # per-step agent snapshots when agent_reporters is set
 
@@ -356,8 +358,11 @@ class Model(BaseModel):
         self,
         steps: Optional[int] = None,
         contract: str = "off",
-    ) -> Dict[str, pl.DataFrame]:
+    ) -> RunResults:
         """Run the simulation.
+
+        Returns a :class:`~ambr.results.RunResults` mapping (dict subclass).
+        Use ``results['agents']`` or ``results.agents`` interchangeably.
 
         Args:
             steps: number of steps to run (defaults to ``self.p['steps']`` or 100).
@@ -438,13 +443,13 @@ class Model(BaseModel):
         else:
             model_df = pl.DataFrame({'t': []})
             
-        results = {
-            'info': {'steps': self.t, 'run_time': time.time() - start_time},
+        results = RunResults(
+            info={'steps': self.t, 'run_time': time.time() - start_time},
             # agents_df flushes the buffered write queue so OOP /
             # update_agent_data writes land in the returned frame.
-            'agents': self.agents_df,
-            'model': model_df
-        }
+            agents=self.agents_df,
+            model=model_df,
+        )
         if self._contract.mode != "off":
             results['contract'] = self._contract.certificates
         if self._agent_vars:

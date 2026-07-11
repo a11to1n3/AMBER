@@ -70,13 +70,42 @@ Regenerate with `python benchmarks/plot_scaling_with_gpu_schelling.py`.
 
 ## 🚀 Quick Start
 
+AMBER supports an **AgentPy-shaped OOP lane** and a **vectorized lane** on the
+same model. Start with whichever feels natural.
+
+**AgentPy-shaped (method broadcast, `AgentList`):**
+
 ```python
 import ambr as am
-import numpy as np
 
-# Define a model with the vectorized view API — no per-agent loops.
+class WealthAgent(am.Agent):
+    def setup(self):
+        self.wealth = 1
+    def transfer(self):
+        if self.wealth > 0:
+            other = self.model.agents.by_id(self.model.agents.random())
+            other.wealth += 1
+            self.wealth -= 1
+
 class WealthModel(am.Model):
-    # Declarative metric: evaluated once per step into results['model'].
+    def setup(self):
+        self.agents = am.AgentList(self, self.p.n, WealthAgent)
+    def step(self):
+        self.agents.transfer()
+    def update(self):
+        self.record_model('total', int(self.agents.wealth.sum()))
+
+results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).run()
+print(results.model)      # also results['model']
+print(results.agents.head())
+```
+
+**Vectorized (columnar; best at large N):**
+
+```python
+import ambr as am
+
+class WealthModel(am.Model):
     model_reporters = {'total_wealth': lambda m: int(m.agents.wealth.sum())}
 
     def setup(self):
@@ -88,14 +117,16 @@ class WealthModel(am.Model):
         recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
         self.agents.at[recipients].scatter_add(wealth=1)
 
-model = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
-results = model.run()
-print(results['model'].tail(5))   # per-step total_wealth
-print(results['agents'].head(10)) # final agent state
+results = WealthModel({'steps': 100, 'seed': 42}).run()
+print(results.model.tail(5))
+print(results.agents.head(10))
 ```
 
+Coming from AgentPy? See [`docs/from_agentpy.rst`](docs/from_agentpy.rst).
+
 `self.rng` is the canonical seeded RNG (a NumPy `Generator`); `self.random` is
-the stdlib one. Both are seeded from the `seed` parameter.
+the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
+off by default (`show_progress=True` to re-enable).
 
 > **New in 0.4:** a runtime [snapshot-view contract](#-snapshot-view-contract)
 > checker, a [GPU backend + batched calibration](#-gpu-backend--batched-calibration),
