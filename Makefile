@@ -56,8 +56,8 @@ format:  ## Format code
 type-check:  ## Run type checking
 	mypy src
 
-docs:  ## Generate documentation (if applicable)
-	@echo "Documentation generation not yet implemented"
+docs:  ## Build Sphinx HTML docs into docs/_build/html
+	python -m sphinx -b html docs docs/_build/html
 
 package: clean  ## Build source and wheel distributions
 	python -m build

@@ -34,28 +34,13 @@ htmlcov/
 .pytest_cache/
 coverage.xml
 
-# Documentation
+# Documentation builds only (hand-written docs/api/*.rst are tracked)
 docs/_build/
-docs/api/
 
-# Paper drafts and generated artifacts
+# Local manuscript drafts (not part of the package; new paper lives elsewhere)
 paper/
-paper.aux
-paper.bbl
-paper.blg
-paper.log
-paper.out
-paper.pdf
-paper.synctex.gz
-paper.toc
-paper/*.aux
-paper/*.bbl
-paper/*.blg
-paper/*.log
-paper/*.out
-paper/*.toc
-paper/*.pdf
-paper/*.synctex.gz
-paper/scaling_chart.png
+paper.*
 paper.zip
+
+# SMAC run output
 smac3_output/

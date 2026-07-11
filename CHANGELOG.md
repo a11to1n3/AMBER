@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added
+
+- **GPU ensemble tests** (`tests/test_gpu_ensemble.py`) covering
+  `GPUEnsembleRunner` / `BatchedWellMixedSIR` on the NumPy fallback path, plus
+  a tiny optional `smac_batch_calibrate` smoke when SMAC is installed.
+- Public exports for `GPUEnsembleRunner`, `BatchedWellMixedSIR`,
+  `smac_batch_calibrate`.
+- CI installs `ambr[perf]` (Numba) on Ubuntu + Python 3.12 so scatter JIT
+  paths are exercised in the matrix.
+
+### Changed
+
+- Docs / README cleanup: software citation (manuscript in prep); removed
+  outdated arXiv paper link; contributing release notes no longer assume a
+  co-located paper tree.
+- `.gitignore`: track `docs/api/*.rst`; ignore local `paper/` drafts only.
+
 ## v0.4.1 - 2026-07-11
 
 Polish release on top of 0.4.0: clearer AgentPy-shaped UX, progressive speed
