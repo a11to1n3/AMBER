@@ -159,7 +159,7 @@ class TestPackageInitialization:
             'GPU_AVAILABLE', 'get_array_module', 'to_device', 'to_host',
             'RunResults',
             'ArrayKernelModel', 'status', 'print_status', 'recommend',
-            'require_gpu', 'synchronize',
+            'require_gpu', 'synchronize', 'numba_jit',
         }
         
         # Check that we don't have unexpected exports

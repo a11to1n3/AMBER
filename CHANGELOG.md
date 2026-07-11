@@ -10,6 +10,9 @@
 - **Easier speed lanes:** `am.print_status()` / `am.recommend(n)`,
   `ArrayKernelModel` (single-run GPU/CPU arrays), `agents.update_where(...)`,
   and `docs/going_faster.rst` + `examples/gpu_quickstart.py`.
+- **Numba CPU path:** optional `ambr[perf]` (`numba`); JIT `scatter_add` and
+  subset column writes when installed (strong default for Mac / no-CUDA).
+  Status/recommend report Numba; `am.numba_jit` re-exports the decorator.
 - **Grid occupancy helpers** on `GridEnvironment` for Schelling-style models:
   `get_random_empty_cell`, `get_agent_at_pos`, `add_agent` / `add_agent_from_id`,
   `remove_agent_from_pos`, `get_empty_cells_in_radius`, and `get_neighbors(..., radius=)`
