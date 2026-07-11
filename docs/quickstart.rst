@@ -12,6 +12,12 @@ that matches how you think; scale with the other.
 
 Coming from AgentPy? See :doc:`from_agentpy`.
 
+Want speed / GPU without guessing? See :doc:`going_faster` and run::
+
+   import ambr as am
+   am.print_status()
+   print(am.recommend(100_000))
+
 Lane A — AgentPy-shaped (intuitive first model)
 -----------------------------------------------
 

@@ -7,6 +7,9 @@
 - **UX / AgentPy lane:** `RunResults` (dict + `results.agents` attr access),
   `agents.random()`, quieter default (`show_progress=False`), and
   `docs/from_agentpy.rst` (side-by-side migration + product judgement).
+- **Easier speed lanes:** `am.print_status()` / `am.recommend(n)`,
+  `ArrayKernelModel` (single-run GPU/CPU arrays), `agents.update_where(...)`,
+  and `docs/going_faster.rst` + `examples/gpu_quickstart.py`.
 - **Grid occupancy helpers** on `GridEnvironment` for Schelling-style models:
   `get_random_empty_cell`, `get_agent_at_pos`, `add_agent` / `add_agent_from_id`,
   `remove_agent_from_pos`, `get_empty_cells_in_radius`, and `get_neighbors(..., radius=)`
