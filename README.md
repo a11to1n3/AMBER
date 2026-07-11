@@ -149,11 +149,17 @@ print(Drift({"n": 100_000, "steps": 20}).run().info)
 the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).
 
+> **New in 0.4.1:** [AgentPy-shaped UX](docs/from_agentpy.rst) (`RunResults`,
+> `agents.random()`), [progressive speed lanes](docs/going_faster.rst)
+> (`am.print_status()`, `am.recommend(n)`, `ArrayKernelModel`), optional
+> **Numba** CPU path (`pip install 'ambr[perf]'` — great on Mac), contract /
+> write-path hardening, SMAC install pin, and Schelling grid helpers. See the
+> [changelog](CHANGELOG.md).
+>
 > **New in 0.4:** a runtime [snapshot-view contract](#-snapshot-view-contract)
 > checker, a [GPU backend + batched calibration](#-gpu-backend--batched-calibration),
 > one [canonical verb per task](#-canonical-api-04) (legacy spellings still work),
-> declarative `model_reporters`, and a typed `params` schema. See the
-> [changelog](CHANGELOG.md).
+> declarative `model_reporters`, and a typed `params` schema.
 >
 > **New in 0.3.0:** Setting ``agent.wealth = 5`` on a Python Agent
 > automatically syncs to the DataFrame. You can freely mix OOP-style
@@ -278,19 +284,31 @@ GPU batched ensemble above for derivative-free calibration at scale.
 
 ```bash
 pip install ambr
+
+# Optional extras
+pip install 'ambr[perf]'       # Numba CPU scatter (recommended on Mac)
+pip install 'ambr[advanced]'   # SMAC optimization
+```
+
+```python
+import ambr as am
+print(am.__version__)   # 0.4.1+
+am.print_status()
 ```
 
 ## 🏗️ Features
 
-- **Simple API**: Intuitive interface for agent-based modeling
-- **High Performance**: Efficient data handling with Polars DataFrames
-- **Snapshot-view contract**: runtime conformance checking that columnar updates preserve the intended schedule
+- **Simple API**: AgentPy-shaped OOP lane + vectorized columnar views on one model
+- **High Performance**: Polars DataFrames; optional Numba (`ambr[perf]`) for scatters
+- **Speed lanes**: `am.print_status()` / `am.recommend(n)` / `ArrayKernelModel`
+- **Snapshot-view contract**: runtime checking that columnar updates preserve the intended schedule
 - **GPU backend**: CuPy array backend + batched ensemble for parameter sweeps and calibration
 - **Optimization**: grid / random / Bayesian (SMAC) search, plus GPU-batched calibration
 - **Declarative reporting**: `model_reporters` / `agent_reporters` and a typed `params` schema
 - **Environments**: Support for grid, network, and continuous space environments
 - **Experiments**: Run multiple simulations with parameter sampling
 - **Random Number Generation**: Reproducible simulations with controlled randomness
+- **RunResults**: `results.agents` and `results['agents']` both work
 
 ## 📚 Examples
 

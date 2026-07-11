@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.4.1 - 2026-07-11
+
+Polish release on top of 0.4.0: clearer AgentPy-shaped UX, progressive speed
+lanes (including Mac-friendly Numba), contract/write-path hardening, SMAC
+install reliability, and Schelling/grid helpers.
+
 ### Added
 
 - **UX / AgentPy lane:** `RunResults` (dict + `results.agents` attr access),
@@ -13,6 +19,9 @@
 - **Numba CPU path:** optional `ambr[perf]` (`numba`); JIT `scatter_add` and
   subset column writes when installed (strong default for Mac / no-CUDA).
   Status/recommend report Numba; `am.numba_jit` re-exports the decorator.
+- **Shared write helpers:** `ambr._id_index` (id→row cache) and
+  `performance.apply_scatter_add` / `apply_scatter_write` (one path for the
+  view API and OOP flush).
 - **Grid occupancy helpers** on `GridEnvironment` for Schelling-style models:
   `get_random_empty_cell`, `get_agent_at_pos`, `add_agent` / `add_agent_from_id`,
   `remove_agent_from_pos`, `get_empty_cells_in_radius`, and `get_neighbors(..., radius=)`
@@ -45,8 +54,8 @@
   deprecated `Agent.record` / `update_data` go through `__setattr__` so the
   instance cache and write queue stay aligned.
 - Public package exports for `ContractMonitor`, `TensorLane`, `borrow_numeric`,
-  `commit_columns`, and GPU helpers (`GPU_AVAILABLE`, `get_array_module`,
-  `to_device`, `to_host`).
+  `commit_columns`, GPU helpers, `RunResults`, `ArrayKernelModel`, and lane
+  helpers (`status`, `print_status`, `recommend`).
 - **Canonical-verb docs.** Quickstart / sequences API / README document the
   small select → write → scatter_add → borrow/commit surface; extra batch
   aliases are not the performance path. Examples prefer `agents.at[...].set`
