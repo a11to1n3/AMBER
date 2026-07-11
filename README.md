@@ -124,6 +124,27 @@ print(results.agents.head(10))
 
 Coming from AgentPy? See [`docs/from_agentpy.rst`](docs/from_agentpy.rst).
 
+**Going faster / GPU** — no magic switch; pick a lane (see
+[`docs/going_faster.rst`](docs/going_faster.rst)):
+
+```python
+import ambr as am
+am.print_status()                 # GPU? which lane?
+print(am.recommend(1_000_000))  # one-line suggestion
+
+# Easiest GPU/CPU array model (CuPy if available, else NumPy):
+class Drift(am.ArrayKernelModel):
+    def init_state(self, xp, n, rng, p):
+        return {"x": rng.random(n, dtype=xp.float32)}
+    def step_state(self, xp, state, rng, p):
+        state["x"] = state["x"] + 0.01
+        return state
+    def metrics(self, xp, state):
+        return {"mean_x": float(am.to_host(state["x"].mean()))}
+
+print(Drift({"n": 100_000, "steps": 20}).run().info)
+```
+
 `self.rng` is the canonical seeded RNG (a NumPy `Generator`); `self.random` is
 the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).

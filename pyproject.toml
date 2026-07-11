@@ -65,6 +65,11 @@ advanced = [
     "ConfigSpace>=0.7.1",
     "scikit-learn>=1.6.1,<1.9",
 ]
+# CPU acceleration (Apple Silicon / machines without CUDA). Optional.
+perf = [
+    "numba>=0.57.0",
+    "scipy>=1.9.0",
+]
 docs = [
     "sphinx>=4.0.0",
     "sphinx-rtd-theme>=1.0.0",

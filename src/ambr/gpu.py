@@ -1,17 +1,15 @@
-"""Optional GPU backend support for AMBER (CuPy).
+"""Optional GPU backend support for AMBER (CuPy / CUDA only).
 
-AMBER's columnar / vectorized execution path can run on the GPU when CuPy is
-installed. The idea is the same as the resident tensor lane (see
-``tensor_lane``), but the resident buffer lives in **device** memory: agent
-state is held in CuPy arrays, the per-step kernels run on the GPU, and we sync
-back to the Polars system-of-record only at relational / logging boundaries.
-Host<->device transfer is the bottleneck (PCIe), so it is minimised --
-state stays resident across steps.
+AMBER's array kernels can run on the GPU when **CuPy + NVIDIA CUDA** are
+available. Apple Metal/MPS is **not** used — on Mac, prefer the vectorized
+CPU path with Numba (see :mod:`ambr.lanes` / :mod:`ambr.performance`).
 
-CuPy is NumPy-compatible, so a vectorized rule written against ``numpy`` ports
-to the GPU by swapping the array module (:func:`get_array_module`). This module
-never hard-requires CuPy: import it unconditionally and branch on
-:data:`GPU_AVAILABLE`.
+Design notes
+------------
+* Device-resident buffers (like the tensor lane, but on GPU): host↔device
+  transfer is the bottleneck (PCIe), so state stays on device across steps.
+* CuPy is NumPy-compatible: write kernels against ``xp = get_array_module()``.
+* This module never hard-requires CuPy; branch on :data:`GPU_AVAILABLE`.
 """
 
 import numpy as _np
@@ -58,3 +56,14 @@ def synchronize() -> None:
     """Block until all queued GPU work has finished (for honest timing)."""
     if GPU_AVAILABLE:
         _cp.cuda.Stream.null.synchronize()
+
+
+def require_gpu() -> None:
+    """Raise a clear error if CuPy/CUDA is not available."""
+    if not GPU_AVAILABLE:
+        raise RuntimeError(
+            "GPU requested but CuPy/CUDA is not available. "
+            "Install a CuPy wheel matching your CUDA toolkit, e.g.\n"
+            "  pip install cupy-cuda12x\n"
+            "Then verify with: import ambr; ambr.print_status()"
+        )
