@@ -24,15 +24,18 @@ Utilities
    optimization
    experiment
    base
+   results
+   performance
 
-Advanced (0.4)
---------------
+Advanced (0.4 / 0.4.1)
+----------------------
 
 .. toctree::
    :maxdepth: 2
 
    contract
    tensor_lane
+   lanes
    gpu
    gpu_ensemble
 
@@ -46,6 +49,7 @@ Quick Reference
 * :class:`ambr.BaseAgent` - Abstract base class for custom agents
 * :class:`ambr.BaseModel` - Abstract base class for custom models
 * :class:`ambr.Population` - SoA memory manager for high-performance state handling
+* :class:`ambr.RunResults` - Dict-like ``model.run()`` result with attribute access
 
 **Environments:**
 
@@ -77,6 +81,12 @@ Quick Reference
 
 * :func:`ambr.tensor_lane.borrow_numeric` - Zero-copy borrow of a numeric column
 * :func:`ambr.tensor_lane.commit_columns` - Atomic write-back of derived columns
+
+**Speed lanes (0.4.1):**
+
+* :func:`ambr.print_status` / :func:`ambr.recommend` - machine/lane status and hints
+* :class:`ambr.ArrayKernelModel` - single-run CuPy/NumPy array model
+* Optional ``pip install 'ambr[perf]'`` (Numba) for CPU scatter JIT
 
 **GPU & calibration (0.4):**
 

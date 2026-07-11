@@ -18,6 +18,10 @@ Want speed / GPU without guessing? See :doc:`going_faster` and run::
    am.print_status()
    print(am.recommend(100_000))
 
+For a CPU boost on Mac (no CUDA), install Numba::
+
+   pip install 'ambr[perf]'
+
 Lane A — AgentPy-shaped (intuitive first model)
 -----------------------------------------------
 

@@ -9,18 +9,30 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+[0.4.1] - 2026-07-11
+--------------------
+
+Polish release on top of 0.4.0: AgentPy-shaped UX, progressive speed lanes
+(with Mac-friendly Numba), contract/write-path hardening, SMAC install
+reliability, and Schelling/grid helpers.
+
 Added
 ~~~~~
 - UX / AgentPy lane: ``RunResults`` attribute access, ``agents.random()``,
   default ``show_progress=False``, and ``docs/from_agentpy.rst``.
 - Easier speed lanes: ``am.print_status()`` / ``am.recommend(n)``,
-  ``ArrayKernelModel``, ``agents.update_where``, ``docs/going_faster.rst``.
+  ``ArrayKernelModel``, ``agents.update_where``, ``docs/going_faster.rst``,
+  ``examples/gpu_quickstart.py``.
 - Optional Numba CPU path (``ambr[perf]``): JIT ``scatter_add`` / subset
   writes; status reports Numba (useful on Mac without CUDA).
+- Shared write helpers: ``ambr._id_index`` (id→row cache) and
+  ``performance.apply_scatter_add`` / ``apply_scatter_write``.
 - Grid occupancy helpers on ``GridEnvironment`` for Schelling-style models
   (``get_random_empty_cell``, ``get_agent_at_pos``, ``add_agent_from_id``,
   ``remove_agent_from_pos``, ``get_empty_cells_in_radius``,
   ``get_neighbors(..., radius=)``). Restores ``examples/smac_calibration_advanced.py``.
+- MultiObjectiveSMAC CI smoke; ``ambr[advanced]`` pins
+  ``scikit-learn>=1.6.1,<1.9`` for SMAC 2.4 compatibility.
 
 Changed
 ~~~~~~~
@@ -39,11 +51,15 @@ Changed
 - ``update_agent_data`` / ``batch_update_agents`` use the buffered and view
   write seams; ``Environment.df`` uses real ``Model._set_frame`` when available.
 - Public package exports for ``ContractMonitor``, ``TensorLane``,
-  ``borrow_numeric``, ``commit_columns``, and GPU helpers
-  (``GPU_AVAILABLE``, ``get_array_module``, ``to_device``, ``to_host``).
+  ``borrow_numeric``, ``commit_columns``, GPU helpers, ``RunResults``,
+  ``ArrayKernelModel``, and lane helpers (``status``, ``print_status``,
+  ``recommend``).
 - Canonical-verb docs: select / write / scatter_add / borrow-commit surface
   (quickstart, sequences API, README); examples prefer ``agents.at[...].set``
   over deprecated ``update_agent_data``.
+- Write-path performance: shared id→row scatter for filtered assigns and OOP
+  flush; contiguous ``0..N-1`` id layout cached per id-version.
+- ``MultiObjectiveSMAC`` rebuilt on per-objective ``SMACOptimizer``.
 
 Deprecated
 ~~~~~~~~~~
