@@ -24,6 +24,9 @@
 - `.gitignore`: track `docs/api/*.rst`; ignore local paper drafts only.
 - Ruff-clean `src/ambr` (unused imports / small fixes); SIR batch status
   constant renamed `INFECTED`.
+- **Repo hygiene:** clear outputs from example notebooks (~26 MB → ~50 KB);
+  drop unused root ``architecture_diagram.png``; tighten ``.gitignore`` /
+  ``MANIFEST.in``; point ``requirements*.txt`` at ``pyproject.toml`` extras.
 
 ## v0.4.1 - 2026-07-11
 
