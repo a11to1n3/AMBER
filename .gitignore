@@ -2,12 +2,15 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 
 # Distribution / Packaging
 dist/
 build/
 *.egg-info/
 .eggs/
+*.whl
+*.tar.gz
 
 # Environments
 .env
@@ -16,31 +19,43 @@ env/
 venv/
 ENV/
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
 
-# IDE
+# IDE / assistants
 .vscode/
 .idea/
 .claude/
 *.swp
 .DS_Store
 
-# Testing and Coverage
+# Testing / coverage / type / lint caches
 .coverage
 .coverage.*
 .!*.coverage
 htmlcov/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 coverage.xml
+.tox/
+.nox/
 
-# Documentation builds only (hand-written docs/api/*.rst are tracked)
+# Documentation builds (hand-written docs/api/*.rst stay tracked)
 docs/_build/
 
-# Manuscript drafts / LaTeX build artifacts — never commit (cite the public paper only)
+# Manuscript drafts / LaTeX build artifacts — cite the public paper; do not commit drafts
 paper/
 paper.*
 paper.zip
 
-# SMAC run output
+# SMAC / optimizer run output
 smac3_output/
+smac3-output*/
+**/runhistory.json
+**/scenario.txt
+
+# Local release notes / scratch (never ship)
+PR_DESCRIPTIONS.md
+*.local.md
