@@ -158,14 +158,39 @@ Before tagging a release:
 1. Make sure ``dev`` is up to date with ``origin/dev`` and merged or fast
    forwarded into ``main`` for release.
 2. Bump the package version in ``pyproject.toml`` and update
-   ``CHANGELOG.md`` plus ``docs/changelog.rst``.
+   ``CHANGELOG.md`` plus ``docs/changelog.rst`` (also keep
+   ``src/ambr/__init__.py`` and ``docs/conf.py`` fallbacks in sync).
 3. Run ``make release-check`` from a clean checkout. This builds the wheel and
    source distribution, runs ``twine check``, and executes the test suite.
 4. Inspect the source distribution if local generated artifacts exist; paper
    drafts and ``paper.zip`` must remain ignored and excluded from the package.
-5. Create and push an annotated ``vX.Y.Z`` tag from the release commit. The
-   GitHub release workflow validates the distributions again and attaches them
-   to the GitHub release.
+5. Create and push an annotated ``vX.Y.Z`` tag from the release commit on
+   ``main``. The ``Release`` workflow (``.github/workflows/release.yml``):
+
+   * builds and validates the sdist/wheel
+   * attaches them to a GitHub Release
+   * publishes to **PyPI** via Trusted Publishing (OIDC)
+
+PyPI Trusted Publishing (one-time, preferred)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Do **not** paste API tokens into chat or commit them. Configure OIDC once:
+
+1. On PyPI: `Publishing settings for ambr
+   <https://pypi.org/manage/project/ambr/settings/publishing/>`_
+2. Add a **GitHub** trusted publisher with:
+
+   * Owner: ``a11to1n3``
+   * Repository: ``AMBER``
+   * Workflow name: ``release.yml``
+   * Environment name: ``pypi``
+
+3. On GitHub: create an Environment named ``pypi`` (Settings → Environments).
+   Optional: require reviewers before production deploys.
+
+If Trusted Publishing is not configured yet, you can still upload manually
+with a *project-scoped* token (``twine upload``) and then switch to OIDC.
+Revoke any token that has been exposed.
 
 Community Guidelines
 --------------------
