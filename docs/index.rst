@@ -89,6 +89,7 @@ Table of Contents
    quickstart
    from_agentpy
    going_faster
+   environments_schelling
    tutorial
    benchmarks
    examples/index
@@ -104,6 +105,7 @@ Table of Contents
    :caption: Development
 
    contributing
+   deprecations
    changelog
 
 Indices and tables

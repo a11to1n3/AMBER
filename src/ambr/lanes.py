@@ -195,7 +195,7 @@ class ArrayKernelModel:
             state = self.step_state(xp, state, rng, self.p)
             m = self.metrics(xp, state) or {}
             if m:
-                row = {"t": t}
+                row: Dict[str, Any] = {"t": t}
                 for k, v in m.items():
                     row[k] = float(to_host(v)) if hasattr(v, "shape") else float(v)
                 rows.append(row)
