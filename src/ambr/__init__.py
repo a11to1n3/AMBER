@@ -67,6 +67,7 @@ from .performance import (
 )
 from .tensor_lane import TensorLane, borrow_numeric, commit_columns
 from .gpu import GPU_AVAILABLE, get_array_module, to_device, to_host
+from .results import RunResults
 
 try:
     __version__ = _metadata_version('ambr')
@@ -121,4 +122,5 @@ __all__ = [
     'get_array_module',
     'to_device',
     'to_host',
+    'RunResults',
 ]

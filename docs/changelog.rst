@@ -11,6 +11,8 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 
 Added
 ~~~~~
+- UX / AgentPy lane: ``RunResults`` attribute access, ``agents.random()``,
+  default ``show_progress=False``, and ``docs/from_agentpy.rst``.
 - Grid occupancy helpers on ``GridEnvironment`` for Schelling-style models
   (``get_random_empty_cell``, ``get_agent_at_pos``, ``add_agent_from_id``,
   ``remove_agent_from_pos``, ``get_empty_cells_in_radius``,
