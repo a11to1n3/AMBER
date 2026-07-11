@@ -1,13 +1,15 @@
-"""Progressive speed lanes — make “how do I go faster?” answerable in one place.
+"""Progressive speed lanes — “how do I go faster?” in one place.
 
-Lanes (same mental model as the docs):
+Lanes (same mental model as the docs / paper):
 
 1. **OOP** — ``AgentList`` + agent methods (AgentPy-shaped). Always available.
 2. **Vectorized** — ``agents.where`` / ``.at`` / ``.set`` / ``scatter_add``.
    No switch: writing this style *is* the fast path on CPU/Polars.
+   Scatter kernels live in :mod:`ambr.performance`; id→row in :mod:`ambr._id_index`.
 3. **Tensor** — ``agents.borrow`` / ``agents.commit`` for dense NumPy kernels.
-4. **GPU** — ``ArrayKernelModel`` (single run) or ``GPUEnsembleRunner`` (many
-   parameter sets). Uses CuPy when installed, else NumPy.
+4. **CPU JIT** — Numba accelerates scatters when installed (recommended on Mac).
+5. **GPU** — ``ArrayKernelModel`` (single run) or ``GPUEnsembleRunner`` (many
+   parameter sets). Uses **CuPy/CUDA only** — not Apple MPS/Metal.
 
 Call :func:`status` / :func:`print_status` to see what this machine can run, and
 :func:`recommend` for a one-line suggestion by population size.
