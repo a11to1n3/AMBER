@@ -1,5 +1,21 @@
 name: Release
 
+# Builds sdist/wheel on tag push (v*), creates a GitHub Release, and publishes
+# to PyPI via Trusted Publishing (OIDC — no long-lived API token in secrets).
+#
+# One-time setup on PyPI (project owner):
+#   1. https://pypi.org/manage/project/ambr/settings/publishing/
+#   2. Add a GitHub trusted publisher:
+#        Owner:      a11to1n3
+#        Repository: AMBER
+#        Workflow:   release.yml
+#        Environment: pypi
+#   3. Create a GitHub Environment named "pypi" (optional protection rules).
+#   4. Prefer revoking any chat-pasted API tokens after this is configured.
+#
+# Fallback (not recommended): store a project-scoped token as secret
+# PYPI_API_TOKEN and the publish step will use it when OIDC is unavailable.
+
 on:
   push:
     tags:
@@ -12,6 +28,13 @@ jobs:
   build-release:
     name: Build release distributions
     runs-on: ubuntu-latest
+    # Required for PyPI Trusted Publishing (OIDC).
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ambr
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
     - uses: actions/checkout@v6
@@ -100,3 +123,13 @@ jobs:
       with:
         files: dist/*
         generate_release_notes: true
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        # Prefer OIDC (Trusted Publishing). If you still use a token instead,
+        # set repository secret PYPI_API_TOKEN and uncomment password below —
+        # do not commit tokens.
+        # password: ${{ secrets.PYPI_API_TOKEN }}
+        skip-existing: true
+        verbose: true
