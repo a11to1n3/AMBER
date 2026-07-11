@@ -8,6 +8,11 @@
   `get_random_empty_cell`, `get_agent_at_pos`, `add_agent` / `add_agent_from_id`,
   `remove_agent_from_pos`, `get_empty_cells_in_radius`, and `get_neighbors(..., radius=)`
   (Moore neighbourhood alias). Restores `examples/smac_calibration_advanced.py`.
+- **MultiObjectiveSMAC CI smoke** (`tests/test_multiobjective_smac.py`, skipped
+  without the `advanced` / smac extra).
+- **SMAC install constraint:** `ambr[advanced]` pins `scikit-learn>=1.6.1,<1.9`
+  so SMAC 2.4 can import (`sklearn.tree._tree.DTYPE` removed in sklearn 1.9;
+  automl/SMAC3#1314). Clearer error if SMAC import fails.
 
 ### Changed
 
@@ -37,6 +42,10 @@
   small select → write → scatter_add → borrow/commit surface; extra batch
   aliases are not the performance path. Examples prefer `agents.at[...].set`
   over deprecated `update_agent_data`.
+- **Write-path performance.** Filtered `view.col = …` uses id→row scatter into
+  column arrays when ids are unique; OOP flush uses the same position map;
+  contiguous `0..N-1` id layout is cached per id-version. `MultiObjectiveSMAC`
+  rebuilt on per-objective `SMACOptimizer` (no broken Abstract MO path).
 
 ### Deprecated
 

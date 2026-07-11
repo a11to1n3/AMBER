@@ -58,3 +58,4 @@ paper/*.pdf
 paper/*.synctex.gz
 paper/scaling_chart.png
 paper.zip
+smac3_output/
