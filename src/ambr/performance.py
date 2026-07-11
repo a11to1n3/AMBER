@@ -1,19 +1,30 @@
-"""
-AMBER Performance Utilities
+"""AMBER performance utilities — spatial index, Numba scatters, parallel runs.
 
-High-performance implementations for common ABM operations:
-- KD-Tree for O(log n) spatial neighbor queries
-- Numba JIT for hot loop acceleration
-- Multiprocessing for parallel experiment execution
-- Vectorized operations for batch updates
+This module is the **shared home** for CPU hot-path kernels used by the
+vectorized write lane (``sequences``) and optional spatial helpers:
+
+* **Scatter kernels** (``scatter_*_1d`` / ``apply_scatter_*``) — Numba when
+  installed, NumPy fallbacks otherwise. Used by subset column writes and
+  ``scatter_add``.
+* **SpatialIndex** — SciPy KD-Tree neighbor queries (optional).
+* **ParallelRunner** — multi-process experiment fan-out.
+* **Vectorized helpers** — batch move / transfer / SIR utilities.
+
+Numba is the recommended CPU accelerator on Mac (no CUDA). Import
+:data:`HAS_NUMBA` to branch; never hard-require numba at import time.
 """
+
+from __future__ import annotations
 
 from typing import List, Tuple, Optional, Dict, Any, Type
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing as mp
 
-# Optional imports with fallbacks
+# ---------------------------------------------------------------------------
+# Optional dependencies (soft imports — never fail module load)
+# ---------------------------------------------------------------------------
+
 try:
     from scipy.spatial import cKDTree
 
@@ -28,7 +39,7 @@ try:
 except ImportError:
     HAS_NUMBA = False
 
-    # Create a no-op decorator
+    # No-op stand-in so @jit still decorates cleanly without numba installed.
     def jit(*args, **kwargs):
         def decorator(func):
             return func
@@ -139,19 +150,27 @@ class SpatialIndex:
 
 
 # =============================================================================
-# Numba-Accelerated Functions
+# Scatter kernels (Numba when available, NumPy fallbacks)
 # =============================================================================
+#
+# Used by the vectorized write path:
+#   * subset column assign  → apply_scatter_write
+#   * agents.at[ids].scatter_add(...) → apply_scatter_add
+#
+# Low-level ``*_1d`` functions are pure loops (Numba-jitted when possible).
+# High-level ``apply_*`` wrappers own contiguity, dtype casts, and fallbacks
+# so call sites stay one-liners (DRY).
 
 
 @jit(nopython=True, cache=True)
 def scatter_add_1d(
     base: np.ndarray, positions: np.ndarray, delta: np.ndarray
 ) -> np.ndarray:
-    """Accumulate ``delta`` into ``base`` at ``positions`` (Numba, duplicate-safe).
+    """Accumulate ``delta`` into ``base`` at ``positions`` (duplicate-safe).
 
     Same semantics as ``np.add.at(base, positions, delta)`` but often faster
     for irregular ABM scatter patterns on CPU (including Apple Silicon).
-    Mutates and returns ``base``.
+    Mutates and returns ``base``. Prefer :func:`apply_scatter_add` at call sites.
     """
     n = positions.shape[0]
     for i in range(n):
@@ -165,12 +184,82 @@ def scatter_write_1d(
 ) -> np.ndarray:
     """Write ``values`` into ``base`` at ``positions`` (last write wins).
 
-    Mutates and returns ``base``. Used for subset column assigns.
+    Mutates and returns ``base``. Prefer :func:`apply_scatter_write` at call sites.
     """
     n = positions.shape[0]
     for i in range(n):
         base[positions[i]] = values[i]
     return base
+
+
+def _as_contiguous_int64_positions(positions: np.ndarray) -> np.ndarray:
+    """Normalize row indices for Numba nopython kernels."""
+    return np.ascontiguousarray(positions, dtype=np.int64)
+
+
+def apply_scatter_add(
+    base: np.ndarray,
+    positions: np.ndarray,
+    delta: np.ndarray,
+) -> np.ndarray:
+    """Scatter-add with Numba acceleration when available.
+
+    Falls back to ``np.add.at`` for object dtypes or when Numba is missing.
+    Always returns the array holding the result (may be a new buffer if a
+    dtype upcast or contiguity copy was required). Callers **must** use the
+    return value::
+
+        out = apply_scatter_add(column_copy, positions, delta)
+    """
+    # Object / mixed columns cannot go through nopython kernels.
+    if base.dtype == object or getattr(delta, "dtype", None) == object:
+        np.add.at(base, positions, delta)
+        return base
+
+    # np.add.at will not upcast the destination; expand dtype first.
+    result_dtype = np.result_type(base.dtype, delta.dtype)
+    if base.dtype != result_dtype:
+        base = np.asarray(base, dtype=result_dtype)
+
+    if HAS_NUMBA:
+        out = np.ascontiguousarray(base)
+        pos_i = _as_contiguous_int64_positions(positions)
+        delta_c = np.ascontiguousarray(delta, dtype=out.dtype)
+        scatter_add_1d(out, pos_i, delta_c)
+        return out
+
+    np.add.at(base, positions, delta)
+    return base
+
+
+def apply_scatter_write(
+    base: np.ndarray,
+    positions: np.ndarray,
+    values: np.ndarray,
+) -> np.ndarray:
+    """Scatter-write (last write wins) with Numba when available.
+
+    Falls back to advanced indexing when Numba is missing or dtypes are object.
+    Returns the array holding the result (use the return value).
+    """
+    if base.dtype == object or getattr(values, "dtype", None) == object:
+        base[positions] = values
+        return base
+
+    if HAS_NUMBA:
+        out = np.ascontiguousarray(base)
+        pos_i = _as_contiguous_int64_positions(positions)
+        vals_c = np.ascontiguousarray(values, dtype=out.dtype)
+        scatter_write_1d(out, pos_i, vals_c)
+        return out
+
+    base[positions] = values
+    return base
+
+
+# =============================================================================
+# Spatial / distance Numba helpers
+# =============================================================================
 
 
 @jit(nopython=True, cache=True)
@@ -572,10 +661,17 @@ def install_performance_deps():
 __all__ = [
     "SpatialIndex",
     "ParallelRunner",
+    # Scatter (vectorized write path)
+    "scatter_add_1d",
+    "scatter_write_1d",
+    "apply_scatter_add",
+    "apply_scatter_write",
+    # Spatial Numba helpers
     "fast_distance_matrix",
     "fast_neighbors_within_radius",
     "fast_all_neighbors_within_radius",
     "fast_random_walk_step",
+    # Vectorized utilities
     "vectorized_wealth_transfer",
     "vectorized_move",
     "vectorized_random_velocities",
