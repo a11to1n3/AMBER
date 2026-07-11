@@ -25,9 +25,16 @@ jobs:
         python-version: ${{ matrix.python-version }}
     
     - name: Install dependencies
+      shell: bash
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev,advanced]"
+        # Core test extras. On one matrix cell also install [perf] (Numba)
+        # so scatter JIT paths are exercised in CI without slowing every job.
+        if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.python-version }}" = "3.12" ]; then
+          pip install -e ".[dev,advanced,perf]"
+        else
+          pip install -e ".[dev,advanced]"
+        fi
     
     - name: Run tests with coverage
       run: |
@@ -60,7 +67,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev,advanced]"
+        pip install -e ".[dev,advanced,perf]"
 
     - name: Run tests with coverage for badge
       run: |
