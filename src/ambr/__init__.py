@@ -2,7 +2,7 @@
 AMBER: Agent-Based Modeling Environment and Research Framework
 
 A comprehensive Python framework for building, running, and analyzing agent-based models.
-AMBER provides tools for creating complex simulations with agents, environments, and 
+AMBER provides tools for creating complex simulations with agents, environments, and
 sophisticated experimental workflows.
 
 Key features:
@@ -14,16 +14,16 @@ Key features:
 
 Example:
     >>> import ambr as am
-    >>> 
+    >>>
     >>> class SimpleModel(am.Model):
     ...     def setup(self):
     ...         for i in range(10):
     ...             agent = am.Agent(self, i)
     ...             self.add_agent(agent)
-    ...     
+    ...
     ...     def step(self):
     ...         self.record_model('agent_count', len(self.agents))
-    >>> 
+    >>>
     >>> model = SimpleModel({'steps': 5})
     >>> results = model.run()
 """
@@ -46,7 +46,7 @@ from .sequences import AgentList
 from .environments import GridEnvironment, SpaceEnvironment, NetworkEnvironment
 from .experiment import Experiment, Sample, IntRange
 from .optimization import (
-    ParameterSpace, 
+    ParameterSpace,
     objective_function,
     grid_search,
     random_search,
@@ -68,13 +68,18 @@ from .performance import (
 )
 from .tensor_lane import TensorLane, borrow_numeric, commit_columns
 from .gpu import GPU_AVAILABLE, get_array_module, to_device, to_host, require_gpu, synchronize
+from .gpu_ensemble import (
+    GPUEnsembleRunner,
+    BatchedWellMixedSIR,
+    smac_batch_calibrate,
+)
 from .results import RunResults
 from .lanes import ArrayKernelModel, status, print_status, recommend
 
 try:
     __version__ = _metadata_version('ambr')
 except _PackageNotFoundError:
-    __version__ = '0.4.1'
+    __version__ = '0.4.2'
 
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'
@@ -127,6 +132,9 @@ __all__ = [
     'to_host',
     'require_gpu',
     'synchronize',
+    'GPUEnsembleRunner',
+    'BatchedWellMixedSIR',
+    'smac_batch_calibrate',
     'RunResults',
     # Progressive speed lanes
     'ArrayKernelModel',

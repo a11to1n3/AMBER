@@ -212,7 +212,8 @@ def apply_scatter_add(
         out = apply_scatter_add(column_copy, positions, delta)
     """
     # Object / mixed columns cannot go through nopython kernels.
-    if base.dtype == object or getattr(delta, "dtype", None) == object:
+    delta_dtype = getattr(delta, "dtype", None)
+    if base.dtype == np.dtype(object) or delta_dtype == np.dtype(object):
         np.add.at(base, positions, delta)
         return base
 
@@ -242,7 +243,8 @@ def apply_scatter_write(
     Falls back to advanced indexing when Numba is missing or dtypes are object.
     Returns the array holding the result (use the return value).
     """
-    if base.dtype == object or getattr(values, "dtype", None) == object:
+    values_dtype = getattr(values, "dtype", None)
+    if base.dtype == np.dtype(object) or values_dtype == np.dtype(object):
         base[positions] = values
         return base
 

@@ -228,9 +228,9 @@ violation; `raise` stops on the first error. Mode `off` (default) adds zero over
 
 The monitor watches **two write paths** (and combinations):
 
-* **Buffered (OOP)** — `agent.col = …` / queued cell writes  
-* **Lane / view** — `agents.col = …`, `agents.set(...)`, `borrow`/`commit`  
-* **Cross-path** — same column via both OOP and view in one step → `cross_path_write`  
+* **Buffered (OOP)** — `agent.col = …` / queued cell writes
+* **Lane / view** — `agents.col = …`, `agents.set(...)`, `borrow`/`commit`
+* **Cross-path** — same column via both OOP and view in one step → `cross_path_write`
 
 `scatter_add` is the sanctioned multi-write reducer (not treated as a conflicting
 ordinary commit). Prefer those APIs over assigning `population.data` directly.
@@ -292,7 +292,7 @@ pip install 'ambr[advanced]'   # SMAC optimization
 
 ```python
 import ambr as am
-print(am.__version__)   # 0.4.1+
+print(am.__version__)   # 0.4.2+
 am.print_status()
 ```
 
@@ -314,20 +314,27 @@ am.print_status()
 
 Working examples are available in the `examples/` directory:
 
-- **Wealth Transfer Model**: Economic inequality simulation
-- **Virus Spread Model**: Epidemiological SIR model
-- **Flocking Simulation**: Boids flocking behavior
-- **Forest Fire Model**: Cellular automata fire spread
-- **Network Simulations**: Graph-based agent interactions
+- **Schelling (grid)** — `examples/schelling_vectorized.py` (canonical occupancy helpers)
+- **Wealth Transfer** — economic inequality / dual-lane quickstart
+- **Virus Spread** — epidemiological SIR model
+- **Flocking** — Boids + optional tensor-lane variant
+- **Forest Fire** — cellular automata fire spread
+- **GPU quickstart** — `ArrayKernelModel` single-run arrays
+- **SMAC calibration** — basic / advanced Schelling multi-objective
 
 ## 📖 Documentation
 
-- **Documentation**: https://ambr.readthedocs.io/
+- **Docs**: https://ambr.readthedocs.io/
 - **Paper**: https://arxiv.org/abs/2601.16292
+- **Going faster** (lanes / Numba / GPU): [docs/going_faster.rst](docs/going_faster.rst)
+- **Environments & Schelling**: [docs/environments_schelling.rst](docs/environments_schelling.rst)
+- **From AgentPy**: [docs/from_agentpy.rst](docs/from_agentpy.rst)
+- **Deprecations (→ 1.0)**: [docs/deprecations.rst](docs/deprecations.rst)
+- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
 ## 📝 How to cite?
 
-If you use AMBER in your research, please cite our paper:
+If you use AMBER in academic work, please cite the paper:
 
 ```bibtex
 @article{pham2026amber,
@@ -338,9 +345,15 @@ If you use AMBER in your research, please cite our paper:
 }
 ```
 
+Paper: https://arxiv.org/abs/2601.16292
+
+(Source drafts and build artifacts for the manuscript are **not** kept in this
+repository — only the public citation.)
+
 ## 🤝 Contributing
 
-We welcome contributions! Please see our contributing guidelines for more information.
+We welcome contributions! See [docs/contributing.rst](docs/contributing.rst)
+(or the Contributing page on Read the Docs).
 
 ## 📄 License
 

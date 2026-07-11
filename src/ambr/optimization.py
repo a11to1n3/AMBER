@@ -1,9 +1,7 @@
-from typing import Type, Dict, Any, List, Callable, Optional, Union, Tuple
+from typing import Type, Dict, Any, List, Callable, Optional
 import polars as pl
 import numpy as np
 import itertools
-import random
-import time
 from .model import Model
 
 # SMAC is an optional dependency. Probe a real import path (not just the
@@ -37,15 +35,15 @@ def _check_smac():
 # Simple ParameterSpace for basic optimization functions
 class ParameterSpace:
     """Define the parameter space for optimization."""
-    
+
     def __init__(self, parameters: Dict[str, Any]):
         """Initialize parameter space.
-        
+
         Args:
             parameters: Dictionary mapping parameter names to values or ranges
         """
         self.parameters = parameters
-        
+
     def sample(self, rng=None) -> Dict[str, Any]:
         """Sample a random parameter combination.
 
@@ -70,15 +68,15 @@ class ParameterSpace:
             else:  # Fixed value
                 result[name] = value
         return result
-        
+
     def grid_sample(self) -> List[Dict[str, Any]]:
         """Generate all parameter combinations in a grid.
-        
+
         Returns:
             List of parameter dictionaries
         """
         from .experiment import IntRange
-        
+
         param_lists = {}
         for name, value in self.parameters.items():
             if isinstance(value, list):
@@ -87,37 +85,37 @@ class ParameterSpace:
                 param_lists[name] = list(range(value.start, value.end))
             else:  # Fixed value
                 param_lists[name] = [value]
-        
+
         # Generate all combinations
         names = list(param_lists.keys())
         combinations = list(itertools.product(*[param_lists[name] for name in names]))
-        
+
         return [dict(zip(names, combo)) for combo in combinations]
 
 
-def objective_function(model_class: Type[Model], parameters: Dict[str, Any], 
+def objective_function(model_class: Type[Model], parameters: Dict[str, Any],
                       metric: str, iterations: int = 1, minimize: bool = False) -> float:
     """Evaluate objective function for a model with given parameters.
-    
+
     Args:
         model_class: Model class to instantiate
         parameters: Parameters to pass to model
         metric: Name of metric to optimize
         iterations: Number of iterations to average over
         minimize: Whether to minimize (True) or maximize (False)
-        
+
     Returns:
         Objective value
     """
     total = 0.0
-    
+
     for _ in range(iterations):
         # Disable progress reporting for optimization
         model_params = parameters.copy()
         model_params['show_progress'] = False
         model = model_class(model_params)
         results = model.run()
-        
+
         # Get the metric value from model data
         model_data = results['model']
         if metric in model_data.columns:
@@ -129,47 +127,47 @@ def objective_function(model_class: Type[Model], parameters: Dict[str, Any],
                 value = 0
         else:
             value = 0
-            
+
         total += value
-    
+
     average = total / iterations
     return average
 
 
-def grid_search(model_class: Type[Model], parameter_space: ParameterSpace, 
+def grid_search(model_class: Type[Model], parameter_space: ParameterSpace,
                 metric: str, iterations: int = 1, minimize: bool = False) -> List[Dict[str, Any]]:
     """Perform grid search optimization.
-    
+
     Args:
         model_class: Model class to optimize
         parameter_space: Parameter space to search
         metric: Metric to optimize
         iterations: Number of iterations per parameter combination
         minimize: Whether to minimize the metric
-        
+
     Returns:
         List of results sorted by objective value (best first)
     """
     results = []
-    
+
     for params in parameter_space.grid_sample():
         obj_value = objective_function(model_class, params, metric, iterations, minimize)
         results.append({
             'parameters': params,
             'objective': obj_value
         })
-    
+
     # Sort by objective value (descending for maximization, ascending for minimization)
     results.sort(key=lambda x: x['objective'], reverse=not minimize)
-    
+
     return results
 
 
-def random_search(model_class: Type[Model], parameter_space: ParameterSpace, 
-                  metric: str, n_samples: int = 10, iterations: int = 1, 
+def random_search(model_class: Type[Model], parameter_space: ParameterSpace,
+                  metric: str, n_samples: int = 10, iterations: int = 1,
                   minimize: bool = False, seed: Optional[int] = None) -> List[Dict[str, Any]]:
     """Perform random search optimization.
-    
+
     Args:
         model_class: Model class to optimize
         parameter_space: Parameter space to search
@@ -178,7 +176,7 @@ def random_search(model_class: Type[Model], parameter_space: ParameterSpace,
         iterations: Number of iterations per parameter combination
         minimize: Whether to minimize the metric
         seed: Random seed for reproducibility
-        
+
     Returns:
         List of results sorted by objective value (best first)
     """
@@ -193,10 +191,10 @@ def random_search(model_class: Type[Model], parameter_space: ParameterSpace,
             'parameters': params,
             'objective': obj_value
         })
-    
+
     # Sort by objective value
     results.sort(key=lambda x: x['objective'], reverse=not minimize)
-    
+
     return results
 
 
@@ -321,7 +319,7 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
     )
 
     try:
-        incumbent = smac.optimize()
+        smac.optimize()
     except Exception:
         # Configuration space exhausted — proceed with whatever SMAC3
         # evaluated so far (runhistory still has the partial results).
@@ -357,19 +355,19 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
 # Advanced SMAC-based ParameterSpace for complex optimization
 class SMACParameterSpace:
     """Define the parameter space for SMAC optimization."""
-    
+
     def __init__(self):
         """Initialize parameter space."""
         self.parameters = {}
         self.fidelity_parameters = {}
-        
-    def add_parameter(self, name: str, param_type: str, 
+
+    def add_parameter(self, name: str, param_type: str,
                      bounds: Optional[tuple] = None,
                      choices: Optional[List[Any]] = None,
                      default: Any = None,
                      is_fidelity: bool = False):
         """Add a parameter to the space.
-        
+
         Args:
             name: Parameter name
             param_type: Type of parameter ('float', 'int', 'categorical')
@@ -380,32 +378,32 @@ class SMACParameterSpace:
         """
         if param_type not in ['float', 'int', 'categorical']:
             raise ValueError("param_type must be 'float', 'int', or 'categorical'")
-            
+
         if param_type in ['float', 'int'] and bounds is None:
             raise ValueError(f"bounds must be provided for {param_type} parameters")
-            
+
         if param_type == 'categorical' and choices is None:
             raise ValueError("choices must be provided for categorical parameters")
-            
+
         param_dict = {
             'type': param_type,
             'bounds': bounds,
             'choices': choices,
             'default': default
         }
-        
+
         if is_fidelity:
             self.fidelity_parameters[name] = param_dict
         else:
             self.parameters[name] = param_dict
-            
+
     def get_configspace(self):
         """Get the SMAC configuration space."""
         from ConfigSpace import ConfigurationSpace, UniformFloatHyperparameter, \
             UniformIntegerHyperparameter, CategoricalHyperparameter
-            
+
         cs = ConfigurationSpace()
-        
+
         # Add regular parameters
         for name, param in self.parameters.items():
             if param['type'] == 'float':
@@ -429,7 +427,7 @@ class SMACParameterSpace:
                     default_value=param['default']
                 )
             cs.add_hyperparameter(hp)
-            
+
         # Add fidelity parameters
         for name, param in self.fidelity_parameters.items():
             if param['type'] == 'float':
@@ -453,13 +451,13 @@ class SMACParameterSpace:
                     default_value=param['default']
                 )
             cs.add_hyperparameter(hp)
-            
+
         return cs
 
 class SMACOptimizer:
     """Optimize model parameters using SMAC with various strategies."""
-    
-    def __init__(self, model_type: Type[Model], 
+
+    def __init__(self, model_type: Type[Model],
                  param_space: SMACParameterSpace,
                  objective: Callable[[Model], float],
                  n_trials: int = 100,
@@ -472,7 +470,7 @@ class SMACOptimizer:
                  use_multi_fidelity: bool = False,
                  use_random_search: bool = False):
         """Initialize the optimizer.
-        
+
         Args:
             model_type: Class of model to optimize
             param_space: Parameter space definition
@@ -496,17 +494,17 @@ class SMACOptimizer:
         from smac.acquisition.maximizer import LocalAndSortedRandomSearch
         from smac.initial_design import LatinHypercubeInitialDesign, RandomInitialDesign, SobolInitialDesign
         from smac.intensifier import SuccessiveHalving
-        
+
         self.model_type = model_type
         self.param_space = param_space
         self.objective = objective
         self.n_trials = n_trials
         self.n_workers = n_workers
         self.seed = seed
-        
+
         # Initialize SMAC components
         self.configspace = param_space.get_configspace()
-        
+
         # Select initial design
         if initial_design == 'latin_hypercube':
             initial_design = LatinHypercubeInitialDesign
@@ -516,7 +514,7 @@ class SMACOptimizer:
             initial_design = SobolInitialDesign
         else:
             raise ValueError(f"Unknown initial design: {initial_design}")
-            
+
         # Select acquisition function
         if acquisition_function == 'ei':
             acq_func = EI()
@@ -530,7 +528,7 @@ class SMACOptimizer:
             acq_func = TS()
         else:
             raise ValueError(f"Unknown acquisition function: {acquisition_function}")
-            
+
         # Select surrogate model. SMAC 2.x surrogate models require the
         # configuration space as their first argument.
         if surrogate_model == 'random_forest':
@@ -539,7 +537,7 @@ class SMACOptimizer:
             model = GaussianProcess(self.configspace)
         else:
             raise ValueError(f"Unknown model type: {surrogate_model}")
-            
+
         # Create scenario
         self.scenario = Scenario(
             self.configspace,
@@ -547,7 +545,7 @@ class SMACOptimizer:
             n_workers=n_workers,
             seed=seed
         )
-        
+
         # Initialize appropriate SMAC facade
         if use_multi_fidelity:
             if not param_space.fidelity_parameters:
@@ -600,7 +598,7 @@ class SMACOptimizer:
                     local_search_iterations=10
                 )
             )
-            
+
     def _evaluate_config(self, config, seed: int = 0, budget=None) -> float:
         """Evaluate a parameter configuration (SMAC 2.x target function).
 
@@ -633,10 +631,10 @@ class SMACOptimizer:
         if value is None or not np.isfinite(value):
             return 1e10
         return float(value)
-        
+
     def optimize(self) -> Dict[str, Any]:
         """Run the optimization.
-        
+
         Returns:
             Dictionary containing best configuration and results
         """

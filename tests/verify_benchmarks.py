@@ -24,7 +24,7 @@ class TestScientificCorrectness:
         """
         n_agents = 1000
         initial_wealth = 5
-        
+
         model = AMBERVectorizedWealthTransfer({
             'n': n_agents,
             'steps': 50,
@@ -38,10 +38,10 @@ class TestScientificCorrectness:
         # Final check
         final_total = model.agents.wealth.sum()
         expected = n_agents * initial_wealth
-        
+
         assert np.isclose(final_total, expected), \
             f"Wealth conservation violated! Expected {expected}, got {final_total}"
-            
+
     def test_wealth_inequality_growth(self):
         """
         Wealth Transfer Model: Gini coefficient should increase from 0 (equality).
@@ -57,7 +57,7 @@ class TestScientificCorrectness:
         initial_gini = 0.0
         model.run()
         final_gini = model._gini(model.agents.wealth.to_numpy())
-        
+
         assert initial_gini == 0.0, "Initial Gini should be 0 for equal start"
         assert final_gini > 0.1, "Gini should increase over time (entropy)"
 
@@ -73,16 +73,16 @@ class TestScientificCorrectness:
             'show_progress': False,
             'seed': 42
         })
-        
+
         results = model.run()
-        
+
         # Get history from recorded data
         s = np.array(results['model']['susceptible'])
         i = np.array(results['model']['infected'])
         r = np.array(results['model']['recovered'])
-        
+
         total = s + i + r
-        
+
         # Check every step
         assert np.all(total == n_agents), \
             f"Population conservation violated. Min: {total.min()}, Max: {total.max()}"
@@ -99,10 +99,10 @@ class TestScientificCorrectness:
             'show_progress': False,
             'seed': 42
         })
-        
+
         results = model.run()
         r = np.array(results['model']['recovered'])
-        
+
         # Check if sorted (non-decreasing)
         assert np.all(np.diff(r) >= 0), "Recovered population decreased (impossible)"
 
@@ -120,12 +120,12 @@ class TestScientificCorrectness:
             'show_progress': False,
             'seed': 42
         })
-        
+
         model.run()
-        
+
         x = model.agents.x.to_numpy()
         y = model.agents.y.to_numpy()
-        
+
         assert np.all((x >= 0) & (x <= world_size)), "Agents escaped X bounds"
         assert np.all((y >= 0) & (y <= world_size)), "Agents escaped Y bounds"
 

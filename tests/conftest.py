@@ -28,17 +28,17 @@ def sample_parameters():
 @pytest.fixture
 def basic_model(sample_parameters):
     """Create a basic model instance for testing."""
-    
+
     class TestModel(am.Model):
         def setup(self):
             self.test_agents = {}
             for i in range(5):
                 agent = am.Agent(self, i)
                 self.test_agents[i] = agent
-        
+
         def step(self):
             self.record_model('step_count', self.t)
-    
+
     return TestModel(sample_parameters)
 
 
@@ -123,9 +123,9 @@ def pytest_collection_modifyitems(config, items):
         # Mark slow tests
         if "slow" in item.nodeid or "performance" in item.nodeid:
             item.add_marker(pytest.mark.slow)
-        
+
         # Mark integration tests
         if "integration" in item.nodeid:
             item.add_marker(pytest.mark.integration)
         else:
-            item.add_marker(pytest.mark.unit) 
+            item.add_marker(pytest.mark.unit)

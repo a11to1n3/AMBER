@@ -20,4 +20,4 @@ ignore:
   - "tests/"
   - "examples/"
   - "setup.py"
-  - "src/amber.egg-info/" 
+  - "src/amber.egg-info/"

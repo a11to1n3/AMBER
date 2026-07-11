@@ -2,12 +2,15 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 
 # Distribution / Packaging
 dist/
 build/
 *.egg-info/
 .eggs/
+*.whl
+*.tar.gz
 
 # Environments
 .env
@@ -16,46 +19,46 @@ env/
 venv/
 ENV/
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
 
-# IDE
+# IDE / assistants
 .vscode/
 .idea/
 .claude/
 *.swp
 .DS_Store
 
-# Testing and Coverage
+# Testing / coverage / type / lint caches
 .coverage
 .coverage.*
 .!*.coverage
 htmlcov/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 coverage.xml
+.tox/
+.nox/
 
-# Documentation
+# Documentation builds (hand-written docs/api/*.rst stay tracked)
 docs/_build/
-docs/api/
 
-# Paper drafts and generated artifacts
+# Manuscript drafts / LaTeX build artifacts — cite the public paper; do not commit drafts
 paper/
-paper.aux
-paper.bbl
-paper.blg
-paper.log
-paper.out
-paper.pdf
-paper.synctex.gz
-paper.toc
-paper/*.aux
-paper/*.bbl
-paper/*.blg
-paper/*.log
-paper/*.out
-paper/*.toc
-paper/*.pdf
-paper/*.synctex.gz
-paper/scaling_chart.png
+paper.*
 paper.zip
+
+# SMAC / optimizer run output
 smac3_output/
+smac3-output*/
+**/runhistory.json
+**/scenario.txt
+
+# Benchmark raw timings (regenerate with benchmarks/*.py; keep charts/md only)
+benchmarks/results/*.json
+
+# Local release notes / scratch (never ship)
+PR_DESCRIPTIONS.md
+*.local.md

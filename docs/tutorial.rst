@@ -48,7 +48,7 @@ operations — no per-agent loop.
        'seed': 42
    })
    results = model.run()
-   
+
    # Examine results
    print("Final wealth distribution:")
    final_wealth = results['agents'].filter(
@@ -96,7 +96,7 @@ Now let's enhance our model with a grid environment where agents can only intera
 .. code-block:: python
 
    import matplotlib.pyplot as plt
-   
+
    # Run spatial model
    spatial_model = SpatialWealthModel({
        'n_agents': 200,
@@ -104,17 +104,17 @@ Now let's enhance our model with a grid environment where agents can only intera
        'seed': 42
    })
    results = spatial_model.run()
-   
+
    # Plot wealth distribution on grid
    final_data = results['agents'].filter(
        results['agents']['step'] == results['agents']['step'].max()
    )
-   
+
    plt.figure(figsize=(10, 8))
    scatter = plt.scatter(
-       final_data['x'], 
-       final_data['y'], 
-       c=final_data['wealth'], 
+       final_data['x'],
+       final_data['y'],
+       c=final_data['wealth'],
        cmap='viridis',
        s=50
    )
@@ -175,28 +175,28 @@ Let's add comprehensive data collection to track model-level metrics.
        'seed': 42
    })
    results = model.run()
-   
+
    # Create comprehensive analysis plots
    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-   
+
    # Plot 1: Mean wealth over time
    axes[0,0].plot(results['model']['mean_wealth'])
    axes[0,0].set_title('Mean Wealth Over Time')
    axes[0,0].set_xlabel('Time Step')
    axes[0,0].set_ylabel('Mean Wealth')
-   
+
    # Plot 2: Wealth inequality (Gini coefficient)
    axes[0,1].plot(results['model']['gini_coefficient'])
    axes[0,1].set_title('Wealth Inequality (Gini Coefficient)')
    axes[0,1].set_xlabel('Time Step')
    axes[0,1].set_ylabel('Gini Coefficient')
-   
+
    # Plot 3: Wealth standard deviation
    axes[1,0].plot(results['model']['wealth_std'])
    axes[1,0].set_title('Wealth Standard Deviation')
    axes[1,0].set_xlabel('Time Step')
    axes[1,0].set_ylabel('Standard Deviation')
-   
+
    # Plot 4: Final wealth distribution histogram
    final_wealth = results['agents'].filter(
        results['agents']['step'] == results['agents']['step'].max()
@@ -205,7 +205,7 @@ Let's add comprehensive data collection to track model-level metrics.
    axes[1,1].set_title('Final Wealth Distribution')
    axes[1,1].set_xlabel('Wealth')
    axes[1,1].set_ylabel('Frequency')
-   
+
    plt.tight_layout()
    plt.show()
 
@@ -219,14 +219,14 @@ Let's use AMBER's optimization tools to find the best parameters for our model.
 .. code-block:: python
 
    from ambr import ParameterSpace, IntRange, grid_search
-   
+
    # Define parameter space to explore
    param_space = ParameterSpace({
        'n_agents': IntRange(50, 200),
        'steps': [50, 100, 150],
        'seed': IntRange(1, 10)
    })
-   
+
    # Run grid search to minimize final Gini coefficient
    best_params, best_score = grid_search(
        model_class=AnalyticalWealthModel,
@@ -235,7 +235,7 @@ Let's use AMBER's optimization tools to find the best parameters for our model.
        minimize=True,
        n_runs=3  # Average over multiple runs
    )
-   
+
    print(f"Best parameters: {best_params}")
    print(f"Best Gini coefficient: {best_score}")
 
@@ -244,14 +244,14 @@ Let's use AMBER's optimization tools to find the best parameters for our model.
 .. code-block:: python
 
    from ambr import random_search, bayesian_optimization
-   
+
    # Compare different optimization approaches
    methods = {
        'grid_search': grid_search,
        'random_search': random_search,
        'bayesian_optimization': bayesian_optimization
    }
-   
+
    results = {}
    for name, method in methods.items():
        if name == 'random_search':
@@ -280,12 +280,12 @@ Let's use AMBER's optimization tools to find the best parameters for our model.
                minimize=True,
                n_runs=3
            )
-       
+
        results[name] = {
            'params': best_params,
            'score': best_score
        }
-   
+
    # Compare results
    for method, result in results.items():
        print(f"{method}: Gini = {result['score']:.4f}, Params = {result['params']}")
@@ -300,21 +300,21 @@ Finally, let's use the experiment framework to run systematic parameter sweeps.
 .. code-block:: python
 
    from ambr import Experiment, Sample, IntRange
-   
+
    # Define parameter variations
    experiment_params = Sample({
        'n_agents': IntRange(50, 300),
        'steps': 100,
        'seed': [1, 2, 3, 4, 5]  # Multiple seeds for robustness
    })
-   
+
    # Create experiment
    experiment = Experiment(
        model_class=AnalyticalWealthModel,
        parameters=experiment_params,
        iterations=50  # Number of parameter combinations to try
    )
-   
+
    # Run experiment
    experiment_results = experiment.run()
 
@@ -324,13 +324,13 @@ Finally, let's use the experiment framework to run systematic parameter sweeps.
 
    # Analyze relationship between population size and inequality
    import pandas as pd
-   
+
    # Convert to pandas for easier analysis
    df = experiment_results.to_pandas()
-   
+
    # Group by number of agents and calculate mean Gini coefficient
    gini_by_population = df.groupby('n_agents')['gini_coefficient'].mean()
-   
+
    plt.figure(figsize=(10, 6))
    plt.plot(gini_by_population.index, gini_by_population.values, 'o-')
    plt.xlabel('Number of Agents')
@@ -338,7 +338,7 @@ Finally, let's use the experiment framework to run systematic parameter sweeps.
    plt.title('Wealth Inequality vs Population Size')
    plt.grid(True, alpha=0.3)
    plt.show()
-   
+
    # Statistical analysis
    correlation = df['n_agents'].corr(df['gini_coefficient'])
    print(f"Correlation between population size and inequality: {correlation:.3f}")
@@ -355,4 +355,4 @@ You now have the foundation to build complex agent-based models with AMBER. Here
 5. **Advanced Analytics**: Implement custom metrics and statistical analysis
 6. **Performance Optimization**: Scale models to handle thousands of agents
 
-For more examples, see the :doc:`examples/index` section and explore the ``examples/`` directory in the repository. 
+For more examples, see the :doc:`examples/index` section and explore the ``examples/`` directory in the repository.

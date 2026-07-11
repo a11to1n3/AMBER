@@ -81,10 +81,10 @@ Development Workflow
 
       # Run all tests
       pytest tests/
-      
+
       # Run specific test file
       pytest tests/test_model.py
-      
+
       # Run with coverage
       pytest tests/ --cov=ambr
 
@@ -162,8 +162,10 @@ Before tagging a release:
    ``src/ambr/__init__.py`` and ``docs/conf.py`` fallbacks in sync).
 3. Run ``make release-check`` from a clean checkout. This builds the wheel and
    source distribution, runs ``twine check``, and executes the test suite.
-4. Inspect the source distribution if local generated artifacts exist; paper
-   drafts and ``paper.zip`` must remain ignored and excluded from the package.
+4. Inspect the source distribution: only package metadata and ``src/ambr``
+   should ship (benchmarks, docs sources, examples stay out of the sdist via
+   ``MANIFEST.in``; local paper drafts stay untracked via ``.gitignore`` —
+   cite the public paper, do not commit drafts).
 5. Create and push an annotated ``vX.Y.Z`` tag from the release commit on
    ``main``. The ``Release`` workflow (``.github/workflows/release.yml``):
 
@@ -185,12 +187,60 @@ Do **not** paste API tokens into chat or commit them. Configure OIDC once:
    * Workflow name: ``release.yml``
    * Environment name: ``pypi``
 
-3. On GitHub: create an Environment named ``pypi`` (Settings → Environments).
-   Optional: require reviewers before production deploys.
+3. On GitHub: Environment ``pypi`` already exists on this repo
+   (Settings → Environments). Optional: require reviewers before deploys.
+
+**Status (repo side):** GitHub Environment ``pypi`` is configured; the
+``Release`` workflow requests OIDC (``id-token: write``). **You must still
+add the matching Trusted Publisher row on PyPI** (step 1–2) if the next tag
+should upload automatically — that step requires project-owner login on
+pypi.org and cannot be done from CI alone.
 
 If Trusted Publishing is not configured yet, you can still upload manually
 with a *project-scoped* token (``twine upload``) and then switch to OIDC.
 Revoke any token that has been exposed.
+
+Lint & type checks
+~~~~~~~~~~~~~~~~~~
+
+CI runs a dedicated **Ruff + mypy** job on every PR:
+
+.. code-block:: bash
+
+   ruff check src/ambr
+   mypy   # module list configured in pyproject.toml [tool.mypy]
+
+``make lint`` / ``make type-check`` wrap the same tools for local use.
+
+
+History rewrite (2026-07)
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The repository history was rewritten once to drop large notebook outputs,
+paper drafts, and other local-only blobs (``.git`` ~160 MB → ~3 MB on a
+fresh clone). If your local clone predates that rewrite::
+
+   git fetch origin
+   git checkout dev
+   git reset --hard origin/dev
+   # or re-clone: git clone https://github.com/a11to1n3/AMBER.git
+
+Do **not** merge old local branches that still contain the pre-rewrite
+history without rebasing onto the new ``origin/dev``.
+
+Repo hygiene
+~~~~~~~~~~~~
+
+* Install git hooks once: ``pip install -e ".[dev]" && pre-commit install``
+  (or ``make pre-commit-install``). Commits then run **nbstripout** (strip
+  notebook outputs) and **ruff** on ``src/ambr``.
+* Do **not** commit notebook outputs. Example ``.ipynb`` files in
+  ``examples/`` should stay small.
+* Do **not** commit manuscript drafts (``paper/`` is gitignored); cite the
+  public arXiv paper only.
+* Prefer ``pyproject.toml`` extras over hand-editing ``requirements*.txt``.
+* Package surface is enforced by ``MANIFEST.in`` and the release workflow
+  (sdist must not contain ``benchmarks/``, ``docs/``, ``paper/``, ``tests/``).
 
 Community Guidelines
 --------------------

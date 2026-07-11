@@ -76,7 +76,7 @@ Create your first model:
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for what is new in **0.4.1**.
+See :doc:`changelog` for what is new in **0.4.2**.
 
 Table of Contents
 -----------------
@@ -89,6 +89,7 @@ Table of Contents
    quickstart
    from_agentpy
    going_faster
+   environments_schelling
    tutorial
    benchmarks
    examples/index
@@ -104,6 +105,7 @@ Table of Contents
    :caption: Development
 
    contributing
+   deprecations
    changelog
 
 Indices and tables
@@ -111,4 +113,4 @@ Indices and tables
 
 * :ref:`genindex`
 * :ref:`modindex`
-* :ref:`search` 
+* :ref:`search`

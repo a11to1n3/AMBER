@@ -1,0 +1,26 @@
+# Local hooks: pip install pre-commit && pre-commit install
+# CI can run: pre-commit run --all-files
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '^(benchmarks/results/|.*\\.ipynb$)'
+      - id: end-of-file-fixer
+        exclude: '^(benchmarks/results/|.*\\.ipynb$)'
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+      - id: check-merge-conflict
+
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^src/ambr/

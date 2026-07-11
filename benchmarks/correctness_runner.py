@@ -7,7 +7,7 @@ set loaded by this script. The seven-framework paper audit lives in
 ``benchmarks/correctness_check.py``.
 
 1. CONSERVATION LAWS - Physical quantities preserved
-2. STATISTICAL ACCURACY - Output matches known distributions  
+2. STATISTICAL ACCURACY - Output matches known distributions
 3. REPRODUCIBILITY - Same seed → same results
 4. EMERGENT BEHAVIOR - Expected dynamics emerge
 5. NUMERICAL PRECISION - Error accumulation over time
@@ -51,76 +51,76 @@ class ComprehensiveCorrectnessBenchmark:
     """
     Legacy correctness testing with quantitative metrics.
     """
-    
+
     def __init__(self, results_dir: str = None):
         self.results_dir = Path(results_dir or Path(__file__).parent / 'results')
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.results: List[MetricResult] = []
         self._load_frameworks()
-        
+
     def _load_frameworks(self):
         """Load available frameworks."""
         self.available = {}
-        
+
         try:
             from models.amber_models import AMBER_MODELS
             self.available['AMBER'] = AMBER_MODELS
         except ImportError:
             pass
-        
+
         try:
             from models.agentpy_models import AGENTPY_MODELS
             self.available['AgentPy'] = AGENTPY_MODELS
         except ImportError:
             pass
-        
+
         try:
             from models.mesa_models import MESA_MODELS
             self.available['Mesa'] = MESA_MODELS
         except ImportError:
             pass
-        
+
         try:
             import Melodie
             self.available['Melodie'] = 'melodie'
         except ImportError:
             pass
-        
+
         try:
             import simpy
             self.available['SimPy'] = 'simpy'
         except ImportError:
             pass
-        
+
         print(f"Loaded frameworks: {list(self.available.keys())}")
 
     def run_all(self, n_agents: int = 500, n_steps: int = 100, verbose: bool = False):
         """Run comprehensive benchmark suite."""
-        
+
         print(f"\n{'='*70}")
         print(f"  Comprehensive Correctness Benchmark")
         print(f"{'='*70}")
         print(f"  Agents: {n_agents}, Steps: {n_steps}")
         print(f"{'='*70}\n")
-        
+
         # 1. Conservation Laws
         self._test_conservation(n_agents, n_steps, verbose)
-        
+
         # 2. Statistical Accuracy
         self._test_statistical_accuracy(n_agents, n_steps, verbose)
-        
+
         # 3. Reproducibility
         self._test_reproducibility(n_agents, n_steps, verbose)
-        
+
         # 4. Emergent Behavior
         self._test_emergent_behavior(n_agents, n_steps, verbose)
-        
+
         # 5. Numerical Precision
         self._test_numerical_precision(n_agents, n_steps, verbose)
-        
+
         # 6. Edge Cases
         self._test_edge_cases(verbose)
-        
+
         self._print_summary()
         return self.results
 
@@ -131,14 +131,14 @@ class ComprehensiveCorrectnessBenchmark:
         """Test that physical quantities are conserved."""
         print("\n📊 1. CONSERVATION LAWS")
         print("-" * 50)
-        
+
         for fw_name in self.available:
             # Wealth conservation
             error = self._measure_wealth_conservation(fw_name, n_agents, n_steps)
-            self._add_metric(fw_name, 'wealth_transfer', 'conservation', 
+            self._add_metric(fw_name, 'wealth_transfer', 'conservation',
                            'total_wealth_error', error, 0.0, error,
                            error < 1e-10, f'Absolute error: {error:.2e}', 0)
-            
+
             # SIR population conservation
             error = self._measure_sir_conservation(fw_name, n_agents, n_steps)
             self._add_metric(fw_name, 'sir_epidemic', 'conservation',
@@ -149,10 +149,10 @@ class ComprehensiveCorrectnessBenchmark:
         """Measure wealth conservation error."""
         initial_wealth = 100
         expected_total = n_agents * initial_wealth
-        
+
         if fw_name == 'AMBER':
             from models.amber_models import AMBERWealthTransfer
-            model = AMBERWealthTransfer({'n': n_agents, 'steps': n_steps, 
+            model = AMBERWealthTransfer({'n': n_agents, 'steps': n_steps,
                                          'initial_wealth': initial_wealth, 'show_progress': False})
             model.run()
             final = sum(a.wealth for a in model.agent_objects_list)
@@ -171,7 +171,7 @@ class ComprehensiveCorrectnessBenchmark:
             import Melodie
             from models.melodie_models import WealthModel, WealthScenario
             import os
-            config = Melodie.Config(project_name='Test', project_root='.', 
+            config = Melodie.Config(project_name='Test', project_root='.',
                                     sqlite_folder='.', output_folder='.', input_folder='.')
             scenario = WealthScenario()
             scenario.periods = n_steps
@@ -207,7 +207,7 @@ class ComprehensiveCorrectnessBenchmark:
             final = sum(a['wealth'] for a in agents_data)
         else:
             return float('inf')
-        
+
         return abs(final - expected_total)
 
     def _measure_sir_conservation(self, fw_name, n_agents, n_steps):
@@ -299,20 +299,20 @@ class ComprehensiveCorrectnessBenchmark:
         """Test that output distributions match theoretical predictions."""
         print("\n📈 2. STATISTICAL ACCURACY")
         print("-" * 50)
-        
+
         for fw_name in self.available:
             # Wealth variance should increase from 0 (all agents start equal)
             final_var = self._test_wealth_variance_growth(fw_name, n_agents, n_steps)
             self._add_metric(fw_name, 'wealth_transfer', 'statistical',
                            'variance_growth', final_var, 0.0, 0.0,
                            final_var > 0, f'Final variance: {final_var:.2f} (expected >0)', 0)
-            
+
             # Random walk MSD should be positive (agents spread out)
             msd = self._test_random_walk_spread(fw_name, n_agents, n_steps)
             self._add_metric(fw_name, 'random_walk', 'statistical',
                            'mean_squared_displacement', msd, 0.0, 0.0,
                            msd > 0, f'MSD: {msd:.2f}', 0)
-            
+
             # SIR attack rate should be reasonable (0 to 100%)
             attack_rate = self._test_sir_attack_rate(fw_name, n_agents, n_steps)
             self._add_metric(fw_name, 'sir_epidemic', 'statistical',
@@ -322,10 +322,10 @@ class ComprehensiveCorrectnessBenchmark:
     def _test_wealth_variance_growth(self, fw_name, n_agents, n_steps):
         """Test if wealth variance increases (inequality grows)."""
         initial_wealth = 100
-        
+
         if fw_name == 'AMBER':
             from models.amber_models import AMBERWealthTransfer
-            model = AMBERWealthTransfer({'n': n_agents, 'steps': n_steps, 
+            model = AMBERWealthTransfer({'n': n_agents, 'steps': n_steps,
                                          'initial_wealth': initial_wealth, 'show_progress': False})
             model.run()
             wealths = [a.wealth for a in model.agent_objects_list]
@@ -343,7 +343,7 @@ class ComprehensiveCorrectnessBenchmark:
             import Melodie
             from models.melodie_models import WealthModel, WealthScenario
             import os
-            config = Melodie.Config(project_name='Test', project_root='.', 
+            config = Melodie.Config(project_name='Test', project_root='.',
                                     sqlite_folder='.', output_folder='.', input_folder='.')
             scenario = WealthScenario()
             scenario.periods = n_steps
@@ -378,7 +378,7 @@ class ComprehensiveCorrectnessBenchmark:
             wealths = [a['wealth'] for a in agents_data]
         else:
             return 0.0
-        
+
         # Initial variance is 0 (all same wealth), final should be > 0
         final_var = np.var(wealths) if wealths else 0
         return final_var  # Return raw variance (should be >0 after wealth transfers)
@@ -387,7 +387,7 @@ class ComprehensiveCorrectnessBenchmark:
         """Test if agents spread out from their initial positions."""
         if fw_name == 'AMBER':
             from models.amber_models import AMBERRandomWalk
-            model = AMBERRandomWalk({'n': n_agents, 'steps': n_steps, 
+            model = AMBERRandomWalk({'n': n_agents, 'steps': n_steps,
                                      'world_size': 100, 'speed': 1.0, 'show_progress': False})
             model.run()
             positions = [(a.x, a.y) for a in model.agent_objects_list]
@@ -433,7 +433,7 @@ class ComprehensiveCorrectnessBenchmark:
             positions = [(a['x'], a['y']) for a in agents_data]
         else:
             return 0.0
-        
+
         # Calculate spatial spread (variance of positions)
         x_vals = [p[0] for p in positions]
         y_vals = [p[1] for p in positions]
@@ -524,7 +524,7 @@ class ComprehensiveCorrectnessBenchmark:
         """Test that same seed produces identical results."""
         print("\n🔄 3. REPRODUCIBILITY")
         print("-" * 50)
-        
+
         for fw_name in self.available:
             is_reproducible = self._test_seed_reproducibility(fw_name, n_agents, n_steps)
             self._add_metric(fw_name, 'wealth_transfer', 'reproducibility',
@@ -535,17 +535,17 @@ class ComprehensiveCorrectnessBenchmark:
     def _test_seed_reproducibility(self, fw_name, n_agents, n_steps):
         """Run twice with same seed, check identical results."""
         seed = 42
-        
+
         def run_with_seed(seed_val):
             if fw_name == 'AMBER':
                 from models.amber_models import AMBERWealthTransfer
-                model = AMBERWealthTransfer({'n': n_agents, 'steps': n_steps, 
+                model = AMBERWealthTransfer({'n': n_agents, 'steps': n_steps,
                                              'initial_wealth': 1, 'seed': seed_val, 'show_progress': False})
                 model.run()
                 return tuple(a.wealth for a in model.agent_objects_list)
             elif fw_name == 'AgentPy':
                 from models.agentpy_models import AgentPyWealthTransfer
-                model = AgentPyWealthTransfer({'n': n_agents, 'steps': n_steps, 
+                model = AgentPyWealthTransfer({'n': n_agents, 'steps': n_steps,
                                                'initial_wealth': 1, 'seed': seed_val})
                 model.run()
                 return tuple(a.wealth for a in model.agents)
@@ -569,7 +569,7 @@ class ComprehensiveCorrectnessBenchmark:
                 random.seed(seed_val)
                 np.random.seed(seed_val)
                 from models.melodie_models import WealthModel, WealthScenario
-                config = Melodie.Config(project_name='RepTest', project_root='.', 
+                config = Melodie.Config(project_name='RepTest', project_root='.',
                                         sqlite_folder='.', output_folder='.', input_folder='.')
                 scenario = WealthScenario()
                 scenario.periods = n_steps
@@ -606,7 +606,7 @@ class ComprehensiveCorrectnessBenchmark:
                 env.run(until=n_steps)
                 return tuple(a['wealth'] for a in agents_data)
             return None
-        
+
         try:
             run1 = run_with_seed(seed)
             run2 = run_with_seed(seed)
@@ -621,15 +621,15 @@ class ComprehensiveCorrectnessBenchmark:
         """Test that expected emergent behaviors occur."""
         print("\n🌱 4. EMERGENT BEHAVIOR")
         print("-" * 50)
-        
+
         for fw_name in self.available:
             # Gini coefficient should increase (inequality grows)
             gini_increase = self._test_gini_increase(fw_name, n_agents, n_steps)
             self._add_metric(fw_name, 'wealth_transfer', 'emergent',
-                           'gini_increase', gini_increase, 1.0, 
+                           'gini_increase', gini_increase, 1.0,
                            0.0 if gini_increase > 0 else 1.0, gini_increase > 0,
                            f'Gini change: {gini_increase:+.4f}', 0)
-            
+
             # SIR: Recovery count should be monotonically increasing
             r_monotonic = self._test_recovery_monotonic(fw_name, n_agents, n_steps)
             self._add_metric(fw_name, 'sir_epidemic', 'emergent',
@@ -646,12 +646,12 @@ class ComprehensiveCorrectnessBenchmark:
             n = len(sorted_w)
             cumsum = np.cumsum(sorted_w)
             return (n + 1 - 2 * np.sum(cumsum) / cumsum[-1]) / n
-        
+
         initial_wealth = 100
-        
+
         if fw_name == 'AMBER':
             from models.amber_models import AMBERWealthTransfer
-            model = AMBERWealthTransfer({'n': n_agents, 'steps': n_steps, 
+            model = AMBERWealthTransfer({'n': n_agents, 'steps': n_steps,
                                          'initial_wealth': initial_wealth, 'show_progress': False})
             initial_gini = gini([initial_wealth] * n_agents)
             model.run()
@@ -672,7 +672,7 @@ class ComprehensiveCorrectnessBenchmark:
             import Melodie
             import os
             from models.melodie_models import WealthModel, WealthScenario
-            config = Melodie.Config(project_name='GiniTest', project_root='.', 
+            config = Melodie.Config(project_name='GiniTest', project_root='.',
                                     sqlite_folder='.', output_folder='.', input_folder='.')
             scenario = WealthScenario()
             scenario.periods = n_steps
@@ -709,7 +709,7 @@ class ComprehensiveCorrectnessBenchmark:
             final_gini = gini([a['wealth'] for a in agents_data])
         else:
             return 0
-        
+
         return final_gini - initial_gini
 
     def _test_recovery_monotonic(self, fw_name, n_agents, n_steps):
@@ -799,17 +799,17 @@ class ComprehensiveCorrectnessBenchmark:
         """Test for numerical error accumulation."""
         print("\n🔢 5. NUMERICAL PRECISION")
         print("-" * 50)
-        
+
         for fw_name in self.available:
             # Run for many steps, check if errors accumulate
             long_steps = n_steps * 10
             short_error = self._measure_wealth_conservation(fw_name, n_agents, n_steps)
             long_error = self._measure_wealth_conservation(fw_name, n_agents, long_steps)
-            
+
             error_growth = long_error - short_error
             self._add_metric(fw_name, 'wealth_transfer', 'precision',
                            'error_accumulation', error_growth, 0.0, abs(error_growth),
-                           abs(error_growth) < 1e-6, 
+                           abs(error_growth) < 1e-6,
                            f'Error at {n_steps} steps: {short_error:.2e}, at {long_steps}: {long_error:.2e}', 0)
 
     # =========================================================================
@@ -819,7 +819,7 @@ class ComprehensiveCorrectnessBenchmark:
         """Test boundary conditions and edge cases."""
         print("\n⚠️ 6. EDGE CASES")
         print("-" * 50)
-        
+
         for fw_name in self.available:
             # Single agent
             single_ok = self._test_single_agent(fw_name)
@@ -827,7 +827,7 @@ class ComprehensiveCorrectnessBenchmark:
                            'single_agent', 1.0 if single_ok else 0.0, 1.0,
                            0.0 if single_ok else 1.0, single_ok,
                            'Single agent handled' if single_ok else 'Failed!', 0)
-            
+
             # Zero steps
             zero_ok = self._test_zero_steps(fw_name)
             self._add_metric(fw_name, 'wealth_transfer', 'edge_case',
@@ -898,7 +898,7 @@ class ComprehensiveCorrectnessBenchmark:
         print(f"\n{'='*70}")
         print(f"  COMPREHENSIVE CORRECTNESS SUMMARY")
         print(f"{'='*70}")
-        
+
         # By framework
         by_fw = {}
         for r in self.results:
@@ -907,7 +907,7 @@ class ComprehensiveCorrectnessBenchmark:
             by_fw[r.framework]['total'] += 1
             if r.passed:
                 by_fw[r.framework]['passed'] += 1
-        
+
         print("\nBy Framework:")
         for fw in self.available:
             if fw in by_fw:
@@ -916,7 +916,7 @@ class ComprehensiveCorrectnessBenchmark:
                 pct = 100 * p / t if t > 0 else 0
                 status = "✅" if p == t else "⚠️"
                 print(f"  {status} {fw:10s}: {p}/{t} ({pct:.0f}%)")
-        
+
         # By category
         print("\nBy Category:")
         by_cat = {}
@@ -926,31 +926,31 @@ class ComprehensiveCorrectnessBenchmark:
             by_cat[r.category]['total'] += 1
             if r.passed:
                 by_cat[r.category]['passed'] += 1
-        
+
         for cat in ['conservation', 'statistical', 'reproducibility', 'emergent', 'precision', 'edge_case']:
             if cat in by_cat:
                 p = by_cat[cat]['passed']
                 t = by_cat[cat]['total']
                 status = "✅" if p == t else "⚠️"
                 print(f"  {status} {cat:15s}: {p}/{t}")
-        
+
         print(f"\n{'='*70}\n")
 
     def save_results(self):
         """Save results to JSON and markdown."""
-        
+
         # JSON
         json_path = self.results_dir / 'correctness_results.json'
         with open(json_path, 'w') as f:
             json.dump([asdict(r) for r in self.results], f, indent=2)
         print(f"📄 Results: {json_path}")
-        
+
         # Markdown
         self._generate_markdown()
 
     def _generate_markdown(self):
         """Generate comprehensive markdown report."""
-        
+
         md = f"""# Comprehensive Correctness Benchmark Report
 
 **Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -978,31 +978,31 @@ class ComprehensiveCorrectnessBenchmark:
             by_fw[r.framework]['total'] += 1
             if r.passed:
                 by_fw[r.framework]['passed'] += 1
-        
+
         for fw in self.available:
             if fw in by_fw:
                 p = by_fw[fw]['passed']
                 t = by_fw[fw]['total']
                 pct = 100 * p / t if t > 0 else 0
                 md += f"| {fw} | {p} | {t} | {pct:.0f}% |\n"
-        
+
         md += "\n## Detailed Results\n\n"
-        
+
         for cat in ['conservation', 'statistical', 'reproducibility', 'emergent', 'precision', 'edge_case']:
             cat_results = [r for r in self.results if r.category == cat]
             if not cat_results:
                 continue
-            
+
             md += f"### {cat.replace('_', ' ').title()}\n\n"
             md += "| Framework | Model | Metric | Status | Details |\n"
             md += "|-----------|-------|--------|--------|--------|\n"
-            
+
             for r in cat_results:
                 status = "✅" if r.passed else "❌"
                 md += f"| {r.framework} | {r.model} | {r.metric_name} | {status} | {r.details} |\n"
-            
+
             md += "\n"
-        
+
         md_path = self.results_dir / 'correctness_report.md'
         with open(md_path, 'w') as f:
             f.write(md)
@@ -1014,13 +1014,13 @@ def main():
     parser.add_argument('--agents', type=int, default=500, help='Number of agents')
     parser.add_argument('--steps', type=int, default=100, help='Simulation steps')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
-    
+
     args = parser.parse_args()
-    
+
     benchmark = ComprehensiveCorrectnessBenchmark()
     benchmark.run_all(n_agents=args.agents, n_steps=args.steps, verbose=args.verbose)
     benchmark.save_results()
-    
+
     print("\n✅ Comprehensive benchmark complete!")
 
 

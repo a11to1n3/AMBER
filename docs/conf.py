@@ -26,7 +26,7 @@ author = 'a11to1n3'
 try:
     release = metadata_version('ambr')
 except PackageNotFoundError:
-    release = '0.4.1'
+    release = '0.4.2'
 version = release
 
 # -- General configuration ---------------------------------------------------
@@ -103,4 +103,4 @@ intersphinx_mapping = {
     'numpy': ('https://numpy.org/doc/stable/', None),
     'polars': ('https://docs.pola.rs/py-polars/html/', None),
     'networkx': ('https://networkx.org/documentation/stable/', None),
-} 
+}

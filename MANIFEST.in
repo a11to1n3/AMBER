@@ -1,9 +1,10 @@
 include README.md
 include LICENSE
-
 include requirements.txt
+include pyproject.toml
 recursive-include src/ambr *.py
 
+# Local-only trees must never enter the sdist
 prune .claude
 prune .github
 prune benchmarks
@@ -11,6 +12,10 @@ prune docs
 prune examples
 prune paper
 prune tests
+prune smac3_output
 exclude paper.zip
+exclude PR_DESCRIPTIONS.md
+exclude architecture_diagram.png
 global-exclude *.aux *.bbl *.blg *.log *.out *.toc *.synctex.gz
 global-exclude __pycache__ *.py[cod] .DS_Store .coverage .coverage.* .!*.coverage
+global-exclude *.ipynb_checkpoints*

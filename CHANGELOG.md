@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+## v0.4.2 - 2026-07-11
+
+Hygiene, CI quality, and docs release on top of 0.4.1.
+
+### Added
+
+- **GPU ensemble tests** (`tests/test_gpu_ensemble.py`) covering
+  `GPUEnsembleRunner` / `BatchedWellMixedSIR` on the NumPy fallback path, plus
+  a tiny optional `smac_batch_calibrate` smoke when SMAC is installed.
+- Public exports for `GPUEnsembleRunner`, `BatchedWellMixedSIR`,
+  `smac_batch_calibrate`.
+- CI installs `ambr[perf]` (Numba) on Ubuntu + Python 3.12 so scatter JIT
+  paths are exercised in the matrix.
+- **Canonical Schelling example** `examples/schelling_vectorized.py` and
+  guide `docs/environments_schelling.rst`.
+- **Deprecations guide** `docs/deprecations.rst` (canonical vs legacy → 1.0).
+- **Ruff + mypy CI job**; gradual mypy module set in `pyproject.toml`.
+- **pre-commit** hooks: nbstripout + ruff (``pre-commit install``).
+
+### Changed
+
+- **Git history rewrite** (purge paper drafts, notebook bloat, build artifacts
+  from history; re-clone or ``git reset --hard origin/dev``).
+- **Branch protection** on ``main`` / ``dev``: require ``Ruff + mypy`` and
+  Ubuntu 3.12 tests; no force-push.
+- Docs / README: public arXiv **citation** for the paper; do **not** co-locate
+  manuscript drafts (``.gitignore`` excludes ``paper/`` and build artifacts).
+- Ruff-clean `src/ambr` (unused imports / small fixes); SIR batch status
+  constant renamed `INFECTED`.
+- **Repo hygiene:** clear outputs from example notebooks (~26 MB → ~50 KB);
+  drop unused root ``architecture_diagram.png``; tighten ``.gitignore`` /
+  ``MANIFEST.in``; point ``requirements*.txt`` at ``pyproject.toml`` extras;
+  drop tracked ``benchmarks/results/*.json`` (regenerate locally; charts/md stay).
+
 ## v0.4.1 - 2026-07-11
 
 Polish release on top of 0.4.0: clearer AgentPy-shaped UX, progressive speed
