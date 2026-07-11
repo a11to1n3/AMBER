@@ -73,9 +73,9 @@ def test_batched_sir_setup_seeds_initial_infected():
     status = to_host(state["status"])
     assert status.shape == (B, N)
     # First 5 agents of run 0, first 10 of run 1
-    assert (status[0, :5] == model.I).all()
+    assert (status[0, :5] == model.INFECTED).all()
     assert (status[0, 5:] == model.S).all()
-    assert (status[1, :10] == model.I).all()
+    assert (status[1, :10] == model.INFECTED).all()
     assert (status[1, 10:] == model.S).all()
 
 

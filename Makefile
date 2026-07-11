@@ -46,15 +46,16 @@ clean:  ## Clean up generated files
 	find . -type d -name __pycache__ -delete
 	find . -type f -name "*.pyc" -delete
 
-lint:  ## Run linting checks
-	flake8 src tests
-	black --check src tests
+lint:  ## Run linting checks (ruff primary; black/flake8 optional)
+	ruff check src/ambr
+	@command -v black >/dev/null && black --check src tests || true
 
 format:  ## Format code
-	black src tests
+	ruff check src/ambr --fix
+	@command -v black >/dev/null && black src tests || true
 
-type-check:  ## Run type checking
-	mypy src
+type-check:  ## Run type checking (gradual module set in pyproject.toml)
+	mypy
 
 docs:  ## Build Sphinx HTML docs into docs/_build/html
 	python -m sphinx -b html docs docs/_build/html

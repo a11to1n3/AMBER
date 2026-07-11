@@ -15,7 +15,7 @@ but filled by :mod:`ambr._id_index`; :meth:`_bump_id_version` invalidates them.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Type, Optional, Set, Tuple
+from typing import Any, Dict, List, Type, Optional, Set, Tuple, TYPE_CHECKING
 import polars as pl
 import warnings
 import numpy as np
@@ -31,6 +31,9 @@ from .contract import (
     ContractViolationError,
 )
 from .results import RunResults
+
+if TYPE_CHECKING:
+    from .agent import Agent
 
 
 class Model(BaseModel):
@@ -476,7 +479,7 @@ class Model(BaseModel):
         return results
 
     # --- Agent Management Delegates ---
-    def add_agent(self, agent: 'Agent'):
+    def add_agent(self, agent: Agent):
         """Add a single agent. Prefer :meth:`add_agents` for bulk creation."""
         # Forward Python attributes set on the instance (e.g. ``agent.wealth = 5``
         # before this call) into the population row.

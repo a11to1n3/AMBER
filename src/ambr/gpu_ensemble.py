@@ -21,7 +21,7 @@ trajectory -- so a calibration loss against a target curve is one more batched
 tensor op over all B candidates at once.
 """
 
-from typing import Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as _np
 
@@ -46,11 +46,11 @@ class GPUEnsembleRunner:
         rng = xp.random.default_rng(seed)
 
         state = self.model.setup(B, n_agents, pb, rng)
-        traj = None
+        traj: Dict[str, list] = {}
         for _ in range(steps):
             state = self.model.step(state, pb, rng)
             rec = self.model.record(state)
-            if traj is None:
+            if not traj:
                 traj = {k: [] for k in rec}
             for k, v in rec.items():
                 traj[k].append(v)
@@ -67,35 +67,40 @@ class BatchedWellMixedSIR:
     target in epidemiology and batches perfectly (O(B*N) per step).
     """
 
-    S, I, R = 0, 1, 2
+    S = 0
+    INFECTED = 1
+    R = 2
 
     def setup(self, B, N, params, rng):
         xp = get_array_module()
         idx = xp.arange(N, dtype=xp.float32).reshape(1, N)
         seeded = idx < (params["i0_frac"] * N)            # (B, N) bool
-        return {"status": xp.where(seeded, self.I, self.S).astype(xp.int8), "N": N}
+        return {
+            "status": xp.where(seeded, self.INFECTED, self.S).astype(xp.int8),
+            "N": N,
+        }
 
     def step(self, state, params, rng):
         xp = get_array_module()
         status = state["status"]
-        i_frac = (status == self.I).mean(axis=1, keepdims=True)   # (B, 1)
-        p_inf = params["beta"] * i_frac                           # (B, 1) force of infection
+        i_frac = (status == self.INFECTED).mean(axis=1, keepdims=True)  # (B, 1)
+        p_inf = params["beta"] * i_frac
         d_inf = rng.random(status.shape, dtype=xp.float32)
         d_rec = rng.random(status.shape, dtype=xp.float32)
         new_inf = (status == self.S) & (d_inf < p_inf)
-        new_rec = (status == self.I) & (d_rec < params["gamma"])
-        status = xp.where(new_inf, xp.int8(self.I), status)
+        new_rec = (status == self.INFECTED) & (d_rec < params["gamma"])
+        status = xp.where(new_inf, xp.int8(self.INFECTED), status)
         status = xp.where(new_rec, xp.int8(self.R), status)
         return {"status": status, "N": state["N"]}
 
     def record(self, state):
-        return {"I_frac": (state["status"] == self.I).mean(axis=1)}   # (B,)
+        return {"I_frac": (state["status"] == self.INFECTED).mean(axis=1)}
 
 
 def smac_batch_calibrate(
     model,
     param_bounds: Dict[str, Tuple[float, float]],
-    loss_fn: Callable[[Dict], "array"],
+    loss_fn: Callable[[Dict], Any],
     n_agents: int,
     steps: int,
     *,

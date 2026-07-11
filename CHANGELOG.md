@@ -11,6 +11,10 @@
   `smac_batch_calibrate`.
 - CI installs `ambr[perf]` (Numba) on Ubuntu + Python 3.12 so scatter JIT
   paths are exercised in the matrix.
+- **Canonical Schelling example** `examples/schelling_vectorized.py` and
+  guide `docs/environments_schelling.rst`.
+- **Deprecations guide** `docs/deprecations.rst` (canonical vs legacy → 1.0).
+- **Ruff + mypy CI job**; gradual mypy module set in `pyproject.toml`.
 
 ### Changed
 
@@ -18,6 +22,8 @@
   outdated arXiv paper link; contributing release notes no longer assume a
   co-located paper tree.
 - `.gitignore`: track `docs/api/*.rst`; ignore local `paper/` drafts only.
+- Ruff-clean `src/ambr` (unused imports / small fixes); SIR batch status
+  constant renamed `INFECTED`.
 
 ## v0.4.1 - 2026-07-11
 

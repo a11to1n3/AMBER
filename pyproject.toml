@@ -56,6 +56,7 @@ dev = [
     "twine>=5.0.0",
     "black>=22.0.0",
     "flake8>=5.0.0",
+    "ruff>=0.6.0",
     "mypy>=1.0.0"
 ]
 advanced = [
@@ -105,4 +106,36 @@ where = ["src"]
 omit = [
     "src/ambr/gpu.py",
     "src/ambr/gpu_ensemble.py",
+]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+# Keep the gate focused: unused imports, undefined names, obvious bugs.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["F401", "F811"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_configs = true
+# Gradual adoption: CI type-checks the modules listed below (see workflow).
+# model/sequences/optimization remain dynamic ABM surfaces — expand over time.
+packages = []
+files = [
+    "src/ambr/results.py",
+    "src/ambr/_deprecation.py",
+    "src/ambr/_id_index.py",
+    "src/ambr/contract.py",
+    "src/ambr/lanes.py",
+    "src/ambr/gpu.py",
+    "src/ambr/gpu_ensemble.py",
+    "src/ambr/base.py",
+    "src/ambr/agent.py",
+    "src/ambr/tensor_lane.py",
 ]

@@ -3,7 +3,7 @@ Environment implementations for AMBER framework.
 Supports different types of spatial and network topologies.
 """
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 from types import MethodType
 import polars as pl
 import numpy as np
