@@ -49,9 +49,11 @@ and the documented SIR update-semantics caveat.
 
 ### Scaling to 10M agents with the GPU backend
 
-The 0.4 GPU backend changes the story at large N. This sweep covers **1k → 10M
-agents across 10 frameworks and four models** — adding **AMBER (GPU)** and a
-**Schelling segregation** workload (NVIDIA RTX 3090 for the GPU series):
+From **0.4.3**, AMBER (GPU) is the **same** vectorized `Model` + view-API `step`
+under Keras-style placement (`model.gpu().run()`), not a separate kernel rewrite.
+The sweep covers **1k → 10M agents across 10 frameworks and four models** —
+adding **AMBER (GPU)** and a **Schelling segregation** workload (NVIDIA RTX 3090
+for the GPU series):
 
 ![AMBER GPU + Schelling scaling to 10M agents across 10 frameworks](benchmarks/results/scaling_chart_gpu_schelling.png)
 
@@ -59,7 +61,7 @@ agents across 10 frameworks and four models** — adding **AMBER (GPU)** and a
   up. Wealth transfer: ~14 ms at 1M (≈330× the fastest CPU framework), 199 ms at
   10M (**3.1× faster than FLAME GPU 2**). Schelling: the **only** framework to
   reach 10M (847 ms; 19× AMBER-vectorized and 225× Agents.jl at 1M). SIR: 5.98 s
-  at 10M (**~2× faster than FLAME GPU 2**), via an O(N) spatial-binning kernel.
+  at 10M (**~2× faster than FLAME GPU 2**).
 - **It's a large-N win, not a small-N one.** A ~90 ms fixed device cost means
   AMBER (GPU) only leads at scale: below ~100k–1M, AMBER (vectorized) or Agents.jl
   are faster, and on SIR FLAME GPU 2 wins at 1k–10k before AMBER overtakes it from
@@ -117,14 +119,17 @@ class WealthModel(am.Model):
         recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
         self.agents.at[recipients].scatter_add(wealth=1)
 
-results = WealthModel({'steps': 100, 'seed': 42}).run()
+# Fluent placement (0.4.3): device + optional mode; run(mode=...) still overrides.
+results = WealthModel({'steps': 100, 'seed': 42}).cpu(mode="vectorized").run()
+# Same class + step on GPU (device-resident columns; needs NVIDIA + CuPy):
+# results = WealthModel({'steps': 100, 'seed': 42}).gpu().run()
 print(results.model.tail(5))
 print(results.agents.head(10))
 ```
 
 Coming from AgentPy? See [`docs/from_agentpy.rst`](docs/from_agentpy.rst).
 
-**Going faster / GPU** — no magic switch; pick a lane (see
+**Going faster / GPU** — same `Model` and `step`; pick placement and lane (see
 [`docs/going_faster.rst`](docs/going_faster.rst)):
 
 ```python
@@ -132,7 +137,11 @@ import ambr as am
 am.print_status()                 # GPU? which lane?
 print(am.recommend(1_000_000))  # one-line suggestion
 
-# Easiest GPU/CPU array model (CuPy if available, else NumPy):
+# Native path: view-API step + .gpu() (or .cpu(mode="vectorized"))
+model = WealthModel({"n": 100_000, "steps": 50, "seed": 0})
+results = model.gpu().run()                    # or .cpu(mode="vectorized").run()
+
+# Array-kernel lane (CuPy if available, else NumPy) for pure array state:
 class Drift(am.ArrayKernelModel):
     def init_state(self, xp, n, rng, p):
         return {"x": rng.random(n, dtype=xp.float32)}
@@ -149,12 +158,17 @@ print(Drift({"n": 100_000, "steps": 20}).run().info)
 the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).
 
+> **New in 0.4.3:** Keras-style **`model.cpu(mode=...)` / `model.gpu(mode=...)`**
+> placement and a **native GPU view API** — the same `where` / column write /
+> `scatter_add` `step` runs device-resident under `.gpu().run()`. Main AMBER
+> (GPU) benchmarks use those models (not a separate kernel rewrite). See the
+> [changelog](CHANGELOG.md).
+>
 > **New in 0.4.1:** [AgentPy-shaped UX](docs/from_agentpy.rst) (`RunResults`,
 > `agents.random()`), [progressive speed lanes](docs/going_faster.rst)
 > (`am.print_status()`, `am.recommend(n)`, `ArrayKernelModel`), optional
 > **Numba** CPU path (`pip install 'ambr[perf]'` — great on Mac), contract /
-> write-path hardening, SMAC install pin, and Schelling grid helpers. See the
-> [changelog](CHANGELOG.md).
+> write-path hardening, SMAC install pin, and Schelling grid helpers.
 >
 > **New in 0.4:** a runtime [snapshot-view contract](#-snapshot-view-contract)
 > checker, a [GPU backend + batched calibration](#-gpu-backend--batched-calibration),
@@ -194,6 +208,7 @@ Batch performance comes from these verbs (columnar writes), not from extra publi
 | Task | Canonical | Legacy (deprecated → 1.0) |
 |------|-----------|---------------------------|
 | NumPy RNG | `self.rng` | `self.nprandom` |
+| Device / run mode | `model.cpu(mode=...).run()` / `model.gpu().run()` | `run(backend=...)` |
 | Record a model metric | `model_reporters = {...}` or `record_model(k, v)` | `record(k, v)` |
 | Filter agents | `agents.where(expr)` / `agents[mask]` / `agents.at[ids]` | `agents.select(...)` |
 | Per-agent write | `agent.col = v` | `agent.record(...)`, `agent.update_data(...)`, `update_agent_data` |
@@ -237,9 +252,19 @@ ordinary commit). Prefer those APIs over assigning `population.data` directly.
 
 ## 🎮 GPU backend & batched calibration
 
-The same columnar contract runs on a CuPy array backend, and the *ensemble* axis
-(`B` simulations × `N` agents) batches into one device pass — the natural fit for
-calibration, where you evaluate thousands of small replicate runs:
+**Single-run (native, 0.4.3):** place the same view-API model on device — no
+rewrite of `step`. Numeric columns stay device-resident for the run; contract
+modes still apply on the CPU snapshot at step boundaries.
+
+```python
+# Same WealthModel as the vectorized quickstart
+results = WealthModel({"n": 1_000_000, "steps": 50, "seed": 0}).gpu().run()
+# Switch back: model.cpu(mode="vectorized").run(...)
+```
+
+**Many short runs (calibration):** the *ensemble* axis (`B` simulations × `N`
+agents) batches into one device pass — the natural fit when you evaluate
+thousands of small replicate runs:
 
 ```python
 from ambr.gpu_ensemble import GPUEnsembleRunner, BatchedWellMixedSIR, smac_batch_calibrate
@@ -255,7 +280,8 @@ best, history = smac_batch_calibrate(BatchedWellMixedSIR(), bounds, loss_fn,
 ```
 
 `ambr.gpu` provides the array-module abstraction (`get_array_module`, `to_device`,
-`to_host`) and falls back to NumPy when CuPy is unavailable.
+`to_host`) and falls back to NumPy when CuPy is unavailable. Requires **NVIDIA
+GPU + CuPy** (not Apple Metal/MPS).
 
 ## 🔬 Optimization
 
@@ -300,9 +326,10 @@ am.print_status()
 
 - **Simple API**: AgentPy-shaped OOP lane + vectorized columnar views on one model
 - **High Performance**: Polars DataFrames; optional Numba (`ambr[perf]`) for scatters
+- **Device placement**: Keras-style `model.cpu(mode=...)` / `model.gpu()` — same `step` on CPU or GPU
 - **Speed lanes**: `am.print_status()` / `am.recommend(n)` / `ArrayKernelModel`
 - **Snapshot-view contract**: runtime checking that columnar updates preserve the intended schedule
-- **GPU backend**: CuPy array backend + batched ensemble for parameter sweeps and calibration
+- **GPU backend**: native view-API path + CuPy helpers + batched ensemble for calibration
 - **Optimization**: grid / random / Bayesian (SMAC) search, plus GPU-batched calibration
 - **Declarative reporting**: `model_reporters` / `agent_reporters` and a typed `params` schema
 - **Environments**: Support for grid, network, and continuous space environments
@@ -319,7 +346,7 @@ Working examples are available in the `examples/` directory:
 - **Virus Spread** — epidemiological SIR model
 - **Flocking** — Boids + optional tensor-lane variant
 - **Forest Fire** — cellular automata fire spread
-- **GPU quickstart** — `ArrayKernelModel` single-run arrays
+- **GPU quickstart** — `model.gpu().run()` on a view-API model, or `ArrayKernelModel`
 - **SMAC calibration** — basic / advanced Schelling multi-objective
 
 ## 📖 Documentation
