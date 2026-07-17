@@ -22,10 +22,11 @@ S+I+R conservation) **before** timing.
 Scaling to 10M agents with the GPU backend
 ------------------------------------------
 
-The 0.4 GPU backend (:doc:`api/gpu`, :doc:`api/gpu_ensemble`) changes the story
-at large *N*. The chart below sweeps **1k → 10M agents across 10 frameworks and
-four models** (Wealth Transfer, Random Walk, SIR Epidemic, and Schelling
-segregation), adding **AMBER (GPU)** as a series (NVIDIA RTX 3090):
+From **0.4.3**, AMBER (GPU) is the same vectorized ``Model`` + view-API
+``step`` under ``model.gpu().run()`` (:doc:`api/gpu`, :doc:`api/gpu_ensemble`) —
+not a separate kernel rewrite. The chart below sweeps **1k → 10M agents across
+10 frameworks and four models** (Wealth Transfer, Random Walk, SIR Epidemic,
+and Schelling segregation), adding **AMBER (GPU)** as a series (NVIDIA RTX 3090):
 
 .. image:: ../benchmarks/results/scaling_chart_gpu_schelling.png
    :alt: AMBER GPU + Schelling scaling to 10M agents across 10 frameworks
@@ -35,16 +36,17 @@ segregation), adding **AMBER (GPU)** as a series (NVIDIA RTX 3090):
   up. Wealth transfer: ~14 ms at 1M (≈330× the fastest CPU framework), 199 ms at
   10M (**3.1× faster than FLAME GPU 2**). Schelling: the **only** framework to
   reach 10M (847 ms; 19× AMBER-vectorized and 225× ``Agents.jl`` at 1M). SIR:
-  5.98 s at 10M (**~2× faster than FLAME GPU 2**), via an O(N) spatial-binning
-  kernel.
+  5.98 s at 10M (**~2× faster than FLAME GPU 2**).
 - **It is a large-N win, not a small-N one.** A ~90 ms fixed device cost means
   AMBER (GPU) only leads at scale: below ~100k–1M agents, AMBER (vectorized) or
   ``Agents.jl`` are faster, and on SIR FLAME GPU 2 wins at 1k–10k before AMBER
   overtakes it from 100k up. FLAME GPU 2 also runs Schelling via a
   ``MessageArray2D`` grid model in ``benchmarks/models/flamegpu_models.py``.
 
-Regenerate this chart from the recorded data with
-``python benchmarks/plot_scaling_with_gpu_schelling.py``.
+Regenerate this chart from recorded data with
+``python benchmarks/plot_scaling_with_gpu_schelling.py``. Machine-local JSON /
+``*5090*`` reruns under ``benchmarks/results/`` are gitignored — do not treat
+interim split logs as the published baseline.
 
 Calibration throughput
 ----------------------
