@@ -61,6 +61,7 @@ benchmarks/results/*.json
 benchmarks/results/*.log
 # Tagged host reruns (e.g. RTX 5090 interim splits) — not source of truth for the README
 benchmarks/results/*5090*
+benchmarks/results/_native_pull/
 benchmarks/results/summary_table_amber_*.md
 benchmarks/results/scaling_chart_amber_*.png
 benchmarks/results/amber_*.log
