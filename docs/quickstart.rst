@@ -18,6 +18,12 @@ Want speed / GPU without guessing? See :doc:`going_faster` and run::
    am.print_status()
    print(am.recommend(100_000))
 
+Place a run with Keras-style chaining (0.4.3; mode defaults to
+``vectorized``)::
+
+   results = model.cpu(mode="vectorized").run()
+   results = model.gpu().run()          # same step body; needs NVIDIA + CuPy
+
 For a CPU boost on Mac (no CUDA), install Numba::
 
    pip install 'ambr[perf]'
@@ -77,6 +83,9 @@ helper scheduled for removal in 1.0.
    * - Role
      - Canonical
      - Avoid / deprecated
+   * - Device / mode
+     - ``model.cpu(mode=...).run()`` / ``model.gpu().run()``
+     - ``run(backend=...)`` (use ``device=`` or fluent placement)
    * - Select
      - ``agents`` / ``.where`` / ``.at``
      - ``agents.select`` (use ``where`` / ``at`` / ``[mask]``)
@@ -134,17 +143,20 @@ vectorized way:
            # Track aggregate state at the model level.
            self.record_model('total_wealth', int(self.agents.wealth.sum()))
 
-   # Run the model
+   # Run on CPU (vectorized is the default mode)
    model = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
-   results = model.run()
+   results = model.cpu(mode="vectorized").run()
+   # Same class + step on GPU:
+   # results = model.gpu().run()
 
    # Inspect the results
    print("Final wealth distribution (first 10 agents):")
    print(results['agents'].select(['id', 'wealth']).head(10))
 
 That's the whole idiom. No per-agent loops, no ``update_agent_data`` calls,
-and no ``.item()`` ceremonies. The ``step()`` body is four Polars calls
-regardless of whether you have 100 agents or 100 000.
+and no ``.item()`` ceremonies. The ``step()`` body is a handful of view-API
+calls regardless of whether you have 100 agents or 100 000 — and the same
+body runs under ``.gpu()`` with device-resident columns (0.4.3).
 
 Understanding the results
 -------------------------
@@ -277,19 +289,23 @@ Next Steps
 ----------
 
 * :doc:`tutorial` — the longer-form walkthrough
+* :doc:`going_faster` — Numba, ``cpu()`` / ``gpu()``, array kernels, ensemble
 * :doc:`api/sequences` — the full view API reference
 * ``examples/`` — worked models you can copy from
 
 Key concepts
 ------------
 
-* **Views are always DataFrame-backed.** ``self.agents.wealth`` is a Polars
-  Series read from ``self.agents_df``; it stays in sync with every other
-  update automatically.
+* **Views are always DataFrame-backed** on CPU. ``self.agents.wealth`` is a
+  Polars Series read from ``self.agents_df``; under ``model.gpu().run()``
+  numeric columns are device-resident for the step body.
 * **Bulk create with** ``add_agents``. Avoid ``Agent(self, i); add_agent(agent)``
   loops unless you actually need a Python class per agent.
 * **Use** ``scatter_add`` **for resource flow.** ``view.col = ...`` handles
   deterministic updates; use ``scatter_add`` when ids may repeat and you
   want the deltas to sum.
+* **Place with** ``cpu()`` / ``gpu()`` **before** ``run()`` (or pass
+  ``device=`` / ``mode=`` to ``run``). Prefer fluent placement over legacy
+  ``backend=``.
 * **Reproducibility** comes from ``self.rng`` and ``self.random``,
   both seeded from ``parameters['seed']``.

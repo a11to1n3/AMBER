@@ -15,7 +15,9 @@ the per-step certificates:
 
 ``check`` records a :class:`~ambr.contract.ContractCertificate` per step; ``warn``
 also emits a warning per violation; ``raise`` stops on the first one. Mode
-``off`` (the default) adds zero overhead.
+``off`` (the default) adds zero overhead. Contract modes apply under both
+``model.cpu(...)`` and ``model.gpu()`` (certificates use the CPU snapshot at
+step boundaries).
 
 Write paths the monitor sees
 ----------------------------

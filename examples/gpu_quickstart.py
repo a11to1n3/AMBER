@@ -1,14 +1,36 @@
 #!/usr/bin/env python3
-"""Minimal GPU/CPU array model — the easy on-ramp for lane 4.
+"""GPU / CPU placement quickstart (AMBER 0.4.3+).
 
 Run::
 
     python examples/gpu_quickstart.py
 
-Uses CuPy when available, otherwise NumPy (same code).
+Two paths:
+
+1. **Native** — same view-API ``Model`` + ``step`` under ``.gpu().run()``
+   (device-resident columns). Falls back to CPU if CuPy is unavailable.
+2. **Array kernel** — :class:`ambr.ArrayKernelModel` for pure array state
+   (CuPy when available, else NumPy).
 """
 
 import ambr as am
+
+
+class WealthModel(am.Model):
+    """Canonical view-API wealth transfer (works under cpu() and gpu())."""
+
+    def setup(self):
+        n = int(self.p.get("n", 10_000))
+        self.add_agents(n, wealth=self.rng.integers(1, 10, size=n))
+
+    def step(self):
+        donors = self.agents.where(self.agents.wealth > 0)
+        if len(donors) == 0:
+            return
+        donors.wealth -= 1
+        ids = self.agents.ids.to_numpy()
+        recipients = self.rng.choice(ids, size=len(donors))
+        self.agents.at[recipients].scatter_add(wealth=1)
 
 
 class Drift(am.ArrayKernelModel):
@@ -29,6 +51,20 @@ if __name__ == "__main__":
     am.print_status()
     print("recommend(1_000_000):", am.recommend(1_000_000))
 
-    res = Drift({"n": 100_000, "steps": 20, "seed": 0, "dx": 0.01}).run()
-    print("info:", res.info)
+    cfg = {"n": 50_000, "steps": 20, "seed": 0, "show_progress": False}
+
+    # --- Native placement: same Model on CPU or GPU ---
+    cpu_res = WealthModel(cfg).cpu(mode="vectorized").run()
+    print("native CPU  info:", cpu_res.info)
+
+    if am.GPU_AVAILABLE:
+        gpu_res = WealthModel(cfg).gpu().run()
+        print("native GPU  info:", gpu_res.info)
+    else:
+        print("native GPU  skipped (CuPy / NVIDIA not available)")
+
+    # --- Array-kernel lane ---
+    drift = Drift({"n": 100_000, "steps": 20, "seed": 0, "dx": 0.01})
+    res = drift.run()
+    print("ArrayKernelModel info:", res.info)
     print(res.model.tail(3))

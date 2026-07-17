@@ -30,7 +30,10 @@ Features
   path preserves the intended update schedule (the zero-overhead default is off)
 * **CPU acceleration**: optional Numba (``pip install 'ambr[perf]'``) for
   ``scatter_add`` / subset writes — recommended on Mac without CUDA
-* **GPU backend**: a CuPy array backend with a NumPy fallback, plus a batched
+* **Device placement (0.4.3)**: Keras-style ``model.cpu(mode=...).run()`` /
+  ``model.gpu().run()`` — same view-API ``step`` on CPU or GPU (device-resident
+  columns); see :doc:`going_faster`
+* **GPU ensemble**: CuPy array helpers with NumPy fallback, plus a batched
   ensemble that runs ``B`` simulations in one device pass for calibration
 * **Flexible environments**: grid, continuous space, and network topologies
 * **Optimization**: grid / random / Bayesian (SMAC) search and GPU-batched calibration
@@ -69,14 +72,16 @@ Create your first model:
            recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
-   # Run the model
+   # Fluent placement (default mode is vectorized; run(mode=...) still overrides)
    model = WealthModel({'steps': 50, 'seed': 42})
-   results = model.run()
+   results = model.cpu(mode="vectorized").run()
+   # Same Model + step on GPU (NVIDIA + CuPy):  model.gpu().run()
    print(results.model)       # also results['model']
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for what is new in **0.4.3**.
+See :doc:`changelog` for what is new in **0.4.3** (native ``cpu()`` / ``gpu()``
+placement and device-resident view API).
 
 Table of Contents
 -----------------

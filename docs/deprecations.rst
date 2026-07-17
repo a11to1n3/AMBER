@@ -38,6 +38,9 @@ Canonical → legacy table
      - ``wrap=`` / ``.wrap``
    * - Prefer not using ``Population.create_batch_context()``
      - batch context helper (use view ``set``)
+   * - ``model.cpu(mode=...).run()`` / ``model.gpu().run()``
+     or ``run(device=...)``
+     - ``run(backend=...)`` (alias of device placement)
 
 Rules of thumb
 --------------
@@ -49,6 +52,8 @@ Rules of thumb
    ``agents.col = ...`` / ``agents.set`` / ``agents.commit``.
 3. **AgentPy-shaped OOP** (``AgentList``, methods, ``by_id``) remains fully
    supported; only the *parallel batch aliases* and record helpers go away.
+4. **Place runs with** ``cpu()`` / ``gpu()`` (or ``run(device=...)``), not
+   legacy ``backend=``.
 
 How warnings look
 -----------------

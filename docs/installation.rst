@@ -82,7 +82,8 @@ Other useful packages:
 
 * **jupyter** - interactive development
 * **plotly** - interactive visualizations
-* **cupy-cuda12x** - NVIDIA CUDA GPU array backend (not Apple Metal/MPS)
+* **cupy-cuda12x** - NVIDIA CUDA for ``model.gpu().run()`` and array kernels
+  (not Apple Metal/MPS)
 
 .. code-block:: bash
 
@@ -93,6 +94,8 @@ Verify lanes after install::
    import ambr as am
    am.print_status()
    print(am.recommend(10_000))
+   # Native GPU path (when CuPy + NVIDIA are present):
+   # results = MyVectorizedModel(...).gpu().run()
 
 Troubleshooting
 ---------------
@@ -112,7 +115,8 @@ Common Issues
 * ``pip install 'ambr[perf]'`` for Numba-accelerated ``scatter_add`` / subset writes
 * Installing numpy with accelerated BLAS libraries
 * Running on systems with sufficient RAM
-* For large-N array kernels on NVIDIA GPUs, see :doc:`going_faster` (CuPy)
+* For large-N runs on NVIDIA GPUs: same view-API model via
+  ``model.gpu().run()``, or ``ArrayKernelModel`` — see :doc:`going_faster` (CuPy)
 
 **SMAC / advanced install**: If SMAC fails with a scikit-learn ``DTYPE`` error,
 reinstall the pinned extra::

@@ -5,6 +5,9 @@ Batches a ``(B simulations × N agents)`` ensemble into a single device pass —
 the natural fit for derivative-free calibration, where you evaluate thousands of
 small replicate runs.
 
+This is **not** the single-run path. For one large simulation with the
+view API, use ``model.gpu().run()`` instead (:doc:`gpu`, :doc:`../going_faster`).
+
 .. code-block:: python
 
    import ambr as am
