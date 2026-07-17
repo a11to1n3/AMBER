@@ -201,8 +201,14 @@ python benchmarks/run_all_frameworks.py --agents 500 1000 5000 --steps 50 --runs
 **Outputs:**
 
 - `results/*.json` — raw timings (**gitignored**; regenerate when you need them)
+- `results/*.log`, `results/*5090*`, `results/summary_table_amber_*.md` —
+  machine-local / interim reruns (**gitignored**; never the published baseline)
 - `results/summary_table_all.md` — the table above (checked in when updated)
 - `results/scaling_chart_all.png` — the log-log chart above
+
+**AMBER (GPU) (0.4.3+):** the main harness times the same vectorized models as
+AMBER (vectorized) via `model.gpu().run()`. Do not keep or cite interim split
+logs from before that change as current GPU numbers.
 
 **Dependencies:**
 
