@@ -78,6 +78,9 @@ MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
         "infection_radius": 5.0,
         "transmission_rate": 0.1,
         "recovery_time": 14,
+        # Cell-list infection (AMBER vectorized/GPU); caps infected retained
+        # per cell under extreme density so large-N stays O(N·K).
+        "max_per_cell": 64,
     },
     "schelling": {
         "density": 0.8,        # fraction of grid cells occupied
@@ -785,7 +788,7 @@ def _parse_args():
 
 # Assumed asymptotic complexity per model, used only for the *first* retirement
 # look-ahead (before two measured points exist to fit an empirical slope).
-MODEL_EXPONENT = {"wealth_transfer": 1.0, "random_walk": 1.0, "sir_epidemic": 2.0,
+MODEL_EXPONENT = {"wealth_transfer": 1.0, "random_walk": 1.0, "sir_epidemic": 1.0,
                   "schelling": 1.0}
 
 

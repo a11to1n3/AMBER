@@ -293,13 +293,132 @@ class AMBERVectorizedWealthTransfer(am.Model):
         return (2 * weighted_sum) / (n * sorted_vals.sum()) - (n + 1) / n
 
 
+def _sir_infect_cell_list(
+    xp,
+    x,
+    y,
+    status,
+    status_s,
+    status_i,
+    world_size,
+    radius,
+    transmission,
+    rng,
+    max_per_cell=64,
+    mem_budget_bytes=128 * 1024 * 1024,
+):
+    """Fixed-radius infection via a uniform-grid cell list (O(N · K)).
+
+    Cell side equals ``radius``, so every agent within the infection radius of
+    a susceptible lives in that susceptible's 3×3 neighbour block. Agents are
+    scattered into a ``(n_cells, K)`` table with ``K = min(max_occupancy,
+    max_per_cell)`` so peak work/memory stays linear in N even when the
+    benchmark keeps a fixed world (density grows with N). Under extreme
+    overcrowding some co-cell agents are skipped — same practical trade-off as
+    capped spatial messaging.
+
+    Same high-level semantics as the old all-pairs path: synchronous snapshot;
+    a susceptible becomes infected if *any* retained infected neighbour is
+    within radius and passes an independent Bernoulli(transmission) draw.
+    """
+    n = int(x.shape[0])
+    if n == 0:
+        return status, None
+
+    is_i = status == status_i
+    is_s = status == status_s
+    if int(xp.count_nonzero(is_i)) == 0 or int(xp.count_nonzero(is_s)) == 0:
+        return status, None
+
+    r2 = float(radius) * float(radius)
+    ncell = max(1, int(float(world_size) // float(radius)))
+    cs = float(world_size) / float(ncell)
+    ncell2 = ncell * ncell
+    K = max(1, int(max_per_cell))
+
+    cx = xp.clip((x / cs).astype(xp.int64), 0, ncell - 1)
+    cy = xp.clip((y / cs).astype(xp.int64), 0, ncell - 1)
+
+    # Occupancy table holds *infected only* so a K-cap never drops the seeds
+    # that drive the epidemic (a full-population table under high density can
+    # exclude the few I agents from every cell's retained slots).
+    inf_idx = xp.nonzero(is_i)[0]
+    cell_i = cx[inf_idx] * ncell + cy[inf_idx]
+    order_i = xp.argsort(cell_i)
+    sorted_cell_i = cell_i[order_i]
+    sorted_inf = inf_idx[order_i]
+    counts_i = xp.bincount(cell_i, minlength=ncell2)
+    if int(counts_i.max()) <= 0:
+        return status, None
+
+    starts_i = xp.zeros(ncell2, dtype=xp.int64)
+    if ncell2 > 1:
+        starts_i[1:] = xp.cumsum(counts_i)[:-1]
+    n_inf = int(inf_idx.shape[0])
+    slot_i = xp.arange(n_inf, dtype=xp.int64) - starts_i[sorted_cell_i]
+    keep_i = slot_i < K
+    table = xp.full((ncell2, K), -1, dtype=xp.int64)
+    table[sorted_cell_i[keep_i], slot_i[keep_i]] = sorted_inf[keep_i]
+
+    # Susceptible cell coords for the 3×3 gather.
+    sus_idx = xp.nonzero(is_s)[0]
+    n_sus = int(sus_idx.shape[0])
+    cx_s = cx[sus_idx]
+    cy_s = cy[sus_idx]
+    ncols = 9 * K
+    # ~32 B per (agent, candidate) for ids + coords + masks + draws.
+    chunk = max(1, int(mem_budget_bytes // max(ncols * 32, 1)))
+    newly_flags = xp.zeros(n, dtype=bool)
+
+    offsets = (
+        (-1, -1), (-1, 0), (-1, 1),
+        (0, -1), (0, 0), (0, 1),
+        (1, -1), (1, 0), (1, 1),
+    )
+
+    for start in range(0, n_sus, chunk):
+        end = min(start + chunk, n_sus)
+        local = slice(start, end)
+        idx = sus_idx[local]
+        m = int(idx.shape[0])
+        cxi = cx_s[local]
+        cyi = cy_s[local]
+        xi = x[idx]
+        yi = y[idx]
+
+        cand = xp.empty((m, ncols), dtype=xp.int64)
+        col = 0
+        for dxc, dyc in offsets:
+            ncx = xp.clip(cxi + dxc, 0, ncell - 1)
+            ncy = xp.clip(cyi + dyc, 0, ncell - 1)
+            cand[:, col:col + K] = table[ncx * ncell + ncy]
+            col += K
+
+        valid = cand >= 0
+        safe = xp.where(valid, cand, 0)
+        dx = x[safe] - xi[:, None]
+        dy = y[safe] - yi[:, None]
+        within = ((dx * dx + dy * dy) <= r2) & valid
+        draws = rng.random((m, ncols)) < transmission
+        hit = (within & draws).any(axis=1)
+        newly_flags[idx] = hit
+
+    if not bool(newly_flags.any()):
+        return status, None
+
+    status = xp.asarray(status).copy()
+    status[newly_flags] = status_i
+    return status, newly_flags
+
+
 class AMBERVectorizedSIRModel(am.Model):
     """SIR epidemic on a continuous 2D world using columnar updates.
 
     Movement, infection, and recovery use the view API (``agents.array`` /
-    column assignment). Infection is an all-pairs distance test that runs on
-    NumPy or CuPy via ``self.xp`` so the same step body works under
-    ``model.cpu()`` and ``model.gpu()``.
+    column assignment). Infection uses a **uniform-grid cell list** (O(N · k)
+    fixed-radius query) on NumPy or CuPy via ``self.xp``, so the same step
+    body works under ``model.cpu()`` and ``model.gpu()`` and scales past the
+    all-pairs O(N²) memory wall.
     """
 
     STATUS_S = 0
@@ -339,24 +458,16 @@ class AMBERVectorizedSIRModel(am.Model):
         x = xp.clip(x + self.rng.uniform(-speed, speed, n), 0.0, world_size)
         y = xp.clip(y + self.rng.uniform(-speed, speed, n), 0.0, world_size)
 
-        # --- infection (synchronous: snapshot S/I, then apply) ---
-        inf = status == self.STATUS_I
-        sus = status == self.STATUS_S
-        xi, yi = x[inf], y[inf]
-        xs, ys = x[sus], y[sus]
-        if int(xi.size) and int(xs.size):
-            dx = xs[:, None] - xi[None, :]
-            dy = ys[:, None] - yi[None, :]
-            within = (dx * dx + dy * dy) <= radius ** 2
-            draws = self.rng.random((int(xs.size), int(xi.size))) < transmission
-            hit = (within & draws).any(axis=1)
-            sus_idx = xp.nonzero(sus)[0]
-            newly = sus_idx[hit]
-            if int(newly.size):
-                status = xp.asarray(status).copy()
-                infection_time = xp.asarray(infection_time).copy()
-                status[newly] = self.STATUS_I
-                infection_time[newly] = 0
+        # --- infection (synchronous cell-list; scales with N) ---
+        status, newly = _sir_infect_cell_list(
+            xp, x, y, status,
+            self.STATUS_S, self.STATUS_I,
+            world_size, radius, transmission, self.rng,
+            max_per_cell=int(self.p.get("max_per_cell", 64)),
+        )
+        if newly is not None:
+            infection_time = xp.asarray(infection_time).copy()
+            infection_time[newly] = 0
 
         # --- recovery ---
         infection_time = xp.where(

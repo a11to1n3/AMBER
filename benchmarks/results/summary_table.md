@@ -67,6 +67,9 @@ _NVIDIA RTX 5090, 50 steps, 10 runs (trimmed mean). AMBER (GPU) / AMBER (vectori
 ## Notes
 
 - **AMBER (GPU)** is not a separate model rewrite: same `step` as vectorized, placed with `.gpu().run()` (CuPy / NVIDIA).
-- **SIR (all-pairs):** AMBER vectorized/GPU stop at 10k (pair-matrix OOM). FLAME GPU 2 and others may use different contact representations at large N.
+- **SIR:** AMBER vectorized/GPU use a **cell-list** fixed-radius infection
+  (O(N·K), `max_per_cell=64`) so large-N no longer OOMs on an all-pairs
+  S×I matrix. Re-run the harness to refresh SIR columns after that change.
+  FLAME GPU 2 may still use a different contact representation.
 - Object-oriented frameworks often drop out above 100k–1M (budget/OOM).
 - Reproduce: `python benchmarks/run_all_frameworks.py` with agents `1000 10000 100000 1000000 10000000`, then `python benchmarks/plot_scaling_with_gpu_schelling.py`.
