@@ -32,15 +32,14 @@ Model             AMBER (GPU)        AMBER (vectorized)     FLAME GPU 2        N
 Wealth            3.91 s / 193 s     6.44 s / 214 s         28 ms / 226 ms     Agents.jl 8.53 s @ 1M
 Random walk       198 ms / 2.04 s    531 ms / 6.23 s        20 ms / 201 ms     mesa-frames 3.55 s / 20.8 s
 Schelling         428 ms / 5.17 s    2.64 s / 59.8 s        2.06 s / 20.8 s    mesa-frames 4.33 s / 86.9 s
-SIR               re-run pending     re-run pending         108 ms / 3.80 s    —
+SIR (cell-list)   882 ms / 9.39 s    31.3 s / —             108 ms / 3.80 s    —
 ================  =================  =====================  =================  ===========================
 
 - **Schelling:** AMBER (GPU) is the fastest measured row at 1M and 10M.
 - **Wealth / random walk:** FLAME GPU 2 leads; AMBER (GPU) still leads other
   Python-hosted stacks that reach those scales.
-- **SIR:** AMBER vectorized/GPU infection is a **cell-list** fixed-radius
-  query (O(N·K)), not all-pairs — large-N no longer OOMs. Refresh the SIR
-  columns with a harness re-run; FLAME may still use a different contact model.
+- **SIR:** AMBER uses **cell-list** infection (GPU reaches 10M at 9.39 s).
+  FLAME still leads; vectorized 10M exceeded the 120 s/run budget in this pass.
 - **Reproduce:**
   ``python benchmarks/run_all_frameworks.py --agents 1000 10000 100000 1000000 10000000 --steps 50 --runs 10``
   then ``python benchmarks/plot_scaling_with_gpu_schelling.py``.
