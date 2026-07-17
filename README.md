@@ -49,26 +49,31 @@ and the documented SIR update-semantics caveat.
 
 ### Scaling to 10M agents with the GPU backend
 
-From **0.4.3**, AMBER (GPU) is the **same** vectorized `Model` + view-API `step`
-under Keras-style placement (`model.gpu().run()`), not a separate kernel rewrite.
-The sweep covers **1k → 10M agents across 10 frameworks and four models** —
-adding **AMBER (GPU)** and a **Schelling segregation** workload (NVIDIA RTX 3090
-for the GPU series):
+From **0.4.3**, the product API for a single large run is the **same** vectorized
+`Model` + view-API `step` under Keras-style placement
+(`model.gpu().run()` / `model.cpu(mode="vectorized").run()`), not a separate
+kernel rewrite. The main harness times that path in
+[`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.py).
 
-![AMBER GPU + Schelling scaling to 10M agents across 10 frameworks](benchmarks/results/scaling_chart_gpu_schelling.png)
+**Published figure (historical — not 0.4.3 native timings).** The chart below is
+a multi-framework 1k→10M sweep (four models, including Schelling) measured with
+the **pre–0.4.3** AMBER (GPU) harness on an NVIDIA RTX 3090 — hand-rolled
+on-device loops / scale helpers, **not** `model.gpu().run()` on the view-API
+models. Keep it only as a qualitative large-N comparison (CPU frameworks drop
+out; FLAME GPU 2 is the other GPU peer). **Do not cite the per-point ms or
+speedups as current AMBER (GPU) performance.**
 
-- **AMBER (GPU) reaches 10M agents on all four models** while CPU frameworks blow
-  up. Wealth transfer: ~14 ms at 1M (≈330× the fastest CPU framework), 199 ms at
-  10M (**3.1× faster than FLAME GPU 2**). Schelling: the **only** framework to
-  reach 10M (847 ms; 19× AMBER-vectorized and 225× Agents.jl at 1M). SIR: 5.98 s
-  at 10M (**~2× faster than FLAME GPU 2**).
-- **It's a large-N win, not a small-N one.** A ~90 ms fixed device cost means
-  AMBER (GPU) only leads at scale: below ~100k–1M, AMBER (vectorized) or Agents.jl
-  are faster, and on SIR FLAME GPU 2 wins at 1k–10k before AMBER overtakes it from
-  100k up. FLAME GPU 2 also runs Schelling via a `MessageArray2D` grid model
-  (`benchmarks/models/flamegpu_models.py`); re-benchmark on CUDA to refresh the chart.
+![AMBER GPU + Schelling scaling to 10M agents across 10 frameworks (historical pre-0.4.3 GPU harness)](benchmarks/results/scaling_chart_gpu_schelling.png)
 
-Regenerate with `python benchmarks/plot_scaling_with_gpu_schelling.py`.
+- **API today:** write the view-API `step` once; place with `.gpu().run()` (needs
+  NVIDIA + CuPy). FLAME GPU 2 Schelling uses a `MessageArray2D` grid model in
+  `benchmarks/models/flamegpu_models.py`.
+- **Refresh numbers:** re-run on CUDA with the current harness, e.g.
+  `python benchmarks/run_all_frameworks.py --frameworks "AMBER (GPU)" "AMBER (vectorized)" "FLAME GPU 2" ...`
+  then replot (`python benchmarks/plot_scaling_with_gpu_schelling.py` once a
+  matching JSON is regenerated). Machine-local `*5090*` / interim JSON under
+  `benchmarks/results/` is gitignored and is not the published baseline until
+  checked in with an updated chart and prose.
 
 ## 🚀 Quick Start
 
