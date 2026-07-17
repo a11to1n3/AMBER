@@ -55,25 +55,35 @@ From **0.4.3**, the product API for a single large run is the **same** vectorize
 kernel rewrite. The main harness times that path in
 [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.py).
 
-**Published figure (historical — not 0.4.3 native timings).** The chart below is
-a multi-framework 1k→10M sweep (four models, including Schelling) measured with
-the **pre–0.4.3** AMBER (GPU) harness on an NVIDIA RTX 3090 — hand-rolled
-on-device loops / scale helpers, **not** `model.gpu().run()` on the view-API
-models. Keep it only as a qualitative large-N comparison (CPU frameworks drop
-out; FLAME GPU 2 is the other GPU peer). **Do not cite the per-point ms or
-speedups as current AMBER (GPU) performance.**
+**Native GPU vs vectorized (RTX 5090, 50 steps, 10 runs, trimmed mean).** Same
+classes and `step` on both devices — GPU via `model.gpu().run()`. Full table:
+[`benchmarks/results/summary_table_native_gpu.md`](benchmarks/results/summary_table_native_gpu.md).
 
-![AMBER GPU + Schelling scaling to 10M agents across 10 frameworks (historical pre-0.4.3 GPU harness)](benchmarks/results/scaling_chart_gpu_schelling.png)
+| Model | Device | 1k | 10k | 100k | 1M | 10M |
+|---|---|---:|---:|---:|---:|---:|
+| Wealth transfer | GPU | **23 ms** | **47 ms** | **334 ms** | **3.91 s** | **193 s** |
+| | vectorized | 30 ms | 76 ms | 585 ms | 6.44 s | 214 s |
+| Random walk | GPU | 29 ms | 31 ms | **47 ms** | **198 ms** | **2.04 s** |
+| | vectorized | **3.9 ms** | **7.3 ms** | 54 ms | 531 ms | 6.23 s |
+| Schelling | GPU | 74 ms | 77 ms | **108 ms** | **428 ms** | **5.17 s** |
+| | vectorized | **12 ms** | **24 ms** | 201 ms | 2.64 s | 59.8 s |
+| SIR (all-pairs) | GPU | 82 ms | **82 ms** | — | — | — |
+| | vectorized | **62 ms** | 736 ms | — | — | — |
 
-- **API today:** write the view-API `step` once; place with `.gpu().run()` (needs
-  NVIDIA + CuPy). FLAME GPU 2 Schelling uses a `MessageArray2D` grid model in
-  `benchmarks/models/flamegpu_models.py`.
-- **Refresh numbers:** re-run on CUDA with the current harness, e.g.
-  `python benchmarks/run_all_frameworks.py --frameworks "AMBER (GPU)" "AMBER (vectorized)" "FLAME GPU 2" ...`
-  then replot (`python benchmarks/plot_scaling_with_gpu_schelling.py` once a
-  matching JSON is regenerated). Machine-local `*5090*` / interim JSON under
-  `benchmarks/results/` is gitignored and is not the published baseline until
-  checked in with an updated chart and prose.
+![AMBER native GPU vs vectorized scaling (RTX 5090)](benchmarks/results/scaling_chart_native_gpu.png)
+
+- **Where GPU helps:** random walk (~2.7× at 1M, ~3× at 10M) and Schelling
+  (~6× at 1M, ~12× at 10M). Light kernels (wealth) stay close — device overhead
+  can dominate.
+- **SIR:** all-pairs contact matrix OOMs above 10k on this host (vectorized and
+  GPU); not a large-N scaling claim for that topology.
+- **Reproduce:** on CUDA,
+  `python benchmarks/run_all_frameworks.py --frameworks "AMBER (GPU)" "AMBER (vectorized)" --agents 1000 10000 100000 1000000 10000000 --steps 50 --runs 10`,
+  then `python benchmarks/plot_scaling_with_gpu_schelling.py --input … --output benchmarks/results/scaling_chart_native_gpu.png`.
+- **Historical multi-framework chart** (pre–0.4.3 hand-rolled GPU harness on RTX
+  3090, not `model.gpu().run()`):
+  [`scaling_chart_gpu_schelling.png`](benchmarks/results/scaling_chart_gpu_schelling.png)
+  — qualitative only; do not cite its per-point ms as current native GPU times.
 
 ## 🚀 Quick Start
 

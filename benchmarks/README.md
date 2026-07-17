@@ -205,6 +205,15 @@ python benchmarks/run_all_frameworks.py --agents 500 1000 5000 --steps 50 --runs
   machine-local / interim reruns (**gitignored**; never the published baseline)
 - `results/summary_table_all.md` — the table above (checked in when updated)
 - `results/scaling_chart_all.png` — the log-log chart above
+- `results/summary_table_native_gpu.md` / `scaling_chart_native_gpu.png` —
+  AMBER GPU vs vectorized 1k→10M (native `model.gpu().run()`, checked in)
+
+**AMBER (GPU) (0.4.3+):** the main harness times the same vectorized models as
+AMBER (vectorized) via `model.gpu().run()`. Published native GPU vs vectorized
+scaling (RTX 5090): [`results/summary_table_native_gpu.md`](results/summary_table_native_gpu.md)
+and [`results/scaling_chart_native_gpu.png`](results/scaling_chart_native_gpu.png).
+Machine-local `*5090*` / interim JSON under `results/` is gitignored — regenerate
+rather than treating those paths as the baseline.
 
 **AMBER (GPU) (0.4.3+):** the main harness times the same vectorized models as
 AMBER (vectorized) via `model.gpu().run()`. Do not keep or cite interim split
