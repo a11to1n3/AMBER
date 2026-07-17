@@ -1,6 +1,6 @@
 # Large-N multi-framework scaling
 
-_NVIDIA RTX 5090, 50 steps, 10 runs (trimmed mean). AMBER (GPU) / AMBER (vectorized) use 0.4.3 native placement (`model.gpu().run()` / `cpu(mode="vectorized")`). AMBER SIR uses **cell-list** fixed-radius infection (O(N·K), `max_per_cell=64`). Other frameworks from the same host’s large-N sweep. Lower is better._
+_NVIDIA RTX 5090, 50 steps, trimmed mean (10 runs; vectorized SIR @ 10M used 3 runs). AMBER native placement; SIR = cell-list (max_per_cell=64). Lower is better._
 
 **Chart:** [`scaling_chart.png`](scaling_chart.png)
 
@@ -39,7 +39,7 @@ _NVIDIA RTX 5090, 50 steps, 10 runs (trimmed mean). AMBER (GPU) / AMBER (vectori
 | Framework | 1000 | 10000 | 100000 | 1000000 | 10000000 |
 |---|---:|---:|---:|---:|---:|
 | AMBER (GPU) | 199 ms | 85 ms | 163 ms | 882 ms | 9.39 s |
-| AMBER (vectorized) | 137 ms | 433 ms | 3.50 s | 31.3 s | — |
+| AMBER (vectorized) | 137 ms | 433 ms | 3.50 s | 31.3 s | 308 s |
 | AMBER (loop) | 1.56 s | — | — | — | — |
 | mesa-frames | 333 ms | 2.83 s | — | — | — |
 | FLAME GPU 2 | **12 ms** | **13 ms** | **20 ms** | **108 ms** | **3.80 s** |
@@ -66,7 +66,7 @@ _NVIDIA RTX 5090, 50 steps, 10 runs (trimmed mean). AMBER (GPU) / AMBER (vectori
 
 ## Notes
 
-- **AMBER (GPU)** is the same view-API `step` under `.gpu().run()` (CuPy / NVIDIA).
-- **SIR:** AMBER uses cell-list infection (not all-pairs). Vectorized 10M was above the 120s/run budget in this pass (1M = 31.3 s); GPU reaches 10M at ~9.4 s.
-- Object-oriented frameworks often drop out above 100k–1M (budget/OOM).
+- **AMBER (GPU)** = same view-API step under `.gpu().run()`.
+- **SIR:** cell-list infection. AMBER GPU 10M = 9.39 s; vectorized 10M = 308 s; FLAME 10M = 3.80 s.
+- Object OOP frameworks often drop out above 100k–1M.
 - Reproduce: `python benchmarks/run_all_frameworks.py --agents 1000 10000 100000 1000000 10000000 --steps 50 --runs 10`.

@@ -34,14 +34,14 @@ Correctness gates:
 | Wealth | 3.91 s / 193 s | 6.44 s / 214 s | **28 ms / 226 ms** | Agents.jl 8.53 s @ 1M |
 | Random walk | 198 ms / 2.04 s | 531 ms / 6.23 s | **20 ms / 201 ms** | mesa-frames 3.55 s / 20.8 s |
 | Schelling | **428 ms / 5.17 s** | 2.64 s / 59.8 s | 2.06 s / 20.8 s | mesa-frames 4.33 s / 86.9 s |
-| SIR (cell-list) | 882 ms / **9.39 s** | 31.3 s / — | **108 ms / 3.80 s** | — |
+| SIR (cell-list) | 882 ms / **9.39 s** | 31.3 s / 308 s | **108 ms / 3.80 s** | — |
 
 - **Schelling:** AMBER (GPU) is the fastest row at 1M and 10M among measured
   frameworks (beats FLAME GPU 2 and mesa-frames).
 - **Wealth / random walk:** FLAME GPU 2 leads; AMBER (GPU) still beats other
   Python-hosted stacks that reach those scales.
-- **SIR:** AMBER uses **cell-list** infection (scales to 10M on GPU at 9.39 s).
-  FLAME still leads; vectorized 10M was above the 120 s/run budget (1M = 31.3 s).
+- **SIR:** AMBER uses **cell-list** infection. GPU reaches 10M at 9.39 s
+  (~33× faster than vectorized’s 308 s); FLAME still leads at 3.80 s.
 - **API:** write the view-API `step` once; place with `.cpu(mode="vectorized")`
   or `.gpu()`. Details: [`benchmarks/README.md`](benchmarks/README.md).
 

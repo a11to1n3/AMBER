@@ -116,7 +116,7 @@ models under `model.gpu().run()` (0.4.3+).
 | Wealth | 3.91 s / 193 s | 6.44 s / 214 s | **28 ms / 226 ms** | Agents.jl 8.53 s @ 1M |
 | Random walk | 198 ms / 2.04 s | 531 ms / 6.23 s | **20 ms / 201 ms** | mesa-frames 3.55 s / 20.8 s |
 | Schelling | **428 ms / 5.17 s** | 2.64 s / 59.8 s | 2.06 s / 20.8 s | mesa-frames 4.33 s / 86.9 s |
-| SIR (cell-list) | 882 ms / **9.39 s** | 31.3 s / — | **108 ms / 3.80 s** | — |
+| SIR (cell-list) | 882 ms / **9.39 s** | 31.3 s / 308 s | **108 ms / 3.80 s** | — |
 
 ## Interpreting the numbers
 
@@ -124,8 +124,7 @@ models under `model.gpu().run()` (0.4.3+).
 * **Wealth / random walk:** FLAME GPU 2 leads; AMBER (GPU) still leads other
   Python-hosted stacks that reach those scales. Light kernels pay GPU overhead.
 * **SIR:** AMBER uses **cell-list** infection (O(N·K), `max_per_cell=64`).
-  GPU reaches 10M at 9.39 s; FLAME still leads. Vectorized 10M was above the
-  120 s/run budget (1M = 31.3 s).
+  GPU 10M = 9.39 s (~33× vs vectorized 308 s); FLAME still leads at 3.80 s.
 * Object OOP frameworks (Mesa, AgentPy, …) typically drop out above 100k–1M.
 
 **Sync vs async SIR update semantics.** AMBER (vectorized) uses a
