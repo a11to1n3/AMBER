@@ -18,17 +18,21 @@ subprocess and its stdout is parsed. All numbers are trimmed means of multiple
 runs per configuration; raw samples and summary intervals are preserved in the
 JSON artifact.
 
-Outputs (in ``benchmarks/results/``):
+Outputs (in ``benchmarks/results/``), tagged by ``--tag`` (default ``all``):
 
-  * ``benchmark_results_all.json``   — averaged per-configuration timings
-  * ``summary_table_all.md``         — side-by-side markdown table
-  * ``scaling_chart_all.png``        — log-log scaling plot per model
+  * ``benchmark_results_{tag}.json`` — averaged per-configuration timings (gitignored)
+  * ``summary_table_{tag}.md``       — side-by-side markdown table
+  * ``scaling_chart_{tag}.png``      — log-log scaling plot per model
+
+Published baseline uses large-N agents (1k→10M) and is checked in as
+``summary_table.md`` / ``scaling_chart.png`` after review.
 
 Usage::
 
     python benchmarks/run_all_frameworks.py
     python benchmarks/run_all_frameworks.py --quick   # shorter run
-    python benchmarks/run_all_frameworks.py --agents 500 1000 5000 --steps 50
+    python benchmarks/run_all_frameworks.py \
+        --agents 1000 10000 100000 1000000 10000000 --steps 50 --runs 10
 """
 
 from __future__ import annotations

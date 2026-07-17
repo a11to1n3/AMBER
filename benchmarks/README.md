@@ -98,122 +98,61 @@ while the other implementations use sequential/asynchronous infection. Treat
 the SIR timings as a comparison of the same spatial epidemic workload class,
 not as proof of identical stochastic trajectories.
 
-## Latest verified-correct results — all seven frameworks
+## Published results — large-N multi-framework (1k→10M)
 
-Run on 2026-06-04, Python 3.12.7, Julia 1.12.3, 50 executed steps per
-simulation, seeded runs, 10 runs averaged (slowest trimmed). Apple Silicon.
+**One** checked-in performance plot and table. NVIDIA RTX 5090, 50 steps,
+10 runs (trimmed mean). Ten frameworks. AMBER (GPU) is the same view-API
+models under `model.gpu().run()` (0.4.3+).
 
-**Execution time — Wealth Transfer**
+- Chart: [`results/scaling_chart.png`](results/scaling_chart.png)
+- Full per-model tables: [`results/summary_table.md`](results/summary_table.md)
 
-| Framework | 500 | 1000 | 5000 |
-|---|---|---|---|
-| Agents.jl | **0.5 ms** | **1.3 ms** | **7.2 ms** |
-| AMBER (vectorized) | 4.2 ms | 6.0 ms | 20 ms |
-| AMBER (loop) | 16 ms | 32 ms | 169 ms |
-| SimPy | 18 ms | 37 ms | 216 ms |
-| Melodie | 18 ms | 36 ms | 177 ms |
-| AgentPy | 26 ms | 51 ms | 266 ms |
-| Mesa | 254 ms | 969 ms | 22.61 s |
+![Large-N multi-framework scaling](results/scaling_chart.png)
 
-**Execution time — Random Walk**
+**At 1M / 10M (where each framework still finishes):**
 
-| Framework | 500 | 1000 | 5000 |
-|---|---|---|---|
-| Agents.jl | **0.2 ms** | **0.3 ms** | **1.6 ms** |
-| AMBER (vectorized) | 2.4 ms | 2.7 ms | 4.8 ms |
-| Mesa | 13 ms | 25 ms | 131 ms |
-| AgentPy | 14 ms | 28 ms | 141 ms |
-| SimPy | 22 ms | 45 ms | 254 ms |
-| AMBER (loop) | 33 ms | 66 ms | 332 ms |
-| Melodie | 101 ms | 205 ms | 1.03 s |
-
-**Execution time — SIR Epidemic**
-
-| Framework | 500 | 1000 | 5000 |
-|---|---|---|---|
-| Agents.jl | **4.2 ms** | **37 ms** | 813 ms |
-| AMBER (vectorized) | 88 ms | 112 ms | **497 ms** |
-| SimPy | 107 ms | 411 ms | 4.67 s |
-| AgentPy | 197 ms | 826 ms | 10.98 s |
-| AMBER (loop) | 140 ms | 799 ms | 9.53 s |
-| Mesa | 265 ms | 1.07 s | 16.63 s |
-| Melodie | 595 ms | 1.98 s | 20.09 s |
-
-**Ratio of each framework's time to `AMBER (vectorized)`, averaged across
-all three agent counts above (lower means that framework is closer to
-AMBER vectorized; values < 1 mean it beats AMBER vectorized):**
-
-| Framework | Wealth Transfer | Random Walk | SIR Epidemic |
-|---|---|---|---|
-| Agents.jl | 0.2× (faster) | 0.2× (faster) | 0.7× (faster on average) |
-| AMBER (loop) | 5.9× | 35.7× | 9.3× |
-| SimPy | 7.1× | 26.2× | 4.8× |
-| Melodie | 6.3× | 110.6× | 21.6× |
-| AgentPy | 9.3× | 15.3× | 10.6× |
-| Mesa | 450.9× | 14.0× | 15.4× |
-
-See [`results/scaling_chart_all.png`](results/scaling_chart_all.png) for the
-log-log scaling plot (the wider the gap at the right edge of each subplot,
-the better AMBER scales).
-
-![All-framework scaling](results/scaling_chart_all.png)
+| Model | AMBER (GPU) | AMBER (vectorized) | FLAME GPU 2 | Next best CPU-scale peer |
+|---|---:|---:|---:|---:|
+| Wealth | 3.91 s / 193 s | 6.44 s / 214 s | **28 ms / 226 ms** | Agents.jl 8.53 s @ 1M |
+| Random walk | 198 ms / 2.04 s | 531 ms / 6.23 s | **20 ms / 201 ms** | mesa-frames 3.55 s / 20.8 s |
+| Schelling | **428 ms / 5.17 s** | 2.64 s / 59.8 s | 2.06 s / 20.8 s | mesa-frames 4.33 s / 86.9 s |
+| SIR (all-pairs) | ≤10k only | ≤10k only | **108 ms / 3.80 s** | — |
 
 ## Interpreting the numbers
 
-**Who wins each model at the 5000-agent point (the realistic ABM scale):**
-
-* **Wealth transfer**: Agents.jl wins (7.2 ms), AMBER (vectorized) is the
-  fastest Python-hosted implementation (20 ms).
-  Julia's JIT compiler wins the microbenchmark because the per-step work
-  is so small (two array updates) that Polars' per-expression overhead
-  dominates. Every other Python-hosted implementation is roughly 9× to
-  1130× slower.
-* **Random walk**: Agents.jl wins (1.6 ms), AMBER (vectorized) is the
-  fastest Python-hosted implementation (4.8 ms).
-* **SIR epidemic**: AMBER (vectorized) is the fastest Python-hosted row in the
-  mixed headline grid.  The SIR rows do not all use the same update schedule,
-  so use this row as workload-class timing only; use the split sync/async SIR
-  runner below for semantics-aligned evidence.
-
-**Overall**: AMBER (vectorized) is the fastest Python-hosted framework on
-every headline model at every tested scale. Agents.jl wins the cheaper wealth
-and random-walk microbenchmarks. The SIR headline remains schedule-mixed, so it
-should not be read as an equivalent-trajectory AMBER-over-Julia claim.
+* **Schelling:** AMBER (GPU) is the fastest measured row at 1M and 10M.
+* **Wealth / random walk:** FLAME GPU 2 leads; AMBER (GPU) still leads other
+  Python-hosted stacks that reach those scales. Light kernels pay GPU overhead.
+* **SIR:** AMBER’s all-pairs topology OOMs above 10k. FLAME large-N SIR is not
+  the same contact representation — workload-class only.
+* Object OOP frameworks (Mesa, AgentPy, …) typically drop out above 100k–1M.
 
 **Sync vs async SIR update semantics.** AMBER (vectorized) uses a
-**synchronous** update step for the infection phase — it snapshots the
-infected/susceptible sets at the start of the step, then applies all
-infection events simultaneously. The other frameworks (including AMBER
-loop) use **asynchronous / sequential** update — a newly infected agent
-can already infect its own neighbours later in the same step. Both are
-valid SIR discretizations; the convention difference is why the correctness
-audit checks population conservation and parameter routing rather than
-claiming identical trajectories.
+**synchronous** infection phase; several peers use sequential/async infection.
+Both are valid discretizations; correctness checks population conservation
+rather than identical trajectories. Use the split SIR runner below for
+semantics-aligned evidence.
 
 ## Reproducing these numbers
 
-**One-command master run** (produces Markdown, charts; raw JSON is local-only):
+**Large-N master run** (produces Markdown + chart; raw JSON is local-only):
 
 ```bash
-python benchmarks/run_all_frameworks.py --agents 500 1000 5000 --steps 50 --runs 10
+python benchmarks/run_all_frameworks.py \
+    --agents 1000 10000 100000 1000000 10000000 \
+    --steps 50 --runs 10
+# optional replot from an existing JSON:
+python benchmarks/plot_scaling_with_gpu_schelling.py \
+    --input path/to/benchmark_results.json \
+    --output benchmarks/results/scaling_chart.png
 ```
 
 **Outputs:**
 
-- `results/*.json` — raw timings (**gitignored**; regenerate when you need them)
-- `results/*.log`, `results/*5090*`, `results/summary_table_amber_*.md` —
-  machine-local / interim reruns (**gitignored**; never the published baseline)
-- `results/summary_table_all.md` — the table above (checked in when updated)
-- `results/scaling_chart_all.png` — the log-log chart above
-- `results/summary_table_native_gpu.md` / `scaling_chart_native_gpu.png` —
-  AMBER GPU vs vectorized 1k→10M (native `model.gpu().run()`, checked in)
-
-**AMBER (GPU) (0.4.3+):** the main harness times the same vectorized models as
-AMBER (vectorized) via `model.gpu().run()`. Published native GPU vs vectorized
-scaling (RTX 5090): [`results/summary_table_native_gpu.md`](results/summary_table_native_gpu.md)
-and [`results/scaling_chart_native_gpu.png`](results/scaling_chart_native_gpu.png).
-Machine-local `*5090*` / interim JSON under `results/` is gitignored — regenerate
-rather than treating those paths as the baseline.
+- `results/*.json`, `results/*.log`, `results/*5090*` — machine-local
+  (**gitignored**; never the published baseline)
+- `results/summary_table.md` — full large-N tables (**checked in**)
+- `results/scaling_chart.png` — the **only** published performance plot
 
 **Dependencies:**
 
@@ -268,10 +207,9 @@ python benchmarks/runner.py --frameworks AMBER "AMBER (vectorized)" AgentPy Mesa
     --agents 500 1000 5000 --steps 50 --runs 10
 ```
 
-Outputs land in `results/summary_table.md` / `scaling_chart.png` (and a
-local `benchmark_results.json`, gitignored) — older three-framework
-filenames, so they don't overwrite the seven-framework artefacts from
-`run_all_frameworks.py`.
+Writes a local `benchmark_results.json` (gitignored). Prefer
+`run_all_frameworks.py` for the published large-N artefacts
+(`summary_table.md` / `scaling_chart.png`).
 
 ## Architecture
 

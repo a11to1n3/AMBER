@@ -13,77 +13,37 @@ AMBER is a Python framework for agent-based modeling that uses Polars for effici
 AMBER stores the entire population as a columnar Polars DataFrame and
 exposes a vectorized view API (`agents.where(...)`, `agents.at[ids]`,
 `scatter_add`) that compiles per-step updates down to a handful of
-Polars expressions — regardless of population size.
+Polars expressions. From **0.4.3**, the same `Model` + `step` runs on GPU via
+`model.gpu().run()` (no separate kernel rewrite).
 
-**Benchmark against six other representative ABM/simulation frameworks
-— 5000 agents, 50 executed steps, Python 3.12, Julia 1.12.3, Apple Silicon.**
-All numbers are seeded wall-clock timings, averaged over 10 runs
-(slowest trimmed). Every framework is **checked against output
-invariants** (wealth conservation, boundary clamping, S+I+R population
-conservation) before timing — see
-[`benchmarks/correctness_check.py`](benchmarks/correctness_check.py).
+**Large-N multi-framework scaling (1k→10M agents, 50 steps, 10 runs trimmed
+mean, NVIDIA RTX 5090).** Ten frameworks: AMBER (GPU / vectorized / loop),
+mesa-frames, FLAME GPU 2, Agents.jl, SimPy, Melodie, AgentPy, Mesa.
+Full tables:
+[`benchmarks/results/summary_table.md`](benchmarks/results/summary_table.md).
 Reproducer: [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.py).
+Correctness gates:
+[`benchmarks/correctness_check.py`](benchmarks/correctness_check.py).
 
-| Framework | Language | Arch. | Wealth Transfer | Random Walk | SIR Epidemic |
-|---|---|---|---:|---:|---:|
-| **AMBER (vectorized)** | Python | Columnar (Polars) | 20 ms | 4.8 ms | **497 ms** |
-| Agents.jl | Julia | Object | **7.2 ms** | **1.6 ms** | 813 ms |
-| AMBER (loop) | Python | Object | 169 ms | 332 ms | 9.53 s |
-| Mesa | Python | Object | 22.61 s | 131 ms | 16.63 s |
-| AgentPy | Python | Object | 266 ms | 141 ms | 10.98 s |
-| SimPy | Python | Event loop | 216 ms | 254 ms | 4.67 s |
-| Melodie | Python | Hybrid | 177 ms | 1.03 s | 20.09 s |
+![Framework scaling 1k→10M agents](benchmarks/results/scaling_chart.png)
 
-**AMBER (vectorized) is the fastest Python-hosted framework on every
-headline model at 5000 agents**. The headline SIR row is schedule-mixed;
-use it as workload-class timing, not as an equivalent-trajectory
-AMBER-over-Julia claim. Against Agents.jl, AMBER trails the Julia
-implementation on wealth transfer and random walk, where per-step work is
-small enough that Julia's compiled dispatch has less fixed overhead.
+**At 1M / 10M agents (where each framework still finishes):**
 
-![Seven-framework scaling chart](benchmarks/results/scaling_chart_all.png)
+| Model | AMBER (GPU) | AMBER (vectorized) | FLAME GPU 2 | Next best CPU-scale peer |
+|---|---:|---:|---:|---:|
+| Wealth | 3.91 s / 193 s | 6.44 s / 214 s | **28 ms / 226 ms** | Agents.jl 8.53 s @ 1M |
+| Random walk | 198 ms / 2.04 s | 531 ms / 6.23 s | **20 ms / 201 ms** | mesa-frames 3.55 s / 20.8 s |
+| Schelling | **428 ms / 5.17 s** | 2.64 s / 59.8 s | 2.06 s / 20.8 s | mesa-frames 4.33 s / 86.9 s |
+| SIR (all-pairs) | ≤10k only | ≤10k only | **108 ms / 3.80 s** | — |
 
-See [`benchmarks/README.md`](benchmarks/README.md) for the full table at
-500 / 1000 / 5000 agents, speedup ratios, a per-model correctness audit,
-and the documented SIR update-semantics caveat.
-
-### Scaling to 10M agents with the GPU backend
-
-From **0.4.3**, the product API for a single large run is the **same** vectorized
-`Model` + view-API `step` under Keras-style placement
-(`model.gpu().run()` / `model.cpu(mode="vectorized").run()`), not a separate
-kernel rewrite. The main harness times that path in
-[`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.py).
-
-**Native GPU vs vectorized (RTX 5090, 50 steps, 10 runs, trimmed mean).** Same
-classes and `step` on both devices — GPU via `model.gpu().run()`. Full table:
-[`benchmarks/results/summary_table_native_gpu.md`](benchmarks/results/summary_table_native_gpu.md).
-
-| Model | Device | 1k | 10k | 100k | 1M | 10M |
-|---|---|---:|---:|---:|---:|---:|
-| Wealth transfer | GPU | **23 ms** | **47 ms** | **334 ms** | **3.91 s** | **193 s** |
-| | vectorized | 30 ms | 76 ms | 585 ms | 6.44 s | 214 s |
-| Random walk | GPU | 29 ms | 31 ms | **47 ms** | **198 ms** | **2.04 s** |
-| | vectorized | **3.9 ms** | **7.3 ms** | 54 ms | 531 ms | 6.23 s |
-| Schelling | GPU | 74 ms | 77 ms | **108 ms** | **428 ms** | **5.17 s** |
-| | vectorized | **12 ms** | **24 ms** | 201 ms | 2.64 s | 59.8 s |
-| SIR (all-pairs) | GPU | 82 ms | **82 ms** | — | — | — |
-| | vectorized | **62 ms** | 736 ms | — | — | — |
-
-![AMBER native GPU vs vectorized scaling (RTX 5090)](benchmarks/results/scaling_chart_native_gpu.png)
-
-- **Where GPU helps:** random walk (~2.7× at 1M, ~3× at 10M) and Schelling
-  (~6× at 1M, ~12× at 10M). Light kernels (wealth) stay close — device overhead
-  can dominate.
-- **SIR:** all-pairs contact matrix OOMs above 10k on this host (vectorized and
-  GPU); not a large-N scaling claim for that topology.
-- **Reproduce:** on CUDA,
-  `python benchmarks/run_all_frameworks.py --frameworks "AMBER (GPU)" "AMBER (vectorized)" --agents 1000 10000 100000 1000000 10000000 --steps 50 --runs 10`,
-  then `python benchmarks/plot_scaling_with_gpu_schelling.py --input … --output benchmarks/results/scaling_chart_native_gpu.png`.
-- **Historical multi-framework chart** (pre–0.4.3 hand-rolled GPU harness on RTX
-  3090, not `model.gpu().run()`):
-  [`scaling_chart_gpu_schelling.png`](benchmarks/results/scaling_chart_gpu_schelling.png)
-  — qualitative only; do not cite its per-point ms as current native GPU times.
+- **Schelling:** AMBER (GPU) is the fastest row at 1M and 10M among measured
+  frameworks (beats FLAME GPU 2 and mesa-frames).
+- **Wealth / random walk:** FLAME GPU 2 leads; AMBER (GPU) still beats other
+  Python-hosted stacks that reach those scales.
+- **SIR:** AMBER’s all-pairs topology OOMs above 10k; FLAME’s large-N SIR is a
+  different contact representation — not an apples-to-apples trajectory claim.
+- **API:** write the view-API `step` once; place with `.cpu(mode="vectorized")`
+  or `.gpu()`. Details: [`benchmarks/README.md`](benchmarks/README.md).
 
 ## 🚀 Quick Start
 

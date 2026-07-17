@@ -16,8 +16,8 @@ the Schelling Segregation workload.
 Usage::
 
     python benchmarks/plot_scaling_with_gpu_schelling.py \
-        --input benchmarks/results/benchmark_results_10M.json \
-        --output benchmarks/results/scaling_chart_gpu_schelling.png
+        --input benchmarks/results/benchmark_results.json \
+        --output benchmarks/results/scaling_chart.png
 """
 from __future__ import annotations
 
@@ -164,7 +164,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--output",
         type=Path,
-        default=repo / "benchmarks/results/scaling_chart_gpu_schelling.png",
+        default=repo / "benchmarks/results/scaling_chart.png",
     )
     p.add_argument(
         "--models",
