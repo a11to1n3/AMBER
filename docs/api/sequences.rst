@@ -7,8 +7,13 @@ The ``sequences`` module defines AMBER's vectorized view API. The full
 population lives at ``model.agents``; filtered and scatter views are
 produced by ``where`` / indexing / ``at[...]``. All three view types share
 the same attribute/assignment protocol — column reads return Polars Series
-sourced from ``model.agents_df``, and column writes go through
+sourced from ``model.agents_df`` on CPU, and column writes go through
 ``Model._set_frame`` (contract-observed when enabled).
+
+Under ``model.gpu().run()`` (0.4.3), numeric columns are **device-resident**
+for the step body; the same ``where`` / column assign / ``scatter_add``
+idiom applies. Host Polars is synced at step boundaries when the contract
+or reporters need a CPU snapshot.
 
 Canonical operations on a view:
 

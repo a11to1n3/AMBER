@@ -41,13 +41,14 @@ operations — no per-agent loop.
 
 .. code-block:: python
 
-   # Run the simulation
+   # Run the simulation (fluent placement; default mode is vectorized)
    model = WealthModel({
        'n_agents': 100,
        'steps': 100,
        'seed': 42
    })
-   results = model.run()
+   results = model.cpu(mode="vectorized").run()
+   # Same step body on GPU:  model.gpu().run()  (NVIDIA + CuPy)
 
    # Examine results
    print("Final wealth distribution:")
@@ -353,6 +354,8 @@ You now have the foundation to build complex agent-based models with AMBER. Here
 3. **Multi-Agent Interactions**: Implement group behaviors and collective decision-making
 4. **Real-Time Visualization**: Add interactive plotting and animation
 5. **Advanced Analytics**: Implement custom metrics and statistical analysis
-6. **Performance Optimization**: Scale models to handle thousands of agents
+6. **Performance Optimization**: Scale models with the view API,
+   ``model.cpu(mode="vectorized")``, and ``model.gpu().run()``
+   (see :doc:`going_faster`)
 
 For more examples, see the :doc:`examples/index` section and explore the ``examples/`` directory in the repository.

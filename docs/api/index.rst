@@ -27,8 +27,8 @@ Utilities
    results
    performance
 
-Advanced (0.4 / 0.4.1)
-----------------------
+Advanced (0.4 / 0.4.1 / 0.4.3)
+-----------------------------
 
 .. toctree::
    :maxdepth: 2
@@ -87,6 +87,13 @@ Quick Reference
 * :func:`ambr.print_status` / :func:`ambr.recommend` - machine/lane status and hints
 * :class:`ambr.ArrayKernelModel` - single-run CuPy/NumPy array model
 * Optional ``pip install 'ambr[perf]'`` (Numba) for CPU scatter JIT
+
+**Device placement (0.4.3):**
+
+* :meth:`ambr.Model.cpu` / :meth:`ambr.Model.gpu` - Keras-style placement;
+  same view-API ``step`` on CPU or GPU (see :doc:`gpu`, :doc:`../going_faster`)
+* ``ambr.EXECUTION_DEVICES`` / ``EXECUTION_MODES`` / ``ExecutionConfig`` -
+  placement constants (package exports)
 
 **GPU & calibration (0.4):**
 

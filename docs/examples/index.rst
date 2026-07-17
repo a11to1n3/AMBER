@@ -11,11 +11,21 @@ Getting Started Examples
 
    - Script: ``examples/wealth_transfer.py``
 
+**Schelling (vectorized grid)**
+   Canonical occupancy helpers + view-API Schelling (see :doc:`../environments_schelling`).
+
+   - Script: ``examples/schelling_vectorized.py``
+
+**GPU quickstart**
+   Native placement (``model.gpu().run()`` on a view-API model) and the
+   optional ``ArrayKernelModel`` array lane. CuPy when available, else NumPy.
+
+   - Script: ``examples/gpu_quickstart.py``
+
 **Segregation Model**
    Implementation of Schelling's segregation model showing how individual preferences can lead to population-level segregation patterns.
 
    - Script: ``examples/segregation_model.py``
-
 Advanced Examples
 -----------------
 
