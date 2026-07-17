@@ -1,10 +1,13 @@
 Going faster (lanes)
 ====================
 
-AMBER does **not** hide speed behind a magic ``gpu=True`` switch on the view
-API (that would silently move Polars data over PCIe every step). Instead there
-are four **lanes**. You “turn one on” by writing that style — and helpers tell
-you which to pick.
+AMBER does **not** hide speed behind a silent ``gpu=True`` flag that rewrites
+semantics. From **0.4.3** you place a run with Keras-style
+``model.cpu(mode=...).run()`` / ``model.gpu().run()`` (mode defaults to
+``vectorized``; ``run(mode=...)`` still overrides). The view-API ``step`` body
+is unchanged; GPU keeps numeric columns device-resident for the run. There are
+still four **lanes** for *how* you write the step — helpers tell you which to
+pick.
 
 Check this machine
 ------------------
@@ -78,7 +81,13 @@ Lane 4 — GPU
 Requires an **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install CuPy matching
 your CUDA, then either:
 
-**A. Single large run —** :class:`~ambr.lanes.ArrayKernelModel`::
+**A. Single large run — same view-API model (0.4.3, preferred)::
+
+   results = MyVectorizedModel({"n": 1_000_000, "steps": 50, "seed": 0}).gpu().run()
+   # CPU counterpart:
+   # results = MyVectorizedModel(...).cpu(mode="vectorized").run()
+
+**B. Array-kernel model —** :class:`~ambr.lanes.ArrayKernelModel`::
 
    import ambr as am
 
@@ -97,9 +106,9 @@ your CUDA, then either:
    print(res.info)   # shows array_module / device
    print(res.model.tail())
 
-Same code runs on **NumPy** if no GPU is present (automatic fallback).
+``ArrayKernelModel`` runs on **NumPy** if no GPU is present (automatic fallback).
 
-**B. Many short runs (calibration) —** :class:`~ambr.gpu_ensemble.GPUEnsembleRunner`::
+**C. Many short runs (calibration) —** :class:`~ambr.gpu_ensemble.GPUEnsembleRunner`::
 
    from ambr.gpu_ensemble import GPUEnsembleRunner, BatchedWellMixedSIR
    runner = GPUEnsembleRunner(BatchedWellMixedSIR())
@@ -109,8 +118,9 @@ Rule of thumb
 -------------
 
 * **N ≲ 2k** — OOP is fine
-* **2k–500k** — vectorized
+* **2k–500k** — vectorized (``cpu(mode="vectorized")``)
 * **dense interactions** — tensor
-* **N ≳ 1M array math, or B≫1 calibration** — GPU helpers above
+* **N ≳ 1M view-API or array math** — ``model.gpu().run()`` / ``ArrayKernelModel``
+* **B≫1 calibration** — GPU ensemble helpers above
 
 ``am.recommend(n)`` encodes that heuristic.
