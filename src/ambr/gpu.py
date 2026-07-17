@@ -58,6 +58,57 @@ def synchronize() -> None:
         _cp.cuda.Stream.null.synchronize()
 
 
+class DeviceRNG:
+    """CuPy RNG with NumPy-compatible :meth:`choice` for model ``step()`` code."""
+
+    def __init__(self, rng):
+        self._rng = rng
+
+    def choice(self, a, size=None, replace=True, p=None):
+        xp = _cp
+        pool = xp.asarray(a)
+        n = int(pool.size)
+        if n == 0:
+            raise ValueError("choice requires a non-empty array")
+        if p is not None:
+            raise NotImplementedError("weighted choice is not supported on GPU yet")
+        if size is None:
+            idx = self._rng.integers(0, n)
+            return pool[idx]
+        size = int(size)
+        if not replace and size > n:
+            raise ValueError(f"cannot sample {size} unique items from {n}")
+        if not replace:
+            idx = self._rng.permutation(n)[:size]
+        else:
+            idx = self._rng.integers(0, n, size=size)
+        return pool[idx]
+
+    def __getattr__(self, name):
+        return getattr(self._rng, name)
+
+
+def make_device_rng(seed=None) -> DeviceRNG:
+    """Create a GPU random generator with NumPy-shaped helpers."""
+    require_gpu()
+    return DeviceRNG(_cp.random.default_rng(seed))
+
+
+def scatter_add(base, indices, values):
+    """Scatter-add *values* into *base* at *indices* (1-D NumPy or CuPy arrays).
+
+    NumPy arrays use :func:`~ambr.performance.apply_scatter_add` (Numba when
+    installed); CuPy arrays use :func:`cupy.add.at`. Returns the array that
+    holds the result (may be a new buffer after a NumPy dtype upcast).
+    """
+    if GPU_AVAILABLE and isinstance(base, _cp.ndarray):
+        _cp.add.at(base, _cp.asarray(indices, dtype=_cp.int64), values)
+        return base
+    from .performance import apply_scatter_add
+
+    return apply_scatter_add(_np.asarray(base), _np.asarray(indices), _np.asarray(values))
+
+
 def require_gpu() -> None:
     """Raise a clear error if CuPy/CUDA is not available."""
     if not GPU_AVAILABLE:

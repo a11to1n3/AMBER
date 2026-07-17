@@ -31,6 +31,13 @@ from .contract import (
     ContractViolationError,
 )
 from .results import RunResults
+from .execution import (
+    active_rng,
+    active_xp,
+    begin_execution,
+    end_execution,
+    resolve_config,
+)
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -84,9 +91,71 @@ class Model(BaseModel):
         self._show_progress = parameters.get('show_progress', False)
         self._model_data = []
         self._agent_vars = []  # per-step agent snapshots when agent_reporters is set
+        # User placement (``cpu()`` / ``gpu()``) vs active runtime during :meth:`run`.
+        self._device: str = (
+            parameters.get("device") or parameters.get("backend") or "cpu"
+        ).lower()
+        self._execution_mode: str = (parameters.get("mode") or "vectorized").lower()
+        self._execution = None
 
         from .sequences import AgentList
         self.agents = AgentList(self, [])
+
+    def cpu(self, mode: Optional[str] = None) -> "Model":
+        """Place the next :meth:`run` on CPU. Returns ``self`` for chaining.
+
+        Args:
+            mode: optional execution style — ``'vectorized'`` (view API, default
+                when omitted on the model) or ``'oop'`` (per-agent objects).
+                Same as ``model.cpu().run(mode=...)`` when passed here.
+
+        Examples::
+
+            model.cpu().run()
+            model.cpu(mode="vectorized").run()
+            model.cpu(mode="oop").run()
+        """
+        self._device = "cpu"
+        if mode is not None:
+            self._set_execution_mode(mode)
+        return self
+
+    def gpu(self, mode: Optional[str] = None) -> "Model":
+        """Place the next :meth:`run` on GPU (device-resident columns). Returns ``self``.
+
+        Args:
+            mode: optional execution style — ``'vectorized'`` (default) or
+                ``'oop'``. GPU runs normally use the vectorized view API.
+
+        Examples::
+
+            model.gpu().run()
+            model.gpu(mode="vectorized").run()
+        """
+        self._device = "gpu"
+        if mode is not None:
+            self._set_execution_mode(mode)
+        return self
+
+    def _set_execution_mode(self, mode: str) -> None:
+        from .execution import EXECUTION_MODES
+
+        resolved = mode.lower()
+        if resolved not in EXECUTION_MODES:
+            raise ValueError(
+                f"mode must be one of {EXECUTION_MODES}, got {mode!r}"
+            )
+        self._execution_mode = resolved
+
+    @property
+    def device(self) -> str:
+        """Selected execution device for the next :meth:`run` — ``'cpu'`` or ``'gpu'``."""
+        return self._device
+
+    @property
+    def mode(self) -> str:
+        """Execution style — ``'vectorized'`` (view API) or ``'oop'`` (agent objects)."""
+        return self._execution_mode
 
     # --- public contract surface (stable for tests / callers) ---------------
 
@@ -109,6 +178,20 @@ class Model(BaseModel):
     @property
     def _contract_active(self) -> bool:
         return self._contract.active
+
+    @property
+    def xp(self):
+        """NumPy or CuPy array module for the active run (CPU when idle)."""
+        return active_xp(self)
+
+    @property
+    def rng(self):
+        """Step RNG — device RNG during ``gpu()`` runs, NumPy otherwise."""
+        return active_rng(self)
+
+    @rng.setter
+    def rng(self, value) -> None:
+        self._host_rng = value
 
     @property
     def agents_df(self) -> pl.DataFrame:
@@ -235,6 +318,10 @@ class Model(BaseModel):
         change -- e.g. an ``Int64`` attribute silently rewritten as ``Float64``
         -- surfaces as a schema mutation rather than passing unnoticed.
         """
+        from .device_columns import model_uses_device_columns, sync_all_device_columns
+
+        if model_uses_device_columns(self):
+            sync_all_device_columns(self)
         df = self.agents_df  # flushes pending writes
         schema = {name: str(dt) for name, dt in zip(df.columns, df.dtypes)}
         if "id" in df.columns and df.height:
@@ -302,6 +389,10 @@ class Model(BaseModel):
         cols = type(self).agent_reporters
         if not cols:
             return
+        from .device_columns import model_uses_device_columns, sync_all_device_columns
+
+        if model_uses_device_columns(self):
+            sync_all_device_columns(self)
         df = self.agents_df
         have = [c for c in cols if c in df.columns]
         if not have:
@@ -380,11 +471,22 @@ class Model(BaseModel):
         self,
         steps: Optional[int] = None,
         contract: str = "off",
+        mode: Optional[str] = None,
+        device: Optional[str] = None,
+        backend: Optional[str] = None,
     ) -> RunResults:
         """Run the simulation.
 
         Returns a :class:`~ambr.results.RunResults` mapping (dict subclass).
         Use ``results['agents']`` or ``results.agents`` interchangeably.
+
+        Device placement is Keras-style: call :meth:`cpu` or :meth:`gpu` on the
+        model (or pass ``device=`` / legacy ``backend=`` here). Mode can be set
+        on those fluent methods (``model.cpu(mode="vectorized")``) or here via
+        ``mode=``. On CPU, ``mode='vectorized'`` (default) expects the view API
+        in :meth:`step`; ``mode='oop'`` expects per-agent objects — the same
+        :meth:`step` body runs in both cases today, but ``mode`` is recorded in
+        ``results.info``.
 
         Args:
             steps: number of steps to run (defaults to ``self.p['steps']`` or 100).
@@ -395,11 +497,20 @@ class Model(BaseModel):
                 key), ``'warn'`` (also emit a warning per violation), or
                 ``'raise'`` (raise :class:`~ambr.contract.ContractViolationError`
                 on the first step with an error-severity violation).
+            mode: ``'vectorized'`` (default) or ``'oop'``. Overrides
+                :meth:`cpu` / :meth:`gpu` ``mode=`` and ``parameters['mode']``.
+            device: ``'cpu'`` or ``'gpu'``. Overrides :meth:`cpu` / :meth:`gpu`.
+                Legacy alias: ``backend=``.
         """
         self._contract.reset_run(contract)
 
         start_time = time.time()
         max_steps = steps if steps is not None else self.p.get('steps', 100)
+        config = resolve_config(
+            self, device=device, backend=backend, mode=mode
+        )
+        self._device = config.device
+        self._execution_mode = config.mode
 
         if self._show_progress:
             self._start_time = start_time
@@ -408,22 +519,29 @@ class Model(BaseModel):
 
         self._ensure_setup()
 
-        if self.record_initial:
-            self._record_initial_state()
+        begin_execution(self, config)
 
-        # Use run_step() to execute exactly one model step per loop iteration.
-        while self.t < max_steps:
-            self.run_step()
-            if self._show_progress:
-                self._print_progress(self.t, max_steps)
+        try:
+            if self.record_initial:
+                self._record_initial_state()
 
-        self.end()
+            # Use run_step() to execute exactly one model step per loop iteration.
+            while self.t < max_steps:
+                self.run_step()
+                if self._show_progress:
+                    self._print_progress(self.t, max_steps)
+
+            self.end()
+        finally:
+            end_execution(self)
 
         if self._show_progress:
             self._print_progress(max_steps, max_steps, force=True)
             self._print_end_info(start_time, max_steps)
 
-        return self._collect_results(start_time, max_steps)
+        return self._collect_results(
+            start_time, max_steps, device=config.device, mode=config.mode
+        )
 
     # --- Helper methods ---
     def _print_start_info(self, max_steps):
@@ -438,7 +556,14 @@ class Model(BaseModel):
         else:
             print("Rate: Inf steps/s")
 
-    def _collect_results(self, start_time, max_steps):
+    def _collect_results(
+        self,
+        start_time,
+        max_steps,
+        *,
+        device: str = "cpu",
+        mode: str = "vectorized",
+    ):
         if self._model_data:
             # Column-oriented construction to avoid Polars concat ShapeErrors with sparse data
             all_keys = sorted(list(set().union(*(d.keys() for d in self._model_data))))
@@ -466,7 +591,12 @@ class Model(BaseModel):
             model_df = pl.DataFrame({'t': []})
 
         results = RunResults(
-            info={'steps': self.t, 'run_time': time.time() - start_time},
+            info={
+                'steps': self.t,
+                'run_time': time.time() - start_time,
+                'device': device,
+                'mode': mode,
+            },
             # agents_df flushes the buffered write queue so OOP /
             # update_agent_data writes land in the returned frame.
             agents=self.agents_df,

@@ -76,7 +76,7 @@ Create your first model:
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for what is new in **0.4.2**.
+See :doc:`changelog` for what is new in **0.4.3**.
 
 Table of Contents
 -----------------

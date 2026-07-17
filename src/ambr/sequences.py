@@ -54,19 +54,29 @@ def _require_length(name: str, length: int, n: int) -> None:
         )
 
 
-def _normalize_delta(name: str, value: Any, n: int) -> np.ndarray:
-    """Coerce a scatter_add value into a length-``n`` ndarray."""
+def _normalize_delta(name: str, value: Any, n: int, xp=np) -> Any:
+    """Coerce a scatter_add value into a length-``n`` array (NumPy or CuPy)."""
     if isinstance(value, pl.Series):
         _require_length(name, value.len(), n)
-        return value.to_numpy()
-    if isinstance(value, np.ndarray):
-        _require_length(name, len(value), n)
-        return value
+        data = value.to_numpy()
+        return xp.asarray(data) if xp is not np else data
     if isinstance(value, list):
         _require_length(name, len(value), n)
-        return np.asarray(value)
+        data = np.asarray(value)
+        return xp.asarray(data) if xp is not np else data
+    if hasattr(value, "shape") or (
+        hasattr(value, "__len__") and not isinstance(value, (str, bytes))
+    ):
+        if getattr(type(value), "__module__", "").split(".")[0] == xp.__name__:
+            _require_length(name, len(value), n)
+            return value
+        from .gpu import to_host
+
+        host = np.asarray(to_host(value))
+        _require_length(name, len(host), n)
+        return xp.asarray(host) if xp is not np else host
     # Scalar broadcast.
-    return np.full(n, value)
+    return xp.full(n, value) if xp is not np else np.full(n, value)
 
 
 def _value_to_series(name: str, value: Any, n: int) -> pl.Series:
@@ -162,11 +172,38 @@ class _BaseView:
         ids = self._ids_series()
         # Full population: return the column without a join.
         if _is_full_population(ids, df):
-            return df[name]
+            from .device_columns import DeviceColumn, model_uses_device_columns
+
+            # Only the root AgentList may expose a live device column; subset
+            # views (even when they cover every agent) read through the view.
+            from .execution import device_column_names
+
+            if (
+                type(self) is AgentList
+                and model_uses_device_columns(model)
+                and name in device_column_names(model)
+            ):
+                return DeviceColumn(model, name)
+            if type(self) is AgentList:
+                return df[name]
         # Align Series with the view's id order (scatter views may repeat ids).
         # When name is "id", skip the join to avoid a duplicate-column error.
         if name == "id":
             return ids
+        from .device_columns import model_uses_device_columns
+
+        from .execution import device_column_names, get_device_column
+
+        if (
+            model_uses_device_columns(model)
+            and name in device_column_names(model)
+            and not _is_full_population(ids, df)
+        ):
+            from .gpu import to_host
+
+            positions = resolve_positions(model, df, ids.to_numpy())
+            host = to_host(get_device_column(model, name)[positions])
+            return pl.Series(name, host)
         ids_df = pl.DataFrame([ids.rename("id")])
         return ids_df.join(df.select("id", name), on="id", how="left")[name]
 
@@ -213,10 +250,39 @@ class _BaseView:
             model._set_frame(joined, written_columns=[name])
             return
 
+        # --- GPU whole-population: accept device/host arrays without Polars ---
+        if _is_full_population(ids, df) and type(self) is AgentList:
+            from .device_columns import device_scatter_write, model_uses_device_columns
+            from .execution import active_xp, device_column_names
+
+            if (
+                model_uses_device_columns(model)
+                and name in device_column_names(model)
+            ):
+                xp = active_xp(model)
+                pos = xp.arange(n, dtype=xp.int64)
+                if isinstance(value, pl.Series):
+                    vals = xp.asarray(value.to_numpy())
+                elif hasattr(value, "shape"):
+                    vals = xp.asarray(value)
+                elif isinstance(value, list):
+                    vals = xp.asarray(value)
+                else:
+                    vals = xp.full(n, value)
+                if getattr(vals, "shape", ()) and int(vals.shape[0]) != n:
+                    raise ValueError(
+                        f"Cannot assign array of length {vals.shape[0]} "
+                        f"to view of length {n} for column {name!r}"
+                    )
+                device_scatter_write(
+                    model, name, pos, vals, positions_on_device=True
+                )
+                return
+
         values = _value_to_series(name, value, n)
 
-        # --- whole-population fast path -------------------------------------
-        if _is_full_population(ids, df):
+        # --- whole-population fast path (root AgentList only) ---------------
+        if _is_full_population(ids, df) and type(self) is AgentList:
             _commit_with_columns(
                 model, df, [values.alias(name)], written_columns=[name]
             )
@@ -227,8 +293,32 @@ class _BaseView:
         if n > 0 and len(np.unique(ids_np)) == n and name in df.columns:
             try:
                 positions = resolve_positions(model, df, ids_np)
-                base = df[name].to_numpy()
                 vals = values.to_numpy()
+                from .device_columns import (
+                    device_resolve_positions,
+                    device_scatter_write,
+                    model_uses_device_columns,
+                )
+                from .execution import active_xp, device_column_names
+
+                if (
+                    model_uses_device_columns(model)
+                    and name in device_column_names(model)
+                    and vals.dtype != object
+                ):
+                    xp = active_xp(model)
+                    pos_dev = device_resolve_positions(
+                        model, xp.asarray(ids_np, dtype=xp.int64)
+                    )
+                    device_scatter_write(
+                        model,
+                        name,
+                        pos_dev,
+                        xp.asarray(vals),
+                        positions_on_device=True,
+                    )
+                    return
+                base = df[name].to_numpy()
                 # Object / mixed columns fall through to the join path.
                 if base.dtype != object and vals.dtype != object:
                     out = apply_scatter_write(base.copy(), positions, vals)
@@ -272,6 +362,19 @@ class _BaseView:
             df = model.agents_df
             sub = df.filter(pl.col("id").is_in(base_ids.to_list())).filter(predicate)
             new_ids = sub["id"]
+        elif hasattr(predicate, "dtype") and getattr(predicate.dtype, "kind", "") in (
+            "b",
+            "?",
+        ):
+            from .gpu import to_host
+
+            mask = np.asarray(to_host(predicate), dtype=bool).ravel()
+            if mask.size != base_ids.len():
+                raise ValueError(
+                    f"Boolean mask length {mask.size} does not match "
+                    f"view length {base_ids.len()}"
+                )
+            new_ids = base_ids.filter(pl.Series("mask", mask))
         else:
             raise TypeError("predicate must be a polars Series (boolean) or Expr")
         return FilteredAgentList(model, new_ids, parent=self._root())
@@ -388,8 +491,25 @@ class _BaseView:
 
     # --- ergonomic read / write --------------------------------------------
 
+    def _column_array(self, name: str):
+        """Column as ndarray — zero-copy on GPU via :class:`~ambr.device_columns.DeviceColumn`."""
+        col = getattr(self, name)
+        if hasattr(col, "array"):
+            return col.array
+        return col.to_numpy()
+
+    def array(self, *columns: str):
+        """Return columns as NumPy/CuPy arrays aligned to this view.
+
+        On ``model.gpu().run()``, numeric columns are device-resident and
+        returned without a host round-trip. Use :meth:`numpy` when you need
+        host ``ndarray`` outputs.
+        """
+        arrays = tuple(self._column_array(c) for c in columns)
+        return arrays[0] if len(columns) == 1 else arrays
+
     def numpy(self, *columns: str):
-        """Return the named columns as numpy arrays, aligned to this view.
+        """Return the named columns as host numpy arrays, aligned to this view.
 
         ``x = agents.numpy('x')`` returns one array; ``x, y = agents.numpy('x',
         'y')`` returns a tuple -- a one-call replacement for the repeated
@@ -457,6 +577,10 @@ class _BaseView:
 
     # --- scatter-add --------------------------------------------------------
 
+    def _device_ids_array(self) -> Any | None:
+        """Device-resident id list for a scatter view (GPU fast path), if any."""
+        return getattr(self, "_device_ids", None)
+
     def scatter_add(self, **increments: Any) -> None:
         """Accumulate per-id deltas into columns, summing across duplicate ids.
 
@@ -474,6 +598,36 @@ class _BaseView:
         model = self.__dict__["model"]
         model._flush_pending_writes()
 
+        from .device_columns import (
+            device_resolve_positions,
+            device_scatter_add,
+            model_uses_device_columns,
+        )
+
+        device_ids = self._device_ids_array()
+        from .execution import active_xp, device_column_names
+
+        if (
+            model_uses_device_columns(model)
+            and device_ids is not None
+            and all(col in device_column_names(model) for col in increments)
+        ):
+            n = int(device_ids.size)
+            if n == 0:
+                return
+            positions = device_resolve_positions(model, device_ids)
+            xp = active_xp(model)
+            for col_name, val in increments.items():
+                delta = _normalize_delta(col_name, val, n, xp=xp)
+                device_scatter_add(
+                    model,
+                    col_name,
+                    positions,
+                    delta,
+                    positions_on_device=True,
+                )
+            return
+
         ids = self._ids_series()
         n = ids.len()
         df = model.agents_df
@@ -482,10 +636,20 @@ class _BaseView:
             model._set_frame(_ensure_columns(df, list(increments)))
             return
 
+        positions = resolve_positions(model, df, ids.to_numpy())
+
+        if model_uses_device_columns(model) and all(
+            col in device_column_names(model) for col in increments
+        ):
+            xp = active_xp(model)
+            for col_name, val in increments.items():
+                delta = _normalize_delta(col_name, val, n, xp=xp)
+                device_scatter_add(model, col_name, positions, delta)
+            return
+
         delta_np: Dict[str, np.ndarray] = {
             col: _normalize_delta(col, val, n) for col, val in increments.items()
         }
-        positions = resolve_positions(model, df, ids.to_numpy())
 
         new_columns: List[pl.Series] = []
         for col_name, delta in delta_np.items():
@@ -501,6 +665,49 @@ class _BaseView:
         model._set_frame(df.with_columns(new_columns))
 
 
+def _scatter_view_from_key(model: Model, view: "_BaseView", key) -> "ScatterAgentList":
+    """Build a :class:`ScatterAgentList`, keeping device id buffers on GPU when active."""
+    from .device_columns import model_uses_device_columns
+
+    from .execution import active_xp
+
+    if model_uses_device_columns(model):
+        xp = active_xp(model)
+        if isinstance(key, (int, np.integer)):
+            device_ids = xp.asarray([int(key)], dtype=xp.int64)
+        elif isinstance(key, pl.Series):
+            device_ids = xp.asarray(key.to_numpy(), dtype=xp.int64).ravel()
+        elif isinstance(key, list):
+            device_ids = xp.asarray(key, dtype=xp.int64).ravel()
+        else:
+            device_ids = xp.asarray(key, dtype=xp.int64).ravel()
+        ids = pl.Series("id", np.zeros(int(device_ids.size), dtype=np.int64))
+        scatter = ScatterAgentList(model, ids, parent=view._root())
+        object.__setattr__(scatter, "_device_ids", device_ids)
+        return scatter
+
+    if isinstance(key, (int, np.integer)):
+        ids = pl.Series("id", [int(key)])
+    elif isinstance(key, pl.Series):
+        ids = key.rename("id")
+    elif isinstance(key, list):
+        ids = pl.Series("id", list(key))
+    elif isinstance(key, np.ndarray):
+        ids = pl.Series("id", key.tolist())
+    else:
+        from .gpu import to_host
+
+        try:
+            arr = np.asarray(to_host(key)).ravel()
+        except (TypeError, ValueError):
+            raise TypeError(
+                f"at[...] accepts int, list, ndarray, or Series "
+                f"(got {type(key).__name__})"
+            ) from None
+        ids = pl.Series("id", arr.tolist())
+    return ScatterAgentList(model, ids, parent=view._root())
+
+
 class _AtIndexer:
     """``view.at[ids]`` -> ScatterAgentList keyed by those ids."""
 
@@ -510,17 +717,7 @@ class _AtIndexer:
     def __getitem__(self, key) -> "ScatterAgentList":
         view: _BaseView = self._view
         model = view.__dict__["model"]
-        if isinstance(key, (int, np.integer)):
-            ids = pl.Series("id", [int(key)])
-        elif isinstance(key, pl.Series):
-            ids = key.rename("id")
-        elif isinstance(key, (list, np.ndarray)):
-            ids = pl.Series("id", list(key))
-        else:
-            raise TypeError(
-                f"at[...] accepts int, list, ndarray, or Series (got {type(key).__name__})"
-            )
-        return ScatterAgentList(model, ids, parent=view._root())
+        return _scatter_view_from_key(model, view, key)
 
 
 class AgentList(_BaseView):

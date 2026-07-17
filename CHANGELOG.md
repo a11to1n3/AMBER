@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## v0.4.3 - 2026-07-17
+
+Native GPU path and Keras-style device placement on one `Model` / `step` body.
+
+### Added
+
+- **Keras-style placement:** `model.cpu(mode=...)` / `model.gpu(mode=...)`
+  set device and optional run mode (default `vectorized`); `run(mode=...)`
+  still overrides. Implementation in `ambr.execution`.
+- **Device-resident columns** for the native view API under `Model.gpu()`:
+  `device_columns`, GPU write path in sequences, `DeviceRNG`, `scatter_add`,
+  and `DeviceColumn.mean()` so the same `where` / column write /
+  `scatter_add` step runs on CPU or GPU.
+- Tests: `tests/test_execution_api.py`; expanded `tests/test_gpu_backend.py`.
+
+### Changed
+
+- **AMBER (GPU) benchmarks** use the same vectorized model classes as
+  AMBER (vectorized) via `model.gpu().run()` (no separate kernel models for
+  the main harness). Vectorized models use `self.xp` + `agents.array(...)`
+  where needed for dual CPU/GPU.
+- Fused wealth throughput variant moved to `amber_fused_models.py` (not the
+  documented view idiom).
+- FLAME GPU 2 Schelling workload + docs note on the GPU chart page.
+
 ## v0.4.2 - 2026-07-11
 
 Hygiene, CI quality, and docs release on top of 0.4.1.
