@@ -32,8 +32,6 @@ from .contract import (
 )
 from .results import RunResults
 from .execution import (
-    EXECUTION_DEVICES,
-    EXECUTION_MODES,
     active_rng,
     active_xp,
     begin_execution,

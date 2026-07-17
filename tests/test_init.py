@@ -161,6 +161,8 @@ class TestPackageInitialization:
             'RunResults',
             'ArrayKernelModel', 'status', 'print_status', 'recommend',
             'require_gpu', 'synchronize', 'scatter_add', 'numba_jit',
+            # Execution placement (0.4.3)
+            'EXECUTION_DEVICES', 'EXECUTION_MODES', 'ExecutionConfig',
         }
 
         # Check that we don't have unexpected exports

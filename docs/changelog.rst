@@ -9,6 +9,28 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+[0.4.3] - 2026-07-17
+--------------------
+
+Native GPU path and Keras-style device placement on one ``Model`` /
+``step`` body.
+
+Added
+~~~~~
+- Keras-style placement: ``model.cpu(mode=...)`` / ``model.gpu(mode=...)``
+  (default mode ``vectorized``; ``run(mode=...)`` still overrides) via
+  ``ambr.execution``.
+- Device-resident columns for the native view API under ``Model.gpu()``
+  (``device_columns``, GPU sequence writes, ``DeviceRNG``, ``scatter_add``).
+- Tests: ``tests/test_execution_api.py``; expanded GPU backend tests.
+
+Changed
+~~~~~~~
+- AMBER (GPU) benchmarks run the same vectorized models via
+  ``model.gpu().run()`` (main harness is not a separate kernel path).
+- Fused wealth throughput variant lives in ``amber_fused_models.py``.
+- FLAME GPU 2 Schelling workload + GPU chart docs note.
+
 [0.4.2] - 2026-07-11
 --------------------
 
