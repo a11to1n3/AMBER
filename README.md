@@ -34,14 +34,15 @@ Correctness gates:
 | Wealth | 3.91 s / 193 s | 6.44 s / 214 s | **28 ms / 226 ms** | Agents.jl 8.53 s @ 1M |
 | Random walk | 198 ms / 2.04 s | 531 ms / 6.23 s | **20 ms / 201 ms** | mesa-frames 3.55 s / 20.8 s |
 | Schelling | **428 ms / 5.17 s** | 2.64 s / 59.8 s | 2.06 s / 20.8 s | mesa-frames 4.33 s / 86.9 s |
-| SIR (all-pairs) | ≤10k only | ≤10k only | **108 ms / 3.80 s** | — |
+| SIR | *(re-run pending — cell-list path)* | *(re-run pending)* | **108 ms / 3.80 s** | — |
 
 - **Schelling:** AMBER (GPU) is the fastest row at 1M and 10M among measured
   frameworks (beats FLAME GPU 2 and mesa-frames).
 - **Wealth / random walk:** FLAME GPU 2 leads; AMBER (GPU) still beats other
   Python-hosted stacks that reach those scales.
-- **SIR:** AMBER’s all-pairs topology OOMs above 10k; FLAME’s large-N SIR is a
-  different contact representation — not an apples-to-apples trajectory claim.
+- **SIR:** AMBER (vectorized/GPU) now uses a **cell-list** fixed-radius
+  infection (O(N·K)), not all-pairs — large-N no longer OOMs. Published SIR
+  columns still need a harness re-run; FLAME’s contact model may differ.
 - **API:** write the view-API `step` once; place with `.cpu(mode="vectorized")`
   or `.gpu()`. Details: [`benchmarks/README.md`](benchmarks/README.md).
 
