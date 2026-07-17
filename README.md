@@ -63,8 +63,8 @@ agents across 10 frameworks and four models** — adding **AMBER (GPU)** and a
 - **It's a large-N win, not a small-N one.** A ~90 ms fixed device cost means
   AMBER (GPU) only leads at scale: below ~100k–1M, AMBER (vectorized) or Agents.jl
   are faster, and on SIR FLAME GPU 2 wins at 1k–10k before AMBER overtakes it from
-  100k up. (FLAME GPU 2 implements no Schelling model, so it is absent from that
-  panel.)
+  100k up. FLAME GPU 2 also runs Schelling via a `MessageArray2D` grid model
+  (`benchmarks/models/flamegpu_models.py`); re-benchmark on CUDA to refresh the chart.
 
 Regenerate with `python benchmarks/plot_scaling_with_gpu_schelling.py`.
 
