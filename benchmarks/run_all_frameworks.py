@@ -353,20 +353,27 @@ def _bench_melodie(
 def _bench_amber_gpu(
     model_name: str, n: int, steps: int, runs: int
 ) -> Optional[TimingSummary]:
+    """Same vectorized Model classes as AMBER (vectorized), via ``model.gpu().run()``."""
     try:
-        from ambr.gpu import GPU_AVAILABLE
+        from ambr.gpu import GPU_AVAILABLE, synchronize
         if not GPU_AVAILABLE:
             return None
-        from models import amber_gpu_models as gm
     except ImportError:
         return None
-    cls = gm.AMBER_GPU_MODELS[model_name]
-    cfg = dict(MODEL_CONFIGS[model_name])
+
+    from models.amber_models import AMBER_VECTORIZED_MODELS
+
+    cls = AMBER_VECTORIZED_MODELS.get(model_name)
+    if cls is None:
+        return None
+    cfg = {"n": n, "steps": steps, "show_progress": False, "seed": DEFAULT_SEED}
+    cfg.update(MODEL_CONFIGS[model_name])
 
     def _run():
-        cls(n, steps, cfg).run()
+        cls(cfg).gpu().run()
+        synchronize()
 
-    _run()  # warm up (CUDA context + kernel JIT)
+    _run()  # warm up (CUDA context + device column upload)
     return _time(_run, runs)
 
 
@@ -409,7 +416,7 @@ def _bench_flamegpu(
         return None
     cls = fg.FLAMEGPU_MODELS.get(model_name)
     if cls is None:
-        return None      # e.g. schelling: no FLAME GPU grid adapter
+        return None      # model not implemented for FLAME GPU 2
     try:
         pyflamegpu.Telemetry.disable()
     except Exception:

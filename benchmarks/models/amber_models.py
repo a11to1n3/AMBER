@@ -13,7 +13,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 import ambr as am
 import numpy as np
-import polars as pl
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _schelling_core import schelling_setup, schelling_step
@@ -259,7 +258,7 @@ class AMBERRandomWalk(am.Model):
 # =============================================================================
 
 class AMBERVectorizedWealthTransfer(am.Model):
-    """Wealth transfer using the view API with fused donor/recipient scatter."""
+    """Wealth transfer using the canonical AMBER view API (quickstart idiom)."""
 
     def setup(self):
         n = self.p.get('n', 100)
@@ -269,18 +268,13 @@ class AMBERVectorizedWealthTransfer(am.Model):
         )
 
     def step(self):
-        ids = self.agents.ids.to_numpy()
-        wealth = self.agents.wealth.to_numpy()
-        donor_mask = wealth > 0
-        n_active = int(donor_mask.sum())
-        if n_active == 0:
+        donors = self.agents.where(self.agents.wealth > 0)
+        if len(donors) == 0:
             return
-        donor_ids = ids[donor_mask]
-        recipient_ids = self.rng.choice(ids, size=n_active)
-        all_ids = np.concatenate([donor_ids, recipient_ids])
-        deltas = np.concatenate([np.full(n_active, -1, dtype=np.int64),
-                                 np.full(n_active, 1, dtype=np.int64)])
-        self.agents.at[all_ids].scatter_add(wealth=deltas)
+        donors.wealth -= 1
+        ids = self.agents.ids.to_numpy()
+        recipients = self.rng.choice(ids, size=len(donors))
+        self.agents.at[recipients].scatter_add(wealth=1)
 
     def update(self):
         super().update()
@@ -302,10 +296,10 @@ class AMBERVectorizedWealthTransfer(am.Model):
 class AMBERVectorizedSIRModel(am.Model):
     """SIR epidemic on a continuous 2D world using columnar updates.
 
-    All three phases of the step — movement, infection, recovery — are
-    expressed as DataFrame operations. The infection phase is quadratic in
-    population (all-pairs distance test) but runs as a single Polars join
-    rather than a Python double loop.
+    Movement, infection, and recovery use the view API (``agents.array`` /
+    column assignment). Infection is an all-pairs distance test that runs on
+    NumPy or CuPy via ``self.xp`` so the same step body works under
+    ``model.cpu()`` and ``model.gpu()``.
     """
 
     STATUS_S = 0
@@ -329,67 +323,68 @@ class AMBERVectorizedSIRModel(am.Model):
         )
 
     def step(self):
+        xp = self.xp
         n = len(self.agents)
         speed = self.p.get('movement_speed', 2.0)
         world_size = self.p.get('world_size', 100)
+        radius = float(self.p.get('infection_radius', 5.0))
+        transmission = float(self.p.get('transmission_rate', 0.1))
+        recovery_time = int(self.p.get('recovery_time', 14))
+
+        x, y = self.agents.array('x', 'y')
+        status = self.agents.array('status')
+        infection_time = self.agents.array('infection_time')
 
         # --- movement ---
-        xs = self.agents.x.to_numpy() + self.rng.uniform(-speed, speed, n)
-        ys = self.agents.y.to_numpy() + self.rng.uniform(-speed, speed, n)
-        np.clip(xs, 0, world_size, out=xs)
-        np.clip(ys, 0, world_size, out=ys)
-        self.agents.x = xs
-        self.agents.y = ys
+        x = xp.clip(x + self.rng.uniform(-speed, speed, n), 0.0, world_size)
+        y = xp.clip(y + self.rng.uniform(-speed, speed, n), 0.0, world_size)
 
-        # --- infection ---
-        radius = self.p.get('infection_radius', 5.0)
-        transmission = self.p.get('transmission_rate', 0.1)
-        df = self.agents_df
-
-        infected_df = df.filter(pl.col('status') == self.STATUS_I).select(
-            pl.col('x').alias('ix'), pl.col('y').alias('iy'),
-            pl.col('id').alias('iid'),
-        )
-        susceptible_df = df.filter(pl.col('status') == self.STATUS_S)
-
-        if infected_df.height and susceptible_df.height:
-            # Cross join susceptibles × infected, keep pairs within radius,
-            # then sample one uniform per candidate pair for transmission.
-            pairs = susceptible_df.join(infected_df, how='cross').with_columns(
-                ((pl.col('x') - pl.col('ix')) ** 2
-                 + (pl.col('y') - pl.col('iy')) ** 2).alias('dist_sq')
-            ).filter(pl.col('dist_sq') <= radius ** 2)
-            if pairs.height:
-                draws = self.rng.random(size=pairs.height)
-                hits = pairs.with_columns(pl.Series('draw', draws)).filter(
-                    pl.col('draw') < transmission
-                )
-                if hits.height:
-                    newly_infected_ids = hits['id'].unique().to_list()
-                    self.agents.at[newly_infected_ids].status = self.STATUS_I
-                    self.agents.at[newly_infected_ids].infection_time = 0
+        # --- infection (synchronous: snapshot S/I, then apply) ---
+        inf = status == self.STATUS_I
+        sus = status == self.STATUS_S
+        xi, yi = x[inf], y[inf]
+        xs, ys = x[sus], y[sus]
+        if int(xi.size) and int(xs.size):
+            dx = xs[:, None] - xi[None, :]
+            dy = ys[:, None] - yi[None, :]
+            within = (dx * dx + dy * dy) <= radius ** 2
+            draws = self.rng.random((int(xs.size), int(xi.size))) < transmission
+            hit = (within & draws).any(axis=1)
+            sus_idx = xp.nonzero(sus)[0]
+            newly = sus_idx[hit]
+            if int(newly.size):
+                status = xp.asarray(status).copy()
+                infection_time = xp.asarray(infection_time).copy()
+                status[newly] = self.STATUS_I
+                infection_time[newly] = 0
 
         # --- recovery ---
-        recovery_time = self.p.get('recovery_time', 14)
-        active = self.agents.where(pl.col('status') == self.STATUS_I)
-        active.infection_time = active.infection_time + 1
-        recovered = self.agents.where(
-            (pl.col('status') == self.STATUS_I)
-            & (pl.col('infection_time') >= recovery_time)
+        infection_time = xp.where(
+            status == self.STATUS_I, infection_time + 1, infection_time
         )
-        if len(recovered) > 0:
-            recovered.status = self.STATUS_R
+        status = xp.where(
+            (status == self.STATUS_I) & (infection_time >= recovery_time),
+            self.STATUS_R,
+            status,
+        )
+
+        self.agents.x = x
+        self.agents.y = y
+        self.agents.status = status
+        self.agents.infection_time = infection_time
 
     def update(self):
         super().update()
-        status = self.agents.status.to_numpy()
+        status = self.agents.array('status')
+        from ambr.gpu import to_host
+        status = to_host(status)
         self.record_model('susceptible', int((status == self.STATUS_S).sum()))
         self.record_model('infected', int((status == self.STATUS_I).sum()))
         self.record_model('recovered', int((status == self.STATUS_R).sum()))
 
 
 class AMBERVectorizedRandomWalk(am.Model):
-    """Random walk expressed as two numpy updates and one columnar write."""
+    """Random walk via the view API; same step on ``cpu()`` and ``gpu()``."""
 
     def setup(self):
         n = self.p.get('n', 100)
@@ -401,15 +396,15 @@ class AMBERVectorizedRandomWalk(am.Model):
         )
 
     def step(self):
+        xp = self.xp
         n = len(self.agents)
         speed = self.p.get('speed', 1.0)
         world_size = self.p.get('world_size', 100)
-        xs = self.agents.x.to_numpy() + self.rng.uniform(-speed, speed, n)
-        ys = self.agents.y.to_numpy() + self.rng.uniform(-speed, speed, n)
-        np.clip(xs, 0, world_size, out=xs)
-        np.clip(ys, 0, world_size, out=ys)
-        self.agents.x = xs
-        self.agents.y = ys
+        x, y = self.agents.array('x', 'y')
+        x = xp.clip(x + self.rng.uniform(-speed, speed, n), 0.0, world_size)
+        y = xp.clip(y + self.rng.uniform(-speed, speed, n), 0.0, world_size)
+        self.agents.x = x
+        self.agents.y = y
 
     def update(self):
         super().update()
@@ -470,20 +465,24 @@ class AMBERSchelling(am.Model):
 
 
 class AMBERVectorizedSchelling(am.Model):
-    """Schelling segregation via the grid-vectorized core (one columnar update)."""
+    """Schelling via the shared grid core + view API; works under cpu()/gpu()."""
 
     def setup(self):
         n = self.p.get('n', 100)
         x, y, t, self.G = schelling_setup(
             n, self.p.get('density', 0.8), self.p.get('fraction_a', 0.5), self.rng, np)
         self.tolerance = float(self.p.get('tolerance', 0.3))
-        self._types = t
-        self.add_agents(n, x=x.astype(np.int32), y=y.astype(np.int32))
+        self._types = np.asarray(t)
+        self.add_agents(n, x=np.asarray(x, dtype=np.int32), y=np.asarray(y, dtype=np.int32))
 
     def step(self):
-        x = self.agents.x.to_numpy().astype(np.int32)
-        y = self.agents.y.to_numpy().astype(np.int32)
-        nx, ny = schelling_step(x, y, self._types, self.G, self.tolerance, self.rng, np)
+        xp = self.xp
+        x = xp.asarray(self.agents.array('x'), dtype=xp.int32)
+        y = xp.asarray(self.agents.array('y'), dtype=xp.int32)
+        t = xp.asarray(self._types)
+        nx, ny = schelling_step(
+            x, y, t, self.G, self.tolerance, self.rng, xp
+        )
         self.agents.x = nx
         self.agents.y = ny
 
