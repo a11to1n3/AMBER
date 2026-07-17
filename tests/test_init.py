@@ -160,7 +160,7 @@ class TestPackageInitialization:
             'GPUEnsembleRunner', 'BatchedWellMixedSIR', 'smac_batch_calibrate',
             'RunResults',
             'ArrayKernelModel', 'status', 'print_status', 'recommend',
-            'require_gpu', 'synchronize', 'numba_jit',
+            'require_gpu', 'synchronize', 'scatter_add', 'numba_jit',
         }
 
         # Check that we don't have unexpected exports

@@ -33,6 +33,7 @@ from importlib.metadata import version as _metadata_version
 
 from .agent import Agent
 from .model import Model
+from .execution import EXECUTION_DEVICES, EXECUTION_MODES, ExecutionConfig
 from .population import Population, BatchUpdateContext
 from .contract import (
     ContractCertificate,
@@ -67,7 +68,7 @@ from .performance import (
     jit as numba_jit,
 )
 from .tensor_lane import TensorLane, borrow_numeric, commit_columns
-from .gpu import GPU_AVAILABLE, get_array_module, to_device, to_host, require_gpu, synchronize
+from .gpu import GPU_AVAILABLE, get_array_module, to_device, to_host, require_gpu, synchronize, scatter_add
 from .gpu_ensemble import (
     GPUEnsembleRunner,
     BatchedWellMixedSIR,
@@ -88,6 +89,9 @@ __url__ = 'https://github.com/a11to1n3/AMBER'
 __all__ = [
     'Agent',
     'Model',
+    'EXECUTION_DEVICES',
+    'EXECUTION_MODES',
+    'ExecutionConfig',
     'Population',
     'BatchUpdateContext',
     'ContractCertificate',
@@ -132,6 +136,7 @@ __all__ = [
     'to_host',
     'require_gpu',
     'synchronize',
+    'scatter_add',
     'GPUEnsembleRunner',
     'BatchedWellMixedSIR',
     'smac_batch_calibrate',

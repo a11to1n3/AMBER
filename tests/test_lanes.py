@@ -39,6 +39,12 @@ class _Drift(ArrayKernelModel):
         return {"mean_x": float(am.to_host(state["x"].mean()))}
 
 
+def test_scatter_add_numpy():
+    base = np.zeros(5, dtype=np.int64)
+    out = am.scatter_add(base, np.array([1, 1, 3]), np.array([2, 3, 1]))
+    assert out.tolist() == [0, 5, 0, 1, 0]
+
+
 def test_array_kernel_model_runs_on_numpy():
     res = _Drift({"n": 100, "steps": 5, "seed": 0, "prefer_gpu": False}).run()
     assert res.info["steps"] == 5
