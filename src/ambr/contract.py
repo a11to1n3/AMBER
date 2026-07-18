@@ -1,9 +1,9 @@
 """Runtime conformance checking for AMBER's snapshot-view contract.
 
-This module turns simultaneous-update admissibility into a falsifiable,
-per-step artifact: a :class:`ContractCertificate` that witnesses whether the
-writes committed during a step preserve snapshot semantics under columnar
-execution (the “view contract”).
+This module turns simultaneous-update discipline into a falsifiable per-step
+artifact.  A :class:`ContractCertificate` reports conflicts observed at AMBER's
+read/write seams; it is a runtime diagnostic, not a proof that arbitrary user
+array code is schedule-independent.
 
 It witnesses violations on *two* write paths:
 
@@ -27,6 +27,9 @@ The checks:
   partial-map conflict.
 * **read-after-write (lane path)** -- a column borrowed *after* it was committed
   in the same step; a snapshot rule must read step-entry state.
+* **uncertified mutable borrow** -- ``agents.array(...)`` exposed a mutable
+  NumPy/CuPy buffer.  AMBER observes the borrow, but cannot infer whether or how
+  user code subsequently mutates or indexes that raw array.
 * **schema / population mutation** -- the column set, a column's *dtype*, or the
   agent id-set changed between step entry and exit, so reads issued during the
   step no longer see a stable snapshot. Column/population *additions* and
@@ -39,8 +42,9 @@ reverted within a single step is not caught; (2) raw ``population.data = ...``
 writes that bypass both ``_queue_write`` and the reported lane/view seams are
 invisible to the conflict check (``Population.data = ...`` is deprecated and
 warns; prefer ``agents.col = ...`` / ``agents.set`` / ``agents.commit``).
-Cell-level read-after-write within the buffered view API remains the job of
-the (separate) static analyzer.
+Cell-level dependency and commutativity reasoning remains the job of model
+analysis or tests; a clean certificate is evidence only for the operations the
+runtime seams can observe.
 """
 
 from __future__ import annotations
@@ -156,6 +160,9 @@ class ContractMonitor:
         self._commit_counts: Dict[str, int] = {}
         self._committed: Set[str] = set()
         self._raw_cols: Set[str] = set()
+        self._borrowed: Set[str] = set()
+        self._mutable_borrows: Set[str] = set()
+        self._reduced_cols: Set[str] = set()
         # Columns touched by both buffered and lane/view paths in this step
         self._cross_path_cols: Set[str] = set()
         # Step-entry snapshot for schema / population diff
@@ -181,6 +188,9 @@ class ContractMonitor:
         self._commit_counts = {}
         self._committed = set()
         self._raw_cols = set()
+        self._borrowed = set()
+        self._mutable_borrows = set()
+        self._reduced_cols = set()
         self._cross_path_cols = set()
         self.active = True
 
@@ -207,7 +217,7 @@ class ContractMonitor:
         if count == 2:
             self._dup_cells.add(key)
         self._buffered_cols.add(column)
-        if column in self._committed:
+        if column in self._committed or column in self._reduced_cols:
             self._cross_path_cols.add(column)
 
     def record_commit(self, columns: Iterable[str]) -> None:
@@ -217,15 +227,38 @@ class ContractMonitor:
         for c in columns:
             self._commit_counts[c] = self._commit_counts.get(c, 0) + 1
             self._committed.add(c)
-            if c in self._buffered_cols:
+            if c in self._buffered_cols or c in self._reduced_cols:
+                self._cross_path_cols.add(c)
+
+    def record_reduction(self, columns: Iterable[str]) -> None:
+        """Record a sanctioned commutative reduction write.
+
+        Repeated reductions are not duplicate-write errors, but mixing a
+        reduction with an ordinary write to the same column remains ambiguous
+        and is reported as a cross-path conflict.
+        """
+        if not self.active:
+            return
+        for c in columns:
+            self._reduced_cols.add(c)
+            self._committed.add(c)
+            if c in self._buffered_cols or c in self._commit_counts:
                 self._cross_path_cols.add(c)
 
     def record_borrow(self, column: str) -> None:
         """Record a lane borrow of ``column``; flag if already committed."""
         if not self.active:
             return
+        self._borrowed.add(column)
         if column in self._committed:
             self._raw_cols.add(column)
+
+    def record_mutable_borrow(self, column: str) -> None:
+        """Record raw mutable array access that cannot be fully traced."""
+        if not self.active:
+            return
+        self.record_borrow(column)
+        self._mutable_borrows.add(column)
 
     # --- internal checks ----------------------------------------------------
 
@@ -251,10 +284,10 @@ class ContractMonitor:
         cols = sorted(self._cross_path_cols)
         cert.add(ContractViolation(
             "cross_path_write",
-            f"column(s) {cols} were written via both the buffered (OOP) path "
-            f"and the lane/view path within the same step; under simultaneous "
-            f"activation the later path clobbers the earlier. Use one write "
-            f"path per column per step (or scatter_add for accumulation).",
+            f"column(s) {cols} were written through incompatible ordinary, "
+            f"buffered, or reduction mechanisms within the same step; the "
+            f"result depends on commit ordering. Use one write mechanism per "
+            f"column per step (or a single commutative reduction).",
             severity=SEVERITY_ERROR,
             columns=cols,
         ))
@@ -316,6 +349,18 @@ class ContractMonitor:
                 f"state. Borrow all inputs before committing any output.",
                 severity=SEVERITY_ERROR,
                 columns=raw,
+            ))
+        if self._mutable_borrows:
+            mutable = sorted(self._mutable_borrows)
+            cert.add(ContractViolation(
+                "uncertified_mutable_borrow",
+                f"column(s) {mutable} were exposed through a mutable raw "
+                f"NumPy/CuPy array. The runtime observes this access but "
+                f"cannot infer subsequent in-place writes or gather indices; "
+                f"use immutable column expressions / TensorLane borrows for "
+                f"a fully observed trace.",
+                severity=SEVERITY_WARNING,
+                columns=mutable,
             ))
 
     def _check_population(

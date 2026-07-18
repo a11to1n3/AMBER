@@ -128,9 +128,9 @@ and SMAC 2.x-compatible optimization.
 Added
 ~~~~~
 - Snapshot-view contract: ``model.run(contract="check"|"warn"|"raise")`` records
-  a per-step ``ContractCertificate`` that columnar fast-path updates preserve the
-  intended update schedule; inspect ``results["contract"]`` (mode ``off`` is the
-  zero-overhead default).
+  a per-step ``ContractCertificate`` of conflicts observed at instrumented API
+  seams; inspect ``results["contract"]`` (mode ``off`` is the zero-bookkeeping
+  default). A clean record is not a proof for arbitrary array code.
 - Tensor lane: zero-copy ``agents.borrow(col)`` / ``agents.commit(**cols)`` over
   the Polars frame, routed through the contract.
 - GPU backend: ``ambr.gpu`` array-module abstraction with NumPy fallback, and

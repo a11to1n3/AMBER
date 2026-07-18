@@ -1,6 +1,7 @@
 """Keras-style device placement: model.cpu(mode=...) / model.gpu(mode=...)."""
 
 import pytest
+import numpy as np
 
 import ambr as am
 from ambr.gpu import GPU_AVAILABLE
@@ -33,6 +34,26 @@ def test_gpu_mode_fluent_setter():
     assert m.mode == "vectorized"
 
 
+def test_private_fast_path_requires_explicit_instance_approval():
+    m = am.Model({"steps": 1})
+    config = am.ExecutionConfig(device="gpu", mode="vectorized")
+    def hook():
+        pass
+
+    assert m.fast_path_approval is None
+    assert not m._fast_path_is_eligible(config, "off", hook, hook)
+    assert m.approve_fast_path("gpu-smoke-report-2026-07") is m
+    assert m.fast_path_approval == "gpu-smoke-report-2026-07"
+    assert m._fast_path_is_eligible(config, "off", hook, hook)
+    assert not m._fast_path_is_eligible(config, "check", hook, hook)
+    assert m.revoke_fast_path_approval() is m
+    assert m.fast_path_approval is None
+    assert not m._fast_path_is_eligible(config, "off", hook, hook)
+
+    with pytest.raises(ValueError, match="non-empty evidence label"):
+        m.approve_fast_path("   ")
+
+
 def test_cpu_mode_run_records_mode():
     class M(am.Model):
         def step(self):
@@ -60,6 +81,30 @@ def test_run_records_device_and_mode():
     r = M({"steps": 2}).cpu().run(mode="vectorized")
     assert r.info["device"] == "cpu"
     assert r.info["mode"] == "vectorized"
+
+
+def test_execution_mode_dispatches_native_step_hooks():
+    calls = []
+
+    class A(am.Agent):
+        pass
+
+    class M(am.Model):
+        def setup(self):
+            if self.mode == "oop":
+                self.add_agents(1, agent_class=A)
+            else:
+                self.add_agents(1, x=0)
+
+        def step_vectorized(self):
+            calls.append("vectorized")
+
+        def step_oop(self):
+            calls.append("oop")
+
+    M({"steps": 1}).cpu(mode="vectorized").run()
+    M({"steps": 1}).cpu(mode="oop").run()
+    assert calls == ["vectorized", "oop"]
 
 
 def test_run_device_param_overrides_fluent():
@@ -105,6 +150,11 @@ def test_invalid_fluent_mode_raises():
         am.Model({"steps": 1}).gpu(mode="quantum")
 
 
+def test_gpu_oop_mode_is_rejected():
+    with pytest.raises(ValueError, match="GPU execution supports mode='vectorized'"):
+        am.Model({"steps": 1}).gpu(mode="oop").run()
+
+
 @pytest.mark.skipif(not GPU_AVAILABLE, reason="CUDA/CuPy not available")
 def test_gpu_fluent_run():
     class M(am.Model):
@@ -139,3 +189,34 @@ def test_execution_state_cleared_after_run():
     m = M({"steps": 1})
     m.cpu().run()
     assert m._execution is None
+
+
+@pytest.mark.skipif(not GPU_AVAILABLE, reason="CUDA/CuPy not available")
+def test_native_gpu_step_does_not_export_boolean_masks():
+    from unittest.mock import patch
+
+    class NativeWealth(am.Model):
+        def setup(self):
+            self.add_agents(100, wealth=np.ones(100, dtype=np.int64))
+
+        def step_vectorized(self):
+            xp = self.xp
+            wealth = self.agents.array("wealth")
+            donor_positions = xp.nonzero(wealth > 0)[0]
+            if int(donor_positions.size) == 0:
+                return
+            wealth[donor_positions] -= 1
+            recipients = self.rng.choice(
+                self.agents.array("id"), size=int(donor_positions.size)
+            )
+            self.agents.at[recipients].scatter_add(wealth=1)
+
+        def update(self):
+            pass
+
+    with patch(
+        "ambr.gpu.to_host",
+        side_effect=AssertionError("unexpected per-step host export"),
+    ):
+        result = NativeWealth({"steps": 2, "seed": 0}).gpu().run()
+    assert int(result.agents["wealth"].sum()) == 100
