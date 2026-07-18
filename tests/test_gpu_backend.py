@@ -112,6 +112,49 @@ def _vectorized_benchmark_models():
     return AMBER_VECTORIZED_MODELS
 
 
+def test_benchmark_wealth_vectorized_lane_is_one_clean_reduction():
+    cls = _vectorized_benchmark_models()["wealth_transfer"]
+    res = cls({
+        "n": 200,
+        "steps": 5,
+        "show_progress": False,
+        "seed": 7,
+        "initial_wealth": 1,
+    }).cpu(mode="vectorized").run(contract="check")
+
+    assert int(res.agents["wealth"].sum()) == 200
+    assert int(res.agents["wealth"].min()) >= 0
+    assert all(cert.clean for cert in res["contract"])
+
+
+def test_benchmark_wealth_oop_freezes_donors_before_writes():
+    """A recipient that starts at zero must not become a donor this step."""
+    cls = _vectorized_benchmark_models()["wealth_transfer"]
+    model = cls({
+        "n": 2,
+        "steps": 1,
+        "show_progress": False,
+        "seed": 0,
+        "initial_wealth": 1,
+    }).cpu(mode="oop")
+    model._ensure_setup()
+    agents = list(model.agents)
+    agents[0].wealth = 1
+    agents[1].wealth = 0
+    model._flush_pending_writes()
+
+    class _ChooseSecond:
+        @staticmethod
+        def choice(_agents):
+            return agents[1]
+
+    model.random = _ChooseSecond()
+    res = model.run(contract="check")
+
+    assert res.agents.sort("id")["wealth"].to_list() == [0, 1]
+    assert res["contract"][0].clean
+
+
 @pytest.mark.parametrize(
     "name",
     ["wealth_transfer", "random_walk", "sir_epidemic", "schelling"],
@@ -139,6 +182,35 @@ def test_vectorized_models_run_cpu(name):
     assert res.agents.height == 40
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["wealth_transfer", "random_walk", "sir_epidemic", "schelling"],
+)
+def test_vectorized_models_run_oop(name):
+    """The same benchmark families expose a real CPU Agent-object lane."""
+    cls = _vectorized_benchmark_models()[name]
+    cfg = {
+        "n": 40,
+        "steps": 3,
+        "show_progress": False,
+        "seed": 0,
+        "initial_wealth": 1,
+        "initial_infected": 3,
+        "world_size": 50,
+        "speed": 1.0,
+        "movement_speed": 2.0,
+        "infection_radius": 5.0,
+        "transmission_rate": 0.1,
+        "recovery_time": 14,
+        "density": 0.8,
+        "fraction_a": 0.5,
+        "tolerance": 0.3,
+    }
+    res = cls(cfg).cpu(mode="oop").run()
+    assert res.agents.height == 40
+    assert res.info.get("mode") == "oop"
+
+
 @pytest.mark.skipif(not GPU_AVAILABLE, reason="CUDA/CuPy not available")
 @pytest.mark.parametrize(
     "name",
@@ -164,6 +236,8 @@ def test_vectorized_models_run_gpu_same_api(name):
         "fraction_a": 0.5,
         "tolerance": 0.3,
     }
-    res = cls(cfg).gpu().run()
+    res = cls(cfg).approve_fast_path(
+        "workload smoke/invariant test"
+    ).gpu().run()
     assert res.agents.height == 40
     assert res.info.get("device") == "gpu"
