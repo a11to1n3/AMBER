@@ -7,7 +7,6 @@ To use it for ABM, we treat each agent as a process that waits for 1 tick.
 import time
 import simpy
 import random
-import sys
 
 # =============================================================================
 # Wealth Transfer
@@ -128,6 +127,7 @@ def run_sir_benchmark(
     infection_radius=5.0,
     transmission_rate=0.1,
     recovery_time=14,
+    max_per_cell=None,
 ):
     env = simpy.Environment()
     agents_data = [{'id': i, 'status': 0, 'x': 0, 'y': 0, 'infection_time': 0} for i in range(n)]

@@ -5,10 +5,15 @@ N=1e5. This module replaces it with a **uniform-grid cell list**:
 
 * Each agent is binned into a cell of side >= interaction radius, so every
   neighbour within the radius lives in the 3x3 block of surrounding cells.
-* Building the cell table is O(N): argsort by cell, bincount, prefix-sum, then
-  scatter agent indices into a (num_cells, K) table (K = max occupancy kept).
-* The neighbour query is O(N * 9K) and is processed in **agent chunks** so the
-  device memory footprint stays bounded regardless of N -> scales to millions.
+* The capped-table prototype comparison-sorts agents by cell, then uses
+  bincount/prefix-sum and scatters into a (num_cells, K) table. Its build is
+  O(N log N), its query is O(N * 9K), and it may omit neighbours when
+  occupancy exceeds K.
+* The exact private kernel uses counting-sort bins and scans all candidate
+  pairs. Its cost is O(N + C + P), where C is the number of cells and P the
+  candidate pairs examined; P can be quadratic when density grows in a fixed
+  domain. Its ten-million-agent result is therefore empirical, not an O(N)
+  worst-case guarantee.
 
 Positions are float32, status int8 -> state is ~13 bytes/agent, so tens of
 millions of agents fit in 24 GB; the query chunk bounds the transient memory.
@@ -43,7 +48,7 @@ def _build_cell_table(cx, cy, ncell, K):
 
 
 class GPUSIRBinnedModel:
-    """SIR on the GPU with a cell-list neighbour query (O(N) per step)."""
+    """Capped SIR cell list: O(N log N + NK) per step for fixed K."""
 
     def __init__(self, n, steps, cfg):
         self.n, self.steps, self.cfg = n, steps, cfg
@@ -138,8 +143,9 @@ class GPUSIRBinnedModel:
 # The whole index is two columns (`cell_start`, `order`); the kernels are the
 # *execution* of columnar primitives (group-by, segmented join) over them, the
 # same way Polars compiles group-by/join to kernels over Arrow columns. It is
-# snapshot-contract-governed: reads step-entry columns, writes `new_inf`
-# separately (race-free). Inline counter-hash PRNG for the per-pair draw.
+# snapshot-structured: it reads step-entry columns and writes `new_inf`
+# separately (race-free), but this private path is not runtime-monitored.
+# Inline counter-hash PRNG supplies each per-pair draw.
 # --------------------------------------------------------------------------- #
 
 _MODULE_SRC = r'''
@@ -318,6 +324,99 @@ class GPUSIRKernelModel:
                 "I": int((status == 1).sum()),
                 "R": int((status == 2).sum()),
             }
+
+
+def sir_kernel_step(
+    x,
+    y,
+    status,
+    infection_time,
+    *,
+    step: int,
+    world_size: float,
+    radius: float,
+    transmission: float,
+    recovery_time: int,
+):
+    """Run one exact cell-binned SIR spatial join on caller-owned columns.
+
+    Counting/bucketization costs O(N + C); exact neighbour traversal adds P,
+    the number of candidate pairs examined. Thus total work is O(N + C + P),
+    with a quadratic worst case under unbounded density in a fixed domain.
+
+    This is an internal backend hook.  The public model still enters through
+    ``model.gpu().run()``; this function only replaces the generic CuPy cell
+    list when the GPU lane is active.  The caller's arrays are returned so
+    AMBER's normal device-column lifecycle and final Polars result remain
+    unchanged.
+    """
+    import cupy as cp
+
+    if GPUSIRKernelModel._module is None:
+        GPUSIRKernelModel._module = cp.RawModule(code=_MODULE_SRC)
+    mod = GPUSIRKernelModel._module
+    cell_and_count = mod.get_function("cell_and_count")
+    bucketize_reorder = mod.get_function("bucketize_reorder")
+    sir_join_sorted = mod.get_function("sir_join_sorted")
+
+    # The CUDA join is intentionally typed for compact GPU state.  Conversion
+    # happens once when a model first enters this private fast path; subsequent
+    # steps stay in these device dtypes.
+    x = cp.asarray(x, dtype=cp.float32)
+    y = cp.asarray(y, dtype=cp.float32)
+    status = cp.asarray(status, dtype=cp.int8)
+    infection_time = cp.asarray(infection_time, dtype=cp.int32)
+    n = int(x.size)
+
+    ncell = max(1, int(float(world_size) // float(radius)))
+    cs = float(world_size) / ncell
+    ncell2 = ncell * ncell
+    tpb = 256
+    blocks = (n + tpb - 1) // tpb
+
+    cell = cp.empty(n, dtype=cp.int64)
+    counts = cp.zeros(ncell2, dtype=cp.int64)
+    cell_and_count(
+        (blocks,), (tpb,),
+        (x, y, np.float32(cs), np.int32(ncell), cell, counts, np.int32(n)),
+    )
+    cell_start = cp.zeros(ncell2 + 1, dtype=cp.int64)
+    cell_start[1:] = cp.cumsum(counts)
+    cursor = cell_start[:-1].copy()
+
+    order = cp.empty(n, dtype=cp.int64)
+    xs = cp.empty(n, dtype=cp.float32)
+    ys = cp.empty(n, dtype=cp.float32)
+    ss = cp.empty(n, dtype=cp.int8)
+    bucketize_reorder(
+        (blocks,), (tpb,),
+        (cell, cursor, x, y, status, order, xs, ys, ss, np.int32(n)),
+    )
+
+    new_inf_sorted = cp.zeros(n, dtype=cp.int8)
+    sir_join_sorted(
+        (blocks,), (tpb,),
+        (
+            xs, ys, ss, order, cell_start,
+            np.int32(ncell), np.float32(cs), np.float32(float(radius) ** 2),
+            np.float32(transmission), np.uint32(step), np.int32(n),
+            new_inf_sorted,
+        ),
+    )
+    new_inf = cp.zeros(n, dtype=cp.int8)
+    new_inf[order] = new_inf_sorted
+    newly = new_inf.astype(cp.bool_)
+    status[newly] = 1
+    infection_time[newly] = 0
+
+    infected = status == 1
+    infection_time = cp.where(infected, infection_time + 1, infection_time)
+    status = cp.where(
+        infected & (infection_time >= int(recovery_time)),
+        cp.int8(2),
+        status,
+    )
+    return x, y, status, infection_time
 
 
 AMBER_GPU_SCALE_MODELS = {

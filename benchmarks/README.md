@@ -101,8 +101,10 @@ not as proof of identical stochastic trajectories.
 ## Published results — large-N multi-framework (1k→10M)
 
 **One** checked-in performance plot and table. NVIDIA RTX 5090, 50 steps,
-10 runs (trimmed mean). Ten frameworks. AMBER (GPU) is the same view-API
-models under `model.gpu().run()` (0.4.3+).
+10 runs (trimmed mean). Ten frameworks. AMBER (GPU) uses the same view-API
+models under an explicit benchmark evidence label followed by
+`model.gpu().run()` (0.4.3+); the label records caller approval and is not a
+runtime certificate.
 
 - Chart: [`results/scaling_chart.png`](results/scaling_chart.png)
 - Full per-model tables: [`results/summary_table.md`](results/summary_table.md)
