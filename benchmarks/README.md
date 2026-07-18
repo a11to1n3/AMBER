@@ -163,6 +163,10 @@ python benchmarks/plot_scaling_with_gpu_schelling.py \
 - `results/summary_table.md` — full large-N tables (**checked in**)
 - `results/scaling_chart.png` — the **only** published performance plot
 
+**AMBER (GPU) (0.4.3+):** the main harness times the same vectorized models as
+AMBER (vectorized) via `model.gpu().run()`. Do not keep or cite interim split
+logs from before that change as current GPU numbers.
+
 **Dependencies:**
 
 ```bash
