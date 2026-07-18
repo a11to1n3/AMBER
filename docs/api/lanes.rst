@@ -5,9 +5,10 @@ Progressive “how do I go faster?” helpers and the single-run array model.
 See also the user guide :doc:`../going_faster`.
 
 For a **view-API model on GPU**, prefer
-``MyModel(...).gpu().run()`` (0.4.3) rather than rewriting the step as an
-:class:`~ambr.lanes.ArrayKernelModel`. Use ``ArrayKernelModel`` when the
-state is naturally a pure array dict and you do not need the Polars view API.
+``MyModel(...).gpu().run()`` with ``step_vectorized()`` (0.4.4) rather than
+rewriting the step as an :class:`~ambr.lanes.ArrayKernelModel`. Use
+``ArrayKernelModel`` when the state is naturally a pure array dict and you do
+not need the Polars view API.
 
 Status & recommendations
 ------------------------

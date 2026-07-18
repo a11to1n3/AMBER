@@ -13,6 +13,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 import ambr as am
 import numpy as np
+import polars as pl
+
+from ambr.gpu_kernels import fused_random_walk, fused_wealth_transfer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _schelling_core import schelling_setup, schelling_step
@@ -31,10 +34,32 @@ class WealthAgent(am.Agent):
     def step(self):
         if self.wealth > 0:
             # Give 1 unit to a random other agent
-            other = self.model.random.choice(self.model.agent_objects_list)
+            other = self.model.random.choice(self.model.agents)
             if other.id != self.id:
                 self.wealth -= 1
                 other.wealth += 1
+
+
+def _wealth_snapshot_step(model):
+    """Execute one native Agent-object transfer step from entry state.
+
+    Donor eligibility and all recipient draws are fixed before any Agent
+    attribute is updated.  Aggregating deltas also gives each cell one final
+    buffered write, so the OOP lane implements the same simultaneous transfer
+    semantics as the vectorized and GPU lanes.
+    """
+    agents = list(model.agents)
+    if not agents:
+        return
+    entry = {agent.id: int(agent.wealth) for agent in agents}
+    delta = {agent.id: 0 for agent in agents}
+    donors = [agent for agent in agents if entry[agent.id] > 0]
+    for donor in donors:
+        recipient = model.random.choice(agents)
+        delta[donor.id] -= 1
+        delta[recipient.id] += 1
+    for agent in agents:
+        agent.wealth = entry[agent.id] + delta[agent.id]
 
 
 class AMBERWealthTransfer(am.Model):
@@ -47,14 +72,9 @@ class AMBERWealthTransfer(am.Model):
 
     def setup(self):
         n = self.p.get('n', 100)
-        self.agent_objects = {}
-        self.agent_objects_list = []
-
-        for i in range(n):
-            agent = WealthAgent(self, i)
-            agent.setup()
-            self.agent_objects[i] = agent
-            self.agent_objects_list.append(agent)
+        self.add_agents(n, agent_class=WealthAgent)
+        self.agent_objects = {agent.id: agent for agent in self.agents}
+        self.agent_objects_list = list(self.agents)
 
         self._record_state()
 
@@ -74,11 +94,7 @@ class AMBERWealthTransfer(am.Model):
         return (2 * cumulative) / (n * sum(wealths)) - (n + 1) / n
 
     def step(self):
-        # Shuffle and step all agents
-        agents = list(self.agent_objects_list)
-        self.random.shuffle(agents)
-        for agent in agents:
-            agent.step()
+        _wealth_snapshot_step(self)
 
     def update(self):
         super().update()
@@ -154,14 +170,9 @@ class AMBERSIRModel(am.Model):
 
     def setup(self):
         n = self.p.get('n', 100)
-        self.agent_objects = {}
-        self.agent_objects_list = []
-
-        for i in range(n):
-            agent = SIRAgent(self, i)
-            agent.setup()
-            self.agent_objects[i] = agent
-            self.agent_objects_list.append(agent)
+        self.add_agents(n, agent_class=SIRAgent)
+        self.agent_objects = {agent.id: agent for agent in self.agents}
+        self.agent_objects_list = list(self.agents)
 
         self._record_state()
 
@@ -219,14 +230,9 @@ class AMBERRandomWalk(am.Model):
 
     def setup(self):
         n = self.p.get('n', 100)
-        self.agent_objects = {}
-        self.agent_objects_list = []
-
-        for i in range(n):
-            agent = WalkAgent(self, i)
-            agent.setup()
-            self.agent_objects[i] = agent
-            self.agent_objects_list.append(agent)
+        self.add_agents(n, agent_class=WalkAgent)
+        self.agent_objects = {agent.id: agent for agent in self.agents}
+        self.agent_objects_list = list(self.agents)
 
         self._record_state()
 
@@ -258,39 +264,134 @@ class AMBERRandomWalk(am.Model):
 # =============================================================================
 
 class AMBERVectorizedWealthTransfer(am.Model):
-    """Wealth transfer using the canonical AMBER view API (quickstart idiom)."""
+    """Wealth transfer with native vectorized, OOP, and GPU lanes."""
 
     def setup(self):
         n = self.p.get('n', 100)
-        self.add_agents(
-            n,
-            wealth=np.full(n, self.p.get('initial_wealth', 1), dtype=np.int64),
+        if self.mode == 'oop':
+            self.add_agents(n, agent_class=WealthAgent)
+        else:
+            self.add_agents(
+                n,
+                wealth=np.full(n, self.p.get('initial_wealth', 1), dtype=np.int64),
+            )
+
+    def _setup_gpu_fast(self):
+        import cupy as cp
+        from ambr.gpu import make_device_rng
+
+        n = int(self.p.get('n', 100))
+        self.population.replace_frame(
+            pl.DataFrame({
+                'id': np.arange(n, dtype=np.int64),
+                'step': np.zeros(n, dtype=np.int64),
+            })
         )
+        rng = make_device_rng(self.p.get('seed'))
+        return {
+            'id': cp.arange(n, dtype=cp.int64),
+            'wealth': cp.full(
+                n, int(self.p.get('initial_wealth', 1)), dtype=cp.int64
+            ),
+        }, rng
 
     def step(self):
-        donors = self.agents.where(self.agents.wealth > 0)
-        if len(donors) == 0:
+        return self.step_vectorized()
+
+    def step_vectorized(self):
+        """Run without converting the donor mask to a host array on GPU."""
+        xp = self.xp
+        if xp is np:
+            # Express the complete transfer as one declared AC reduction.  In
+            # particular, do not commit donor debits and then apply recipient
+            # credits through a second write mechanism.
+            wealth = self.agents.wealth.to_numpy()
+            donor_positions = np.flatnonzero(wealth > 0)
+            donor_count = int(donor_positions.size)
+            if donor_count == 0:
+                return
+            ids = self.agents.ids.to_numpy()
+            recipients = self.rng.choice(ids, size=donor_count)
+            targets = np.concatenate((ids[donor_positions], recipients))
+            deltas = np.concatenate((
+                -np.ones(donor_count, dtype=wealth.dtype),
+                np.ones(donor_count, dtype=wealth.dtype),
+            ))
+            self.agents.at[targets].scatter_add(wealth=deltas)
             return
-        donors.wealth -= 1
-        ids = self.agents.ids.to_numpy()
-        recipients = self.rng.choice(ids, size=len(donors))
+
+        wealth = self.agents.array('wealth')
+        donor_positions = xp.nonzero(wealth > 0)[0]
+        donor_count = int(donor_positions.size)
+        if donor_count == 0:
+            return
+        # Freeze eligibility before any atomic write.  The kernel may update
+        # donors and recipients concurrently, but a recipient can no longer
+        # become a donor during the same logical step.
+        ids = self.agents.array('id')
+        recipients = self.rng.choice(ids, size=donor_count)
+        if fused_wealth_transfer(wealth, donor_positions, recipients):
+            return
+
+        # Defensive fallback for an unsupported accelerator array type.
+        wealth[donor_positions] -= 1
         self.agents.at[recipients].scatter_add(wealth=1)
+
+    def step_oop(self):
+        """Run the same transfer rule through tracked Python Agent objects."""
+        _wealth_snapshot_step(self)
+
+    def _run_gpu_fast(self, max_steps):
+        """Private tight GPU loop selected by ``Model.run()``."""
+        from ambr.execution import active_execution
+
+        ex = active_execution(self)
+        wealth = ex.device_columns['wealth']
+        ids = ex.device_columns['id']
+        for _ in range(max_steps):
+            donor_positions = ex.xp.nonzero(wealth > 0)[0]
+            donor_count = int(donor_positions.size)
+            if donor_count:
+                recipients = self.rng.choice(ids, size=donor_count)
+                fused_wealth_transfer(wealth, donor_positions, recipients)
+            ex.dirty_columns.add('wealth')
+            self._append_fast_step(
+                total_wealth=int(ex.xp.sum(wealth)),
+                gini=self._gini(wealth, ex.xp),
+            )
+        ex.device_columns['wealth'] = wealth
 
     def update(self):
         super().update()
-        # Aggregate metrics — one Polars expression each.
-        wealth = self.agents.wealth
-        self.record_model('total_wealth', int(wealth.sum()))
-        self.record_model('gini', self._gini(wealth.to_numpy()))
+        # Reductions stay on the active array backend; only scalar metrics
+        # cross back to Python for the result record.
+        xp = self.xp
+        wealth = self.agents.array('wealth')
+        self.record_model('total_wealth', int(xp.sum(wealth)))
+        self.record_model('gini', self._gini(wealth, xp))
 
     @staticmethod
-    def _gini(values):
-        if values.size == 0 or values.sum() == 0:
+    def _gini(values, xp=np):
+        if values.size == 0 or int(xp.sum(values)) == 0:
             return 0.0
-        sorted_vals = np.sort(values)
+        if np.issubdtype(values.dtype, np.integer):
+            # Wealth is an integer conserved quantity.  A histogram gives the
+            # exact Gini coefficient in O(N + W) rather than sorting all N
+            # agents every step (W is the observed wealth range).
+            counts = xp.bincount(values.astype(xp.int64))
+            prior = xp.cumsum(counts) - counts
+            n = int(values.size)
+            total = xp.sum(values)
+            weighted = xp.sum(
+                xp.arange(counts.size, dtype=xp.int64)
+                * counts
+                * (2 * prior + counts - n)
+            )
+            return float(weighted / (n * total))
+        sorted_vals = xp.sort(values)
         n = len(sorted_vals)
-        weighted_sum = np.sum(np.arange(1, n + 1) * sorted_vals)
-        return (2 * weighted_sum) / (n * sorted_vals.sum()) - (n + 1) / n
+        weighted_sum = xp.sum(xp.arange(1, n + 1) * sorted_vals)
+        return float((2 * weighted_sum) / (n * xp.sum(sorted_vals)) - (n + 1) / n)
 
 
 def _sir_infect_cell_list(
@@ -430,6 +531,12 @@ class AMBERVectorizedSIRModel(am.Model):
         world_size = self.p.get('world_size', 100)
         initial_infected = self.p.get('initial_infected', 5)
 
+        if self.mode == 'oop':
+            self.add_agents(n, agent_class=SIRAgent)
+            self.agent_objects = {agent.id: agent for agent in self.agents}
+            self.agent_objects_list = list(self.agents)
+            return
+
         status = np.full(n, self.STATUS_S, dtype=np.int64)
         status[:initial_infected] = self.STATUS_I
 
@@ -441,7 +548,34 @@ class AMBERVectorizedSIRModel(am.Model):
             y=self.rng.random(size=n) * world_size,
         )
 
+    def _setup_gpu_fast(self):
+        import cupy as cp
+        from ambr.gpu import make_device_rng
+
+        n = int(self.p.get('n', 100))
+        world_size = float(self.p.get('world_size', 100))
+        initial_infected = int(self.p.get('initial_infected', 5))
+        rng = make_device_rng(self.p.get('seed'))
+        status = cp.zeros(n, dtype=cp.int8)
+        status[:initial_infected] = 1
+        self.population.replace_frame(
+            pl.DataFrame({
+                'id': np.arange(n, dtype=np.int64),
+                'step': np.zeros(n, dtype=np.int64),
+            })
+        )
+        return {
+            'id': cp.arange(n, dtype=cp.int64),
+            'status': status,
+            'infection_time': cp.zeros(n, dtype=cp.int32),
+            'x': rng.random(size=n, dtype=cp.float32) * world_size,
+            'y': rng.random(size=n, dtype=cp.float32) * world_size,
+        }, rng
+
     def step(self):
+        return self.step_vectorized()
+
+    def step_vectorized(self):
         xp = self.xp
         n = len(self.agents)
         speed = self.p.get('movement_speed', 2.0)
@@ -455,8 +589,40 @@ class AMBERVectorizedSIRModel(am.Model):
         infection_time = self.agents.array('infection_time')
 
         # --- movement ---
-        x = xp.clip(x + self.rng.uniform(-speed, speed, n), 0.0, world_size)
-        y = xp.clip(y + self.rng.uniform(-speed, speed, n), 0.0, world_size)
+        dx = self.rng.uniform(-speed, speed, n)
+        dy = self.rng.uniform(-speed, speed, n)
+        if xp is np:
+            x = xp.clip(x + dx, 0.0, world_size)
+            y = xp.clip(y + dy, 0.0, world_size)
+        else:
+            x, y = fused_random_walk(x, y, dx, dy, 0.0, world_size)
+
+        # Private GPU specialization; the public ``model.gpu().run()`` API
+        # and device-column lifecycle remain unchanged.  The fallback below
+        # is retained for CPU and environments without the optional kernel
+        # module.
+        if xp is not np:
+            try:
+                from amber_gpu_scale_models import sir_kernel_step
+            except ImportError:
+                sir_kernel_step = None
+            if sir_kernel_step is not None:
+                x, y, status, infection_time = sir_kernel_step(
+                    x,
+                    y,
+                    status,
+                    infection_time,
+                    step=self.t,
+                    world_size=world_size,
+                    radius=radius,
+                    transmission=transmission,
+                    recovery_time=recovery_time,
+                )
+                self.agents.x = x
+                self.agents.y = y
+                self.agents.status = status
+                self.agents.infection_time = infection_time
+                return
 
         # --- infection (synchronous cell-list; scales with N) ---
         status, newly = _sir_infect_cell_list(
@@ -484,14 +650,60 @@ class AMBERVectorizedSIRModel(am.Model):
         self.agents.status = status
         self.agents.infection_time = infection_time
 
+    def step_oop(self):
+        for agent in self.agent_objects_list:
+            agent.move()
+        for agent in self.agent_objects_list:
+            agent.infect_neighbors()
+        for agent in self.agent_objects_list:
+            agent.update_health()
+
+    def _run_gpu_fast(self, max_steps):
+        """Private tight GPU loop using the fused spatial self-join."""
+        from ambr.execution import active_execution
+        from amber_gpu_scale_models import sir_kernel_step
+
+        ex = active_execution(self)
+        xp = ex.xp
+        x = ex.device_columns['x']
+        y = ex.device_columns['y']
+        status = ex.device_columns['status']
+        infection_time = ex.device_columns['infection_time']
+        n = int(x.size)
+        speed = self.p.get('movement_speed', 2.0)
+        world_size = self.p.get('world_size', 100)
+        radius = float(self.p.get('infection_radius', 5.0))
+        transmission = float(self.p.get('transmission_rate', 0.1))
+        recovery_time = int(self.p.get('recovery_time', 14))
+        for _ in range(max_steps):
+            dx = self.rng.uniform(-speed, speed, n)
+            dy = self.rng.uniform(-speed, speed, n)
+            x, y = fused_random_walk(x, y, dx, dy, 0.0, world_size)
+            x, y, status, infection_time = sir_kernel_step(
+                x, y, status, infection_time,
+                step=self.t,
+                world_size=world_size,
+                radius=radius,
+                transmission=transmission,
+                recovery_time=recovery_time,
+            )
+            self._append_fast_step(
+                susceptible=int(xp.count_nonzero(status == self.STATUS_S)),
+                infected=int(xp.count_nonzero(status == self.STATUS_I)),
+                recovered=int(xp.count_nonzero(status == self.STATUS_R)),
+            )
+        ex.device_columns.update(
+            x=x, y=y, status=status, infection_time=infection_time
+        )
+        ex.dirty_columns.update({'x', 'y', 'status', 'infection_time'})
+
     def update(self):
         super().update()
+        xp = self.xp
         status = self.agents.array('status')
-        from ambr.gpu import to_host
-        status = to_host(status)
-        self.record_model('susceptible', int((status == self.STATUS_S).sum()))
-        self.record_model('infected', int((status == self.STATUS_I).sum()))
-        self.record_model('recovered', int((status == self.STATUS_R).sum()))
+        self.record_model('susceptible', int(xp.count_nonzero(status == self.STATUS_S)))
+        self.record_model('infected', int(xp.count_nonzero(status == self.STATUS_I)))
+        self.record_model('recovered', int(xp.count_nonzero(status == self.STATUS_R)))
 
 
 class AMBERVectorizedRandomWalk(am.Model):
@@ -500,27 +712,87 @@ class AMBERVectorizedRandomWalk(am.Model):
     def setup(self):
         n = self.p.get('n', 100)
         world_size = self.p.get('world_size', 100)
+        if self.mode == 'oop':
+            self.add_agents(n, agent_class=WalkAgent)
+            self.agent_objects = {agent.id: agent for agent in self.agents}
+            self.agent_objects_list = list(self.agents)
+            return
         self.add_agents(
             n,
             x=self.rng.random(size=n) * world_size,
             y=self.rng.random(size=n) * world_size,
         )
 
+    def _setup_gpu_fast(self):
+        import cupy as cp
+        from ambr.gpu import make_device_rng
+
+        n = int(self.p.get('n', 100))
+        world_size = float(self.p.get('world_size', 100))
+        rng = make_device_rng(self.p.get('seed'))
+        self.population.replace_frame(
+            pl.DataFrame({
+                'id': np.arange(n, dtype=np.int64),
+                'step': np.zeros(n, dtype=np.int64),
+            })
+        )
+        return {
+            'id': cp.arange(n, dtype=cp.int64),
+            'x': rng.random(size=n, dtype=cp.float32) * world_size,
+            'y': rng.random(size=n, dtype=cp.float32) * world_size,
+        }, rng
+
     def step(self):
+        return self.step_vectorized()
+
+    def step_vectorized(self):
         xp = self.xp
         n = len(self.agents)
         speed = self.p.get('speed', 1.0)
         world_size = self.p.get('world_size', 100)
         x, y = self.agents.array('x', 'y')
-        x = xp.clip(x + self.rng.uniform(-speed, speed, n), 0.0, world_size)
-        y = xp.clip(y + self.rng.uniform(-speed, speed, n), 0.0, world_size)
+        dx = self.rng.uniform(-speed, speed, n)
+        dy = self.rng.uniform(-speed, speed, n)
+        if xp is np:
+            x = xp.clip(x + dx, 0.0, world_size)
+            y = xp.clip(y + dy, 0.0, world_size)
+        else:
+            x, y = fused_random_walk(x, y, dx, dy, 0.0, world_size)
         self.agents.x = x
         self.agents.y = y
 
+    def step_oop(self):
+        for agent in self.agent_objects_list:
+            agent.step()
+
+    def _run_gpu_fast(self, max_steps):
+        """Private tight GPU loop selected without changing ``gpu().run()``."""
+        from ambr.execution import active_execution
+
+        ex = active_execution(self)
+        xp = ex.xp
+        x = ex.device_columns['x']
+        y = ex.device_columns['y']
+        n = int(x.size)
+        speed = self.p.get('speed', 1.0)
+        world_size = self.p.get('world_size', 100)
+        for _ in range(max_steps):
+            dx = self.rng.uniform(-speed, speed, n)
+            dy = self.rng.uniform(-speed, speed, n)
+            x, y = fused_random_walk(x, y, dx, dy, 0.0, world_size)
+            self._append_fast_step(
+                avg_x=float(xp.mean(x)),
+                avg_y=float(xp.mean(y)),
+            )
+        ex.device_columns.update(x=x, y=y)
+        ex.dirty_columns.update({'x', 'y'})
+
     def update(self):
         super().update()
-        self.record_model('avg_x', float(self.agents.x.mean()))
-        self.record_model('avg_y', float(self.agents.y.mean()))
+        xp = self.xp
+        x, y = self.agents.array('x', 'y')
+        self.record_model('avg_x', float(xp.mean(x)))
+        self.record_model('avg_y', float(xp.mean(y)))
 
 
 # =============================================================================
@@ -545,10 +817,13 @@ class AMBERSchelling(am.Model):
         self.occ = {}
         for i in range(n):
             a = _SchellingAgent(self, i)
-            a.x, a.y, a.type = int(x[i]), int(y[i]), int(t[i])
-            self.agent_objects[i] = a
-            self.agent_objects_list.append(a)
+            object.__setattr__(a, 'x', int(x[i]))
+            object.__setattr__(a, 'y', int(y[i]))
+            object.__setattr__(a, 'type', int(t[i]))
+            self.add_agent(a)
             self.occ[(a.x, a.y)] = a.type
+        self.agent_objects = {agent.id: agent for agent in self.agents}
+        self.agent_objects_list = list(self.agents)
 
     def step(self):
         G, occ = self.G, self.occ
@@ -583,10 +858,54 @@ class AMBERVectorizedSchelling(am.Model):
         x, y, t, self.G = schelling_setup(
             n, self.p.get('density', 0.8), self.p.get('fraction_a', 0.5), self.rng, np)
         self.tolerance = float(self.p.get('tolerance', 0.3))
+        if self.mode == 'oop':
+            self.agent_objects = {}
+            self.agent_objects_list = []
+            self.occ = {}
+            for i in range(n):
+                a = _SchellingAgent(self, i)
+                object.__setattr__(a, 'x', int(x[i]))
+                object.__setattr__(a, 'y', int(y[i]))
+                object.__setattr__(a, 'type', int(t[i]))
+                self.add_agent(a)
+                self.agent_objects[i] = a
+                self.agent_objects_list.append(a)
+                self.occ[(a.x, a.y)] = a.type
+            return
         self._types = np.asarray(t)
         self.add_agents(n, x=np.asarray(x, dtype=np.int32), y=np.asarray(y, dtype=np.int32))
 
+    def _setup_gpu_fast(self):
+        import cupy as cp
+        from ambr.gpu import make_device_rng
+
+        n = int(self.p.get('n', 100))
+        rng = make_device_rng(self.p.get('seed'))
+        x, y, t, self.G = schelling_setup(
+            n,
+            self.p.get('density', 0.8),
+            self.p.get('fraction_a', 0.5),
+            rng,
+            cp,
+        )
+        self.tolerance = float(self.p.get('tolerance', 0.3))
+        self._types = t
+        self.population.replace_frame(
+            pl.DataFrame({
+                'id': np.arange(n, dtype=np.int64),
+                'step': np.zeros(n, dtype=np.int64),
+            })
+        )
+        return {
+            'id': cp.arange(n, dtype=cp.int64),
+            'x': x,
+            'y': y,
+        }, rng
+
     def step(self):
+        return self.step_vectorized()
+
+    def step_vectorized(self):
         xp = self.xp
         x = xp.asarray(self.agents.array('x'), dtype=xp.int32)
         y = xp.asarray(self.agents.array('y'), dtype=xp.int32)
@@ -596,6 +915,26 @@ class AMBERVectorizedSchelling(am.Model):
         )
         self.agents.x = nx
         self.agents.y = ny
+
+    def step_oop(self):
+        AMBERSchelling.step(self)
+
+    def _run_gpu_fast(self, max_steps):
+        """Private tight GPU loop over resident columns and the grid kernel."""
+        from ambr.execution import active_execution
+
+        ex = active_execution(self)
+        xp = ex.xp
+        x = ex.device_columns['x']
+        y = ex.device_columns['y']
+        t = xp.asarray(self._types)
+        for _ in range(max_steps):
+            x, y = schelling_step(
+                x, y, t, self.G, self.tolerance, self.rng, xp
+            )
+            self._append_fast_step()
+        ex.device_columns.update(x=x, y=y)
+        ex.dirty_columns.update({'x', 'y'})
 
 
 # Model registry for benchmark runner

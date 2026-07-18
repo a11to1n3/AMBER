@@ -24,7 +24,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 import ambr as am
-import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -335,6 +334,10 @@ def run_multi_objective_optimization(n_trials: int = 40, seed: int = 42):
 
 def analyze_pareto_frontier(optimizer, results):
     """Analyze and visualize the Pareto frontier."""
+    # Plotting is optional and should not prevent importing or smoke-testing
+    # the model when Matplotlib is absent (or installed in another ABI env).
+    import matplotlib.pyplot as plt
+
     print("\nAnalyzing Pareto Frontier...")
     pareto_front = results["pareto_front"]
     history = results["history"]

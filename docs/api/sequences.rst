@@ -10,10 +10,11 @@ the same attribute/assignment protocol — column reads return Polars Series
 sourced from ``model.agents_df`` on CPU, and column writes go through
 ``Model._set_frame`` (contract-observed when enabled).
 
-Under ``model.gpu().run()`` (0.4.3), numeric columns are **device-resident**
-for the step body; the same ``where`` / column assign / ``scatter_add``
-idiom applies. Host Polars is synced at step boundaries when the contract
-or reporters need a CPU snapshot.
+Under ``model.gpu().run()`` (0.4.4), numeric columns are **device-resident**
+for the vectorized step body; the same ``where`` / column assign /
+``scatter_add`` idiom applies. Host Polars is synced at step boundaries when
+the contract or reporters need a CPU snapshot. ``agents.array(...)`` is
+flagged as ``uncertified_mutable_borrow`` when the contract is on.
 
 Canonical operations on a view:
 

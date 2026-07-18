@@ -161,7 +161,7 @@ class TestPackageInitialization:
             'RunResults',
             'ArrayKernelModel', 'status', 'print_status', 'recommend',
             'require_gpu', 'synchronize', 'scatter_add', 'numba_jit',
-            # Execution placement (0.4.3)
+            # Execution placement (0.4.3 / 0.4.4)
             'EXECUTION_DEVICES', 'EXECUTION_MODES', 'ExecutionConfig',
         }
 

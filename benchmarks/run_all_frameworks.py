@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Master benchmark runner: seven framework implementations side by side.
+"""Master benchmark runner for the implementation rows used in the paper.
 
 Produces a single reproducer for the headline performance table that
 compares AMBER against the ABM/simulation frameworks referenced in the
@@ -7,6 +7,9 @@ README and paper:
 
   * AMBER (loop)        — per-agent Python loops (``benchmarks/models/amber_models.py``)
   * AMBER (vectorized)  — view API (same file, the new classes)
+  * AMBER (GPU)         — CuPy-resident private fast hooks (same file)
+  * FLAME GPU 2         — RTC CUDA agent functions (``benchmarks/models/flamegpu_models.py``)
+  * mesa-frames         — Polars AgentSet implementation (``benchmarks/models/mesa_frames_models.py``)
   * AgentPy             — ``benchmarks/models/agentpy_models.py``
   * Mesa                — ``benchmarks/models/mesa_models.py``
   * SimPy               — ``benchmarks/models/simpy_models.py``
@@ -14,8 +17,8 @@ README and paper:
   * Agents.jl           — ``benchmarks/models/agentsjl_models.jl`` (via ``julia`` subprocess)
 
 The Python frameworks are timed in-process. Agents.jl is invoked as a
-subprocess and its stdout is parsed. All numbers are trimmed means of multiple
-runs per configuration; raw samples and summary intervals are preserved in the
+subprocess and its stdout is parsed. All headline numbers retain every timed
+run; raw samples, medians, IQRs, and bootstrap intervals are preserved in the
 JSON artifact.
 
 Outputs (in ``benchmarks/results/``), tagged by ``--tag`` (default ``all``):
@@ -38,10 +41,12 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import logging
 import os
 import math
+import platform
 import random
 import re
 import statistics
@@ -78,8 +83,9 @@ MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
         "infection_radius": 5.0,
         "transmission_rate": 0.1,
         "recovery_time": 14,
-        # Cell-list infection (AMBER vectorized/GPU); caps infected retained
-        # per cell under extreme density so large-N stays O(N·K).
+        # The generic AMBER cell-list fallback caps infected candidates per
+        # cell. The private exact GPU hook scans all candidates and does not use
+        # this cap; see amber_gpu_scale_models.py for its output-sensitive cost.
         "max_per_cell": 64,
     },
     "schelling": {
@@ -97,6 +103,62 @@ MODEL_LABELS: Dict[str, str] = {
 DEFAULT_SEED = 42
 BOOTSTRAP_REPS = 10_000
 BOOTSTRAP_SEED = 20260604
+
+
+def _command_output(command: List[str]) -> Optional[str]:
+    """Return one-line provenance output without making benchmarks depend on it."""
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    value = " ".join(completed.stdout.strip().splitlines())
+    return value or None
+
+
+def _benchmark_provenance() -> Dict[str, Any]:
+    """Capture enough environment detail to audit a generated timing artifact."""
+    packages: Dict[str, str] = {}
+    for distribution in ("numpy", "cupy-cuda12x", "polars", "pyflamegpu"):
+        try:
+            packages[distribution] = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+
+    revision = _command_output(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"]
+    )
+    dirty = _command_output(
+        ["git", "-C", str(REPO_ROOT), "status", "--porcelain"]
+    )
+    gpu = _command_output(
+        [
+            "nvidia-smi",
+            "--query-gpu=name,driver_version,memory.total",
+            "--format=csv,noheader",
+        ]
+    )
+
+    return {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "packages": packages,
+        "gpu": gpu,
+        "cuda_path": os.environ.get("CUDA_PATH") or os.environ.get("CUDA_HOME"),
+        "git_revision": revision,
+        "git_worktree_dirty": bool(dirty),
+        "protocol": {
+            "warmup": "one untimed run per framework/model/population configuration",
+            "retention": "all timed runs retained; no outlier deletion",
+            "scope": "fresh model construction, setup, step loop, and result assembly",
+            "gpu_boundary": "AMBER explicitly synchronizes after run; FLAME GPU run returns at a simulation-complete boundary",
+        },
+    }
 
 # --------------------------------------------------------------------------- #
 # Timing primitives
@@ -133,9 +195,11 @@ def _bootstrap_median_ci(samples: List[float]) -> List[float]:
 
 def _summary_from_samples(samples: List[float], notes: Optional[str] = None) -> TimingSummary:
     sorted_samples = sorted(samples)
-    # Trim the slowest run when we have >= 3 samples; noise is asymmetric.
-    trimmed_samples = sorted_samples[:-1] if len(sorted_samples) >= 3 else sorted_samples
-    mean = sum(trimmed_samples) / len(trimmed_samples)
+    # Keep every measured run.  Outliers remain visible in the raw samples,
+    # IQR, standard deviation, and bootstrap median interval rather than being
+    # removed by an asymmetric post-hoc rule.
+    trimmed_samples = list(sorted_samples)
+    mean = statistics.fmean(samples)
     stdev = statistics.stdev(samples) if len(samples) > 1 else 0.0
     return {
         "mean": mean,
@@ -148,14 +212,14 @@ def _summary_from_samples(samples: List[float], notes: Optional[str] = None) -> 
         "stdev": stdev,
         "min": min(samples),
         "max": max(samples),
-        "trimmed": len(samples) - len(trimmed_samples),
+        "trimmed": 0,
         "raw_sample_count": len(samples),
         "notes": notes,
     }
 
 
 def _time(callable_: Callable[[], None], runs: int) -> TimingSummary:
-    """Run ``callable_`` ``runs`` times and return raw and trimmed timings."""
+    """Run ``callable_`` ``runs`` times and retain every raw timing."""
     samples: List[float] = []
     for _ in range(runs):
         t0 = time.perf_counter()
@@ -184,7 +248,11 @@ def _bench_amber(
     cfg.update(MODEL_CONFIGS[model_name])
 
     def _run():
-        cls(cfg).run()
+        model = cls(cfg)
+        if variant == "loop":
+            model.cpu(mode="oop").run()
+        else:
+            model.cpu(mode="vectorized").run()
 
     _run()  # warm up (polars LazyFrame caches, AMBER add_agents schema)
     return _time(_run, runs)
@@ -377,7 +445,9 @@ def _bench_amber_gpu(
     cfg.update(MODEL_CONFIGS[model_name])
 
     def _run():
-        cls(cfg).gpu().run()
+        cls(cfg).approve_fast_path(
+            "paper GPU workload smoke/invariant suite"
+        ).gpu(mode="vectorized").run()
         synchronize()
 
     _run()  # warm up (CUDA context + device column upload)
@@ -409,12 +479,57 @@ def _bench_mesa_frames(
 # Framework: FLAME GPU 2 (pyflamegpu, RTC on GPU)
 # --------------------------------------------------------------------------- #
 
+def _configure_flamegpu_runtime() -> None:
+    """Configure CUDA paths needed by FLAME GPU's runtime compiler.
+
+    The Python wheel compiles RTC agent functions through NVRTC and
+    nvJitLink. On hosts using pip-installed NVIDIA libraries, those shared
+    libraries are not necessarily on the dynamic linker's default path. The
+    old benchmark default also pointed at ``~/cuda-12.0``, which is not a
+    valid toolkit path on the benchmark host. Resolve an installed toolkit
+    and add the packaged CUDA runtime libraries before importing pyflamegpu.
+    """
+    cuda_candidates: List[Path] = []
+    for value in (os.environ.get("CUDA_PATH"), os.environ.get("CUDA_HOME")):
+        if value:
+            cuda_candidates.append(Path(value).expanduser())
+    cuda_candidates.extend(
+        Path(value)
+        for value in ("/usr/local/cuda", "/usr/local/cuda-12.9", "/usr/local/cuda-12.0")
+    )
+
+    cuda_path = next(
+        (path for path in cuda_candidates if (path / "include").is_dir()),
+        None,
+    )
+    if cuda_path is not None:
+        os.environ["CUDA_PATH"] = str(cuda_path)
+
+    # NVIDIA's pip wheels install these outside the system loader path. Find
+    # them through sys.path so this remains portable across venv/system-Python
+    # layouts; existing user-provided entries are retained.
+    library_dirs: List[Path] = []
+    for root in map(Path, sys.path):
+        library_dirs.extend(
+            (
+                root / "nvidia" / "nvjitlink" / "lib",
+                root / "nvidia" / "cuda_nvrtc" / "lib",
+            )
+        )
+    library_dirs = [path for path in library_dirs if path.is_dir()]
+    if library_dirs:
+        existing = [
+            entry
+            for entry in os.environ.get("LD_LIBRARY_PATH", "").split(":")
+            if entry
+        ]
+        merged = list(dict.fromkeys([str(path) for path in library_dirs] + existing))
+        os.environ["LD_LIBRARY_PATH"] = ":".join(merged)
+
 def _bench_flamegpu(
     model_name: str, n: int, steps: int, runs: int
 ) -> Optional[TimingSummary]:
-    import os
-    # RTC needs a CUDA toolkit; default to the user-prefix install.
-    os.environ.setdefault("CUDA_PATH", os.path.expanduser("~/cuda-12.0"))
+    _configure_flamegpu_runtime()
     os.environ.setdefault("FLAMEGPU_SHARE_USAGE_STATISTICS", "False")
     try:
         import pyflamegpu  # noqa: F401
@@ -465,7 +580,7 @@ def _aggregate_only_summary(sec: float) -> TimingSummary:
         "max": None,
         "trimmed": None,
         "raw_sample_count": 0,
-        "notes": "Agents.jl subprocess reported only trimmed aggregate timing.",
+        "notes": "Agents.jl subprocess reported only an aggregate timing.",
     }
 
 
@@ -488,7 +603,7 @@ def _run_agentsjl(agent_counts: List[int], steps: int, runs: int, budget: float 
         return results
 
     # The Julia script accepts ``--agents``, ``--steps``, and ``--runs`` so it
-    # uses the same warm-up and trimmed-mean protocol as Python frameworks.
+    # uses the same warm-up and repeated-run protocol as Python frameworks.
     agents_arg = ",".join(str(n) for n in agent_counts)
     def _run_once() -> str:
         proc = subprocess.run(
@@ -597,7 +712,7 @@ def _write_json(
                 "n_agents": n,
                 "n_steps": steps,
                 "runs": runs,
-                "timing": "mean with slowest sample trimmed when runs >= 3",
+                "timing": "arithmetic mean of all retained wall-clock runs",
                 "execution_time": round(t, 6),
                 "time_per_step": round(t / steps, 9),
                 "raw_sample_count": len(detail.get("samples", [])),
@@ -617,10 +732,11 @@ def _write_json(
         json.dumps(
             {
                 "generated_at": datetime.now().isoformat(),
+                "provenance": _benchmark_provenance(),
                 "agent_counts": agent_counts,
                 "n_steps": steps,
                 "runs": runs,
-                "timing": "mean wall-clock seconds; slowest sample trimmed when runs >= 3",
+                "timing": "arithmetic mean wall-clock seconds across all retained runs",
                 "raw_samples_available": "Benchmark rows preserve raw per-run samples when the selected framework runner is available; full mode defaults to 10 runs per configuration.",
                 "intervals": "JSON rows include median, IQR, and bootstrap 95% median intervals computed from raw samples.",
                 "results": flat,
@@ -684,19 +800,25 @@ def _write_markdown(
             lines.append("| " + framework + " | " + " | ".join(row_vals) + " |")
         lines.append("")
 
-    # Speedup summary (AMBER vectorized baseline)
-    lines.append("## Speedup of AMBER (vectorized) vs other frameworks")
+    # Prefer the GPU baseline when the selected benchmark contains it;
+    # otherwise retain the original vectorized-CPU comparison.
+    baseline = (
+        "AMBER (GPU)"
+        if any(key[0] == "AMBER (GPU)" and value is not None for key, value in results.items())
+        else "AMBER (vectorized)"
+    )
+    lines.append(f"## Speedup of {baseline} vs other frameworks")
     lines.append("")
     lines.append("| Framework | " + " | ".join(MODEL_CONFIGS) + " |")
     lines.append("|" + "---|" * (len(MODEL_CONFIGS) + 1))
     for framework in FRAMEWORK_ORDER:
-        if framework == "AMBER (vectorized)":
+        if framework == baseline:
             continue
         cells: List[str] = [framework]
         for model in MODEL_CONFIGS:
             speedups = []
             for n in agent_counts:
-                vec_t = results.get(("AMBER (vectorized)", model, n))
+                vec_t = results.get((baseline, model, n))
                 other_t = results.get((framework, model, n))
                 if vec_t and other_t:
                     speedups.append(other_t / vec_t)
@@ -786,8 +908,8 @@ def _parse_args():
     return p.parse_args()
 
 
-# Assumed asymptotic complexity per model, used only for the *first* retirement
-# look-ahead (before two measured points exist to fit an empirical slope).
+# Initial scaling exponents used only as a retirement-budget heuristic before
+# two measured points exist. They are not asymptotic complexity claims.
 MODEL_EXPONENT = {"wealth_transfer": 1.0, "random_walk": 1.0, "sir_epidemic": 1.0,
                   "schelling": 1.0}
 

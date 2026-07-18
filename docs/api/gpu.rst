@@ -3,16 +3,19 @@ GPU backend
 
 AMBER's GPU support has two layers:
 
-1. **Native placement (0.4.3, preferred for a single large run)** —
-   ``model.gpu().run()`` on the same view-API ``Model`` you use on CPU.
-   Numeric columns stay device-resident for the run; the ``step`` body does
-   not change. Switch back with ``model.cpu(mode="vectorized").run()``.
+1. **Native placement (0.4.4, preferred for a single large run)** —
+   ``model.gpu().run()`` on a vectorized ``Model`` (``step_vectorized`` or
+   legacy ``step``). Numeric columns stay device-resident for the run.
+   Switch back with ``model.cpu(mode="vectorized").run()``. Private
+   model-specific loops require ``approve_fast_path(evidence)`` and
+   ``contract="off"`` (see :doc:`contract`).
 2. **Array-module helpers** — ``get_array_module``, ``to_device``,
    ``to_host``, ``scatter_add`` for code that writes against ``xp``
    (CuPy when available, else NumPy).
 
 Requires **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install CuPy matching
 your CUDA toolkit (see :doc:`../installation` and :doc:`../going_faster`).
+Polars Lazy ``engine="gpu"`` is **not** AMBER's agent GPU runtime.
 
 Native placement
 ----------------
@@ -26,18 +29,24 @@ Native placement
            n = int(self.p.get("n", 10_000))
            self.add_agents(n, wealth=self.rng.integers(1, 10, size=n))
 
-       def step(self):
-           donors = self.agents.where(self.agents.wealth > 0)
-           if len(donors) == 0:
+       def step_vectorized(self):
+           xp = self.xp
+           wealth = self.agents.array("wealth")
+           donors = xp.nonzero(wealth > 0)[0]
+           if int(donors.size) == 0:
                return
-           donors.wealth -= 1
-           ids = self.agents.ids.to_numpy()
-           recipients = self.rng.choice(ids, size=len(donors))
+           wealth[donors] -= 1
+           recipients = self.rng.choice(
+               self.agents.array("id"), size=int(donors.size)
+           )
            self.agents.at[recipients].scatter_add(wealth=1)
 
-   # Same Model + step on CPU or GPU
+   # Vectorized lane on CPU or GPU
    results = WealthModel({"n": 100_000, "steps": 50, "seed": 0}).gpu().run()
    # results = WealthModel(...).cpu(mode="vectorized").run()
+
+For Python Agent objects, implement ``step_oop()`` and run with
+``model.cpu(mode="oop")``. GPU execution does not support the OOP lane.
 
 Mode defaults to ``vectorized``. You can also write
 ``model.gpu(mode="vectorized").run()`` or pass ``mode=`` / ``device=`` to

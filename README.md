@@ -13,8 +13,9 @@ AMBER is a Python framework for agent-based modeling that uses Polars for effici
 AMBER stores the entire population as a columnar Polars DataFrame and
 exposes a vectorized view API (`agents.where(...)`, `agents.at[ids]`,
 `scatter_add`) that compiles per-step updates down to a handful of
-Polars expressions. From **0.4.3**, the same `Model` + `step` runs on GPU via
-`model.gpu().run()` (no separate kernel rewrite).
+columnar operations. Models can provide `step_vectorized()` and `step_oop()`
+for explicit native lanes; legacy models with only `step()` keep the fallback.
+The vectorized lane runs on GPU via `model.gpu().run()`.
 
 **Large-N multi-framework scaling (1k→10M agents, 50 steps, 10 runs trimmed
 mean, NVIDIA RTX 5090).** Ten frameworks: AMBER (GPU / vectorized / loop),
@@ -42,8 +43,9 @@ Correctness gates:
   Python-hosted stacks that reach those scales.
 - **SIR:** AMBER uses **cell-list** infection. GPU reaches 10M at 9.39 s
   (~33× faster than vectorized’s 308 s); FLAME still leads at 3.80 s.
-- **API:** write the view-API `step` once; place with `.cpu(mode="vectorized")`
-  or `.gpu()`. Details: [`benchmarks/README.md`](benchmarks/README.md).
+- **API:** implement `step_vectorized()` (or legacy `step()`); place with
+  `.cpu(mode="vectorized")` or `.gpu()`. GPU is vectorized-only. Details:
+  [`benchmarks/README.md`](benchmarks/README.md).
 
 ## 🚀 Quick Start
 
@@ -88,15 +90,21 @@ class WealthModel(am.Model):
     def setup(self):
         self.add_agents(100, wealth=self.rng.integers(1, 10, size=100))
 
-    def step(self):
-        donors = self.agents.where(self.agents.wealth > 0)
-        donors.wealth -= 1
-        recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
+    def step_vectorized(self):
+        xp = self.xp
+        wealth = self.agents.array("wealth")
+        donors = xp.nonzero(wealth > 0)[0]
+        if int(donors.size) == 0:
+            return
+        wealth[donors] -= 1
+        recipients = self.rng.choice(
+            self.agents.array("id"), size=int(donors.size)
+        )
         self.agents.at[recipients].scatter_add(wealth=1)
 
-# Fluent placement (0.4.3): device + optional mode; run(mode=...) still overrides.
+# Fluent placement (0.4.4): device + optional mode; run(mode=...) still overrides.
 results = WealthModel({'steps': 100, 'seed': 42}).cpu(mode="vectorized").run()
-# Same class + step on GPU (device-resident columns; needs NVIDIA + CuPy):
+# Vectorized lane on GPU (device-resident columns; needs NVIDIA + CuPy):
 # results = WealthModel({'steps': 100, 'seed': 42}).gpu().run()
 print(results.model.tail(5))
 print(results.agents.head(10))
@@ -104,7 +112,7 @@ print(results.agents.head(10))
 
 Coming from AgentPy? See [`docs/from_agentpy.rst`](docs/from_agentpy.rst).
 
-**Going faster / GPU** — same `Model` and `step`; pick placement and lane (see
+**Going faster / GPU** — same `Model` class; pick placement and lane hooks (see
 [`docs/going_faster.rst`](docs/going_faster.rst)):
 
 ```python
@@ -112,7 +120,7 @@ import ambr as am
 am.print_status()                 # GPU? which lane?
 print(am.recommend(1_000_000))  # one-line suggestion
 
-# Native path: view-API step + .gpu() (or .cpu(mode="vectorized"))
+# Native path: step_vectorized + .gpu() (or .cpu(mode="vectorized"))
 model = WealthModel({"n": 100_000, "steps": 50, "seed": 0})
 results = model.gpu().run()                    # or .cpu(mode="vectorized").run()
 
@@ -133,24 +141,27 @@ print(Drift({"n": 100_000, "steps": 20}).run().info)
 the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).
 
-> **New in 0.4.3:** Keras-style **`model.cpu(mode=...)` / `model.gpu(mode=...)`**
-> placement and a **native GPU view API** — the same `where` / column write /
-> `scatter_add` `step` runs device-resident under `.gpu().run()`. Main AMBER
-> (GPU) benchmarks use those models (not a separate kernel rewrite). See the
+> **New in 0.4.4:** honest [execution lanes](docs/going_faster.rst)
+> (`step_vectorized` / `step_oop`; GPU is vectorized-only), operational
+> [contract](#-snapshot-view-contract) wording (monitor, not schedule proof),
+> and opt-in `approve_fast_path(evidence)` for private GPU loops. See the
 > [changelog](CHANGELOG.md).
 >
-> **New in 0.4.1:** [AgentPy-shaped UX](docs/from_agentpy.rst) (`RunResults`,
+> **0.4.3:** Keras-style **`model.cpu(mode=...)` / `model.gpu()`** placement
+> with device-resident columns for the vectorized view API.
+>
+> **0.4.1:** [AgentPy-shaped UX](docs/from_agentpy.rst) (`RunResults`,
 > `agents.random()`), [progressive speed lanes](docs/going_faster.rst)
 > (`am.print_status()`, `am.recommend(n)`, `ArrayKernelModel`), optional
 > **Numba** CPU path (`pip install 'ambr[perf]'` — great on Mac), contract /
 > write-path hardening, SMAC install pin, and Schelling grid helpers.
 >
-> **New in 0.4:** a runtime [snapshot-view contract](#-snapshot-view-contract)
-> checker, a [GPU backend + batched calibration](#-gpu-backend--batched-calibration),
+> **0.4:** runtime [snapshot-view contract](#-snapshot-view-contract),
+> [GPU backend + batched calibration](#-gpu-backend--batched-calibration),
 > one [canonical verb per task](#-canonical-api-04) (legacy spellings still work),
 > declarative `model_reporters`, and a typed `params` schema.
 >
-> **New in 0.3.0:** Setting ``agent.wealth = 5`` on a Python Agent
+> **0.3.0:** Setting ``agent.wealth = 5`` on a Python Agent
 > automatically syncs to the DataFrame. You can freely mix OOP-style
 > and vectorized access without desync.
 
@@ -202,9 +213,11 @@ declarative metrics, and set `record_initial = True` to capture a `t=0` row.
 
 ## 🔒 Snapshot-view contract
 
-The columnar fast path is only valid for rules that preserve the intended update
-schedule. AMBER turns that from a silent assumption into a checkable, per-step
-artifact — run with a contract mode and inspect the certificates:
+Whether a vectorized refactor preserves an intended update schedule is a
+semantic question. AMBER's runtime monitor reports selected operational hazards
+at instrumented API seams; it does not prove schedule equivalence for arbitrary
+NumPy, CuPy, or user-kernel code. Run with a contract mode and inspect the
+per-step records:
 
 ```python
 results = model.run(steps=100, contract="check")   # "off" | "check" | "warn" | "raise"
@@ -214,27 +227,38 @@ for cert in results["contract"]:
 ```
 
 `check` records a `ContractCertificate` per step; `warn` also emits a warning per
-violation; `raise` stops on the first error. Mode `off` (default) adds zero overhead.
+violation; `raise` stops on the first error. Mode `off` (default) adds no monitor
+bookkeeping. `cert.clean` means that no monitored error or warning was observed,
+not that every possible activation order is equivalent.
 
 The monitor watches **two write paths** (and combinations):
 
 * **Buffered (OOP)** — `agent.col = …` / queued cell writes
 * **Lane / view** — `agents.col = …`, `agents.set(...)`, `borrow`/`commit`
 * **Cross-path** — same column via both OOP and view in one step → `cross_path_write`
+* **Mutable raw arrays** — `agents.array(...)` → `uncertified_mutable_borrow`
 
 `scatter_add` is the sanctioned multi-write reducer (not treated as a conflicting
 ordinary commit). Prefer those APIs over assigning `population.data` directly.
 
 ## 🎮 GPU backend & batched calibration
 
-**Single-run (native, 0.4.3):** place the same view-API model on device — no
-rewrite of `step`. Numeric columns stay device-resident for the run; contract
-modes still apply on the CPU snapshot at step boundaries.
+**Single-run (native, 0.4.4):** place a vectorized model on device with
+`model.gpu().run()`. Prefer `step_vectorized()` (legacy `step()` still works).
+Numeric columns stay device-resident for the run. Contract modes use the
+instrumented general path; private model-specific fast loops run only with
+`contract="off"` **and** an explicit per-instance
+`approve_fast_path(evidence)` declaration. The evidence string is a
+caller-supplied provenance label, not something AMBER verifies. Without it,
+`gpu().run()` uses the general path. Private loops are not covered by the
+monitor. OOP agents use `cpu(mode="oop")` — not GPU.
 
 ```python
 # Same WealthModel as the vectorized quickstart
 results = WealthModel({"n": 1_000_000, "steps": 50, "seed": 0}).gpu().run()
 # Switch back: model.cpu(mode="vectorized").run(...)
+# Private fast loop (only if the model defines one; evidence is not verified):
+# model.approve_fast_path("my-bench-label").gpu().run(contract="off")
 ```
 
 **Many short runs (calibration):** the *ensemble* axis (`B` simulations × `N`
@@ -293,7 +317,7 @@ pip install 'ambr[advanced]'   # SMAC optimization
 
 ```python
 import ambr as am
-print(am.__version__)   # 0.4.3+
+print(am.__version__)   # 0.4.4+
 am.print_status()
 ```
 
@@ -301,10 +325,13 @@ am.print_status()
 
 - **Simple API**: AgentPy-shaped OOP lane + vectorized columnar views on one model
 - **High Performance**: Polars DataFrames; optional Numba (`ambr[perf]`) for scatters
-- **Device placement**: Keras-style `model.cpu(mode=...)` / `model.gpu()` — same `step` on CPU or GPU
+- **Device placement**: Keras-style `model.cpu(mode=...)` / `model.gpu()` with
+  `step_vectorized` / `step_oop` hooks (GPU is vectorized-only)
 - **Speed lanes**: `am.print_status()` / `am.recommend(n)` / `ArrayKernelModel`
-- **Snapshot-view contract**: runtime checking that columnar updates preserve the intended schedule
-- **GPU backend**: native view-API path + CuPy helpers + batched ensemble for calibration
+- **Snapshot-view monitor**: operational diagnostics for observed write/borrow
+  conflicts and uncertified mutable arrays (not a schedule proof)
+- **GPU backend**: native vectorized path + optional approved private loops +
+  CuPy helpers + batched ensemble for calibration
 - **Optimization**: grid / random / Bayesian (SMAC) search, plus GPU-batched calibration
 - **Declarative reporting**: `model_reporters` / `agent_reporters` and a typed `params` schema
 - **Environments**: Support for grid, network, and continuous space environments

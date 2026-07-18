@@ -18,11 +18,14 @@ Want speed / GPU without guessing? See :doc:`going_faster` and run::
    am.print_status()
    print(am.recommend(100_000))
 
-Place a run with Keras-style chaining (0.4.3; mode defaults to
-``vectorized``)::
+Place a run with Keras-style chaining (0.4.4; mode defaults to
+``vectorized``). Prefer ``step_vectorized()`` for the columnar lane and
+``step_oop()`` for tracked Agent objects; legacy ``step()`` is the fallback.
+GPU runs use the vectorized lane only::
 
    results = model.cpu(mode="vectorized").run()
-   results = model.gpu().run()          # same step body; needs NVIDIA + CuPy
+   results = model.gpu().run()          # vectorized lane; needs NVIDIA + CuPy
+   results = model.cpu(mode="oop").run()  # Agent objects; not available on GPU
 
 For a CPU boost on Mac (no CUDA), install Numba::
 
@@ -128,7 +131,7 @@ vectorized way:
                wealth=self.rng.integers(1, 10, size=100),
            )
 
-       def step(self):
+       def step_vectorized(self):
            # Every agent with wealth > 0 gives $1 to a random other agent.
            donors = self.agents.where(self.agents.wealth > 0)
            donors.wealth -= 1
@@ -146,7 +149,7 @@ vectorized way:
    # Run on CPU (vectorized is the default mode)
    model = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
    results = model.cpu(mode="vectorized").run()
-   # Same class + step on GPU:
+   # Vectorized lane on GPU (device-resident columns):
    # results = model.gpu().run()
 
    # Inspect the results
@@ -154,9 +157,9 @@ vectorized way:
    print(results['agents'].select(['id', 'wealth']).head(10))
 
 That's the whole idiom. No per-agent loops, no ``update_agent_data`` calls,
-and no ``.item()`` ceremonies. The ``step()`` body is a handful of view-API
-calls regardless of whether you have 100 agents or 100 000 — and the same
-body runs under ``.gpu()`` with device-resident columns (0.4.3).
+and no ``.item()`` ceremonies. ``step_vectorized()`` is a handful of view-API
+calls regardless of whether you have 100 agents or 100 000 — and the
+vectorized lane runs under ``.gpu()`` with device-resident columns (0.4.4).
 
 Understanding the results
 -------------------------

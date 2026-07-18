@@ -15,7 +15,7 @@ but filled by :mod:`ambr._id_index`; :meth:`_bump_id_version` invalidates them.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Type, Optional, Set, Tuple, TYPE_CHECKING
+from typing import Any, Dict, Iterable, List, Type, Optional, Set, Tuple, TYPE_CHECKING
 import polars as pl
 import warnings
 import numpy as np
@@ -35,6 +35,7 @@ from .execution import (
     active_rng,
     active_xp,
     begin_execution,
+    begin_fast_execution,
     end_execution,
     resolve_config,
 )
@@ -97,6 +98,10 @@ class Model(BaseModel):
         ).lower()
         self._execution_mode: str = (parameters.get("mode") or "vectorized").lower()
         self._execution = None
+        # Private model-specific GPU loops are opt-in per model instance.
+        # This is an explicit deployment declaration, not a claim that AMBER
+        # has independently verified the supplied evidence label.
+        self._fast_path_approval: Optional[str] = None
 
         from .sequences import AgentList
         self.agents = AgentList(self, [])
@@ -124,8 +129,8 @@ class Model(BaseModel):
         """Place the next :meth:`run` on GPU (device-resident columns). Returns ``self``.
 
         Args:
-            mode: optional execution style — ``'vectorized'`` (default) or
-                ``'oop'``. GPU runs normally use the vectorized view API.
+            mode: optional execution style. GPU runs support the
+                ``'vectorized'`` view API; Python Agent objects use CPU OOP mode.
 
         Examples::
 
@@ -136,6 +141,30 @@ class Model(BaseModel):
         if mode is not None:
             self._set_execution_mode(mode)
         return self
+
+    def approve_fast_path(self, evidence: str) -> "Model":
+        """Allow this instance to use a private optimized GPU loop.
+
+        ``evidence`` must be a non-empty provenance label chosen by the caller
+        (for example, a test report or experiment identifier).  AMBER records
+        only the explicit declaration; it does not validate the evidence.
+        Without approval, :meth:`run` uses the general native runner even when
+        private ``_setup_gpu_fast`` / ``_run_gpu_fast`` hooks are present.
+        """
+        if not isinstance(evidence, str) or not evidence.strip():
+            raise ValueError("fast-path approval requires a non-empty evidence label")
+        self._fast_path_approval = evidence.strip()
+        return self
+
+    def revoke_fast_path_approval(self) -> "Model":
+        """Remove this instance's private-fast-path deployment approval."""
+        self._fast_path_approval = None
+        return self
+
+    @property
+    def fast_path_approval(self) -> Optional[str]:
+        """Caller-supplied evidence label, or ``None`` when not approved."""
+        return self._fast_path_approval
 
     def _set_execution_mode(self, mode: str) -> None:
         from .execution import EXECUTION_MODES
@@ -338,8 +367,34 @@ class Model(BaseModel):
         """
         self._contract.record_borrow(column)
 
+    def _contract_record_mutable_borrow(self, column: str) -> None:
+        """Record exposure of a mutable NumPy/CuPy column buffer."""
+        self._contract.record_mutable_borrow(column)
+
+    def _contract_record_reduction(self, columns: Iterable[str]) -> None:
+        """Record columns written through a commutative reduction."""
+        self._contract.record_reduction(columns)
+
     def setup(self): pass
     def step(self): pass
+
+    def step_vectorized(self):
+        """Execute one vectorized step.
+
+        Models with a distinct vectorized implementation can override this
+        hook. The default preserves the pre-mode API, where ``step()`` is the
+        model's single implementation.
+        """
+        return self.step()
+
+    def step_oop(self):
+        """Execute one object-oriented step.
+
+        Models with tracked :class:`~ambr.agent.Agent` objects can override
+        this hook. The default preserves backwards compatibility for models
+        that have only a single ``step()`` implementation.
+        """
+        return self.step()
 
     def update(self):
         """Per-step hook, called after :meth:`step` with ``t`` already advanced.
@@ -405,6 +460,18 @@ class Model(BaseModel):
         if hasattr(self, '_current_step_data'):
             self._model_data.append(self._current_step_data.copy())
 
+    def _append_fast_step(self, **data: Any) -> None:
+        """Append a model-data row for a private optimized execution loop.
+
+        This is an internal seam for backends that keep state on an accelerator
+        and must avoid routing every step through the general AgentList view
+        machinery.  It does not change the public run/result contract.
+        """
+        self.t += 1
+        row = {'t': self.t}
+        row.update(data)
+        self._model_data.append(row)
+
     def _advance_and_record(self) -> None:
         """Advance ``t`` and capture this step's recorded data.
 
@@ -443,15 +510,18 @@ class Model(BaseModel):
         is appended to ``self.contract_certificates``.
         """
         self._ensure_setup()
+        execution = getattr(self, "_execution", None)
+        mode = execution.config.mode if execution is not None else self._execution_mode
+        step_fn = self.step_oop if mode == "oop" else self.step_vectorized
         mon = self._contract
         if mon.mode == "off":
-            self.step()
+            step_fn()
             self._advance_and_record()
             return
 
         mon.begin_step(self._contract_snapshot())
         try:
-            self.step()
+            step_fn()
         finally:
             cert = mon.end_step(self.t, self._contract_snapshot())
 
@@ -466,6 +536,27 @@ class Model(BaseModel):
             raise ContractViolationError(cert)
 
         self._advance_and_record()
+
+    def _fast_path_is_eligible(
+        self,
+        config: Any,
+        contract: str,
+        fast_runner: Any,
+        fast_setup: Any,
+    ) -> bool:
+        """Return whether the private loop may run under this configuration."""
+        return bool(
+            config.device == "gpu"
+            and config.mode == "vectorized"
+            and contract == "off"
+            and not self._show_progress
+            and not self.record_initial
+            and not self.agent_reporters
+            and not self.model_reporters
+            and callable(fast_runner)
+            and callable(fast_setup)
+            and self._fast_path_approval is not None
+        )
 
     def run(
         self,
@@ -483,10 +574,10 @@ class Model(BaseModel):
         Device placement is Keras-style: call :meth:`cpu` or :meth:`gpu` on the
         model (or pass ``device=`` / legacy ``backend=`` here). Mode can be set
         on those fluent methods (``model.cpu(mode="vectorized")``) or here via
-        ``mode=``. On CPU, ``mode='vectorized'`` (default) expects the view API
-        in :meth:`step`; ``mode='oop'`` expects per-agent objects — the same
-        :meth:`step` body runs in both cases today, but ``mode`` is recorded in
-        ``results.info``.
+        ``mode=``. On CPU, ``mode='vectorized'`` (default) dispatches
+        :meth:`step_vectorized`; ``mode='oop'`` dispatches :meth:`step_oop` and
+        expects tracked per-agent objects. Models that only implement
+        :meth:`step` retain backwards-compatible fallback behavior.
 
         Args:
             steps: number of steps to run (defaults to ``self.p['steps']`` or 100).
@@ -512,26 +603,46 @@ class Model(BaseModel):
         self._device = config.device
         self._execution_mode = config.mode
 
+        fast_runner = getattr(self, "_run_gpu_fast", None)
+        fast_setup = getattr(self, "_setup_gpu_fast", None)
+        can_fast_run = self._fast_path_is_eligible(
+            config, contract, fast_runner, fast_setup
+        )
+
         if self._show_progress:
             self._start_time = start_time
             self._print_start_info(max_steps)
             self._print_progress(0, max_steps, force=True)
 
-        self._ensure_setup()
-
-        begin_execution(self, config)
+        if can_fast_run:
+            device_columns, device_rng = fast_setup()
+            self._setup_done = True
+            begin_fast_execution(
+                self, config, device_columns, device_rng=device_rng
+            )
+        else:
+            self._ensure_setup()
+            begin_execution(self, config)
 
         try:
-            if self.record_initial:
-                self._record_initial_state()
+            if can_fast_run:
+                # The model-specific private loop owns only the hot step
+                # execution and appends ordinary model-data rows.  Setup,
+                # device placement, teardown, and result assembly remain the
+                # same public Model lifecycle.
+                fast_runner(max_steps)
+                self.end()
+            else:
+                if self.record_initial:
+                    self._record_initial_state()
 
-            # Use run_step() to execute exactly one model step per loop iteration.
-            while self.t < max_steps:
-                self.run_step()
-                if self._show_progress:
-                    self._print_progress(self.t, max_steps)
+                # Use run_step() to execute exactly one model step per loop iteration.
+                while self.t < max_steps:
+                    self.run_step()
+                    if self._show_progress:
+                        self._print_progress(self.t, max_steps)
 
-            self.end()
+                self.end()
         finally:
             end_execution(self)
 

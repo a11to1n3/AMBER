@@ -59,6 +59,30 @@ class ScatterModel(am.Model):
         self.agents.at[[0, 0, 2]].scatter_add(wealth=1)
 
 
+class RawArrayGatherModel(am.Model):
+    """A raw array gather is observable but cannot be fully interpreted."""
+
+    def setup(self):
+        self.add_agents(3, x=np.array([1, 2, 3], dtype=np.int64))
+
+    def step(self):
+        x = self.agents.array("x")
+        self.agents.x = np.roll(x, 1)
+
+
+class BorrowBeforeCommitGatherModel(am.Model):
+    """A one-borrow gather documents the monitor's provenance boundary."""
+
+    def setup(self):
+        self.add_agents(3, x=np.array([1, 2, 3], dtype=np.int64))
+
+    def step(self):
+        # The public column read is observed, but the monitor cannot infer that
+        # np.roll introduces cross-agent dependence before the one commit.
+        x = self.agents.x.to_numpy()
+        self.agents.x = np.roll(x, 1)
+
+
 class BirthModel(am.Model):
     def setup(self):
         self.add_agents(3, wealth=np.ones(3, dtype=int))
@@ -129,6 +153,47 @@ def test_scatter_add_is_not_flagged_as_duplicate():
     assert all(c.clean for c in certs)
     # And it actually accumulated: agent 0 got +2 per step over 3 steps.
     assert res["agents"].filter(pl.col("id") == 0)["wealth"].item() == 6
+
+
+def test_raw_mutable_array_borrow_cannot_receive_clean_certificate():
+    res = RawArrayGatherModel(_params(steps=1)).run(contract="check")
+    cert = res["contract"][0]
+    assert cert.ok  # warning: the observed trace contains no definite conflict
+    assert not cert.clean
+    warning = next(
+        v for v in cert.violations if v.kind == "uncertified_mutable_borrow"
+    )
+    assert warning.severity == "warning"
+    assert warning.columns == ["x"]
+    assert res["agents"]["x"].to_list() == [3, 1, 2]
+
+
+def test_column_read_after_commit_is_detected_without_tensor_lane():
+    class M(am.Model):
+        def setup(self):
+            self.add_agents(3, x=np.arange(3), y=np.zeros(3, dtype=int))
+
+        def step(self):
+            self.agents.x = self.agents.x + 1
+            self.agents.y = self.agents.x
+
+    cert = M(_params(steps=1)).run(contract="check")["contract"][0]
+    assert not cert.ok
+    raw = next(v for v in cert.violations if v.kind == "read_after_write")
+    assert raw.columns == ["x"]
+
+
+def test_borrow_before_commit_gather_documents_monitor_limit():
+    result = BorrowBeforeCommitGatherModel(_params(steps=1)).run(
+        contract="check"
+    )
+    cert = result["contract"][0]
+    assert cert.clean
+    # Snapshot roll gives [3, 1, 2]. Under sequential order 0,1,2, each cell
+    # reads the already-updated predecessor and the result is [3, 3, 3]. The
+    # clean certificate therefore coexists with a matched-reference mismatch.
+    assert result["agents"]["x"].to_list() == [3, 1, 2]
+    assert result["agents"]["x"].to_list() != [3, 3, 3]
 
 
 def test_raise_mode_allows_clean_model_to_complete():

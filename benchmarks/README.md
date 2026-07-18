@@ -101,8 +101,10 @@ not as proof of identical stochastic trajectories.
 ## Published results — large-N multi-framework (1k→10M)
 
 **One** checked-in performance plot and table. NVIDIA RTX 5090, 50 steps,
-10 runs (trimmed mean). Ten frameworks. AMBER (GPU) is the same view-API
-models under `model.gpu().run()` (0.4.3+).
+10 runs (trimmed mean). Ten frameworks. AMBER (GPU) uses the same view-API
+models under an explicit benchmark evidence label followed by
+`model.gpu().run()` (0.4.4+); the label records caller approval and is not a
+runtime certificate.
 
 - Chart: [`results/scaling_chart.png`](results/scaling_chart.png)
 - Full per-model tables: [`results/summary_table.md`](results/summary_table.md)
@@ -117,6 +119,13 @@ models under `model.gpu().run()` (0.4.3+).
 | Random walk | 198 ms / 2.04 s | 531 ms / 6.23 s | **20 ms / 201 ms** | mesa-frames 3.55 s / 20.8 s |
 | Schelling | **428 ms / 5.17 s** | 2.64 s / 59.8 s | 2.06 s / 20.8 s | mesa-frames 4.33 s / 86.9 s |
 | SIR (cell-list) | 882 ms / **9.39 s** | 31.3 s / 308 s | **108 ms / 3.80 s** | — |
+
+## Polars Lazy GPU probe (not product path)
+
+`try_polars_gpu.py` is a **cautionary** experiment comparing Polars Lazy
+`engine="gpu"` against AMBER's native `model.gpu()` path. It is **not**
+AMBER's agent GPU runtime and is not used for published charts. Prefer
+`step_vectorized` + `model.gpu().run()` for production models.
 
 ## Interpreting the numbers
 

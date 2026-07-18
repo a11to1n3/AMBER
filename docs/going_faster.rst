@@ -4,10 +4,12 @@ Going faster (lanes)
 AMBER does **not** hide speed behind a silent ``gpu=True`` flag that rewrites
 semantics. From **0.4.3** you place a run with Keras-style
 ``model.cpu(mode=...).run()`` / ``model.gpu().run()`` (mode defaults to
-``vectorized``; ``run(mode=...)`` still overrides). The view-API ``step`` body
-is unchanged; GPU keeps numeric columns device-resident for the run. There are
-still four **lanes** for *how* you write the step — helpers tell you which to
-pick.
+``vectorized``; ``run(mode=...)`` still overrides). From **0.4.4**, vectorized
+runs dispatch ``step_vectorized()`` and GPU keeps numeric columns
+device-resident; CPU OOP runs dispatch ``step_oop()`` over tracked Agent
+objects (GPU is vectorized-only). Legacy ``step()`` is the fallback when a
+lane hook is missing. There are still four **lanes** for *how* you write the
+step — helpers tell you which to pick.
 
 Check this machine
 ------------------
@@ -52,14 +54,18 @@ Always available. Best for small N or sequential logic. See :doc:`from_agentpy`.
 Lane 2 — Vectorized (default fast path)
 ---------------------------------------
 
-**There is no flag.** Using the view API *is* the vectorized lane::
+**There is no flag.** Use ``step_vectorized()`` for the vectorized lane::
 
-   donors = self.agents.where(self.agents.wealth > 0)
-   donors.wealth -= 1
-   # or one-liner:
-   self.agents.update_where(self.agents.wealth > 0, wealth=self.agents.wealth - 1)
+   xp = self.xp
+   wealth = self.agents.array("wealth")
+   donors = xp.nonzero(wealth > 0)[0]
+   wealth[donors] -= 1
 
-   self.agents.at[ids].scatter_add(wealth=1)
+   recipients = self.rng.choice(self.agents.array("id"), size=int(donors.size))
+   self.agents.at[recipients].scatter_add(wealth=1)
+
+For object-oriented models, implement ``step_oop()`` and run with
+``model.cpu(mode="oop")``. GPU runs use the vectorized lane only.
 
 Use this for almost all CPU models above a few thousand agents.
 
@@ -81,11 +87,13 @@ Lane 4 — GPU
 Requires an **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install CuPy matching
 your CUDA, then either:
 
-**A. Single large run — same view-API model (0.4.3, preferred)::
+**A. Single large run — vectorized view-API model (0.4.4, preferred)::
 
    results = MyVectorizedModel({"n": 1_000_000, "steps": 50, "seed": 0}).gpu().run()
    # CPU counterpart:
    # results = MyVectorizedModel(...).cpu(mode="vectorized").run()
+   # Optional private GPU loop (only if the model defines one; not monitored):
+   # model.approve_fast_path("my-label").gpu().run(contract="off")
 
 **B. Array-kernel model —** :class:`~ambr.lanes.ArrayKernelModel`::
 

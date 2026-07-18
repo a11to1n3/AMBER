@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GPU / CPU placement quickstart (AMBER 0.4.3+).
+"""GPU / CPU placement quickstart (AMBER 0.4.4+).
 
 Run::
 
@@ -7,8 +7,9 @@ Run::
 
 Two paths:
 
-1. **Native** — same view-API ``Model`` + ``step`` under ``.gpu().run()``
-   (device-resident columns). Falls back to CPU if CuPy is unavailable.
+1. **Native** — vectorized view-API ``Model`` + ``step_vectorized`` under
+   ``.gpu().run()`` (device-resident columns). Falls back to CPU if CuPy is
+   unavailable.
 2. **Array kernel** — :class:`ambr.ArrayKernelModel` for pure array state
    (CuPy when available, else NumPy).
 """
@@ -23,7 +24,7 @@ class WealthModel(am.Model):
         n = int(self.p.get("n", 10_000))
         self.add_agents(n, wealth=self.rng.integers(1, 10, size=n))
 
-    def step(self):
+    def step_vectorized(self):
         donors = self.agents.where(self.agents.wealth > 0)
         if len(donors) == 0:
             return

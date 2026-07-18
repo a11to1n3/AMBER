@@ -2,9 +2,46 @@
 
 ## Unreleased
 
+## v0.4.4 - 2026-07-18
+
+Honest execution lanes, operational contract wording, and opt-in private GPU
+fast paths. Builds on the 0.4.3 placement API without overselling “one
+unchanged `step` body” or schedule proofs.
+
+### Added
+
+- **Lane hooks:** `step_vectorized()` for vectorized CPU/GPU runs and
+  `step_oop()` for CPU Agent-object runs. Legacy `step()` remains the
+  fallback when a lane hook is not defined. GPU placement is
+  **vectorized-only**; Python Agent objects use `cpu(mode="oop")`.
+- **`approve_fast_path(evidence)` / `revoke_fast_path_approval()`:** private
+  model-specific GPU loops run only with `contract="off"` **and** an explicit
+  per-instance evidence label (caller-supplied provenance; not verified by
+  AMBER). Without approval, `gpu().run()` uses the instrumented general path.
+- Contract hazard **`uncertified_mutable_borrow`** for `agents.array(...)`
+  (in-place mutations after a raw borrow are not fully reconstructible).
+- Benchmarks: native lane models, evidence-labeled GPU rows, and a cautionary
+  `benchmarks/try_polars_gpu.py` probe (not a product path).
+
+### Changed
+
+- **Contract semantics (docs + runtime posture):** the snapshot-view contract
+  is an **operational monitor** at instrumented seams — not a proof that
+  arbitrary NumPy/CuPy or private kernels preserve an intended activation
+  schedule. `cert.clean` means no monitored error/warning, not completeness.
+- GPU teardown tracks **dirty columns** more carefully for host sync.
+- Docs / README: remove “same `step` body only” oversell; document lanes,
+  `approve_fast_path`, and honest benchmark claims.
+
+### Notes
+
+- Private GPU loops and `ambr.gpu_kernels` remain **non-public** internals.
+- Polars Lazy `engine="gpu"` is **not** AMBER’s agent GPU runtime.
+
 ## v0.4.3 - 2026-07-17
 
-Native GPU path and Keras-style device placement on one `Model` / `step` body.
+Native GPU path and Keras-style device placement on one `Model` /
+view-API step (superseded wording refined in 0.4.4).
 
 ### Added
 

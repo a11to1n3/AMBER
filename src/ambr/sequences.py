@@ -169,6 +169,7 @@ class _BaseView:
                 f"{type(self).__name__!r} has no column {name!r}; "
                 f"available columns: {df.columns}"
             )
+        model._contract_record_borrow(name)
         ids = self._ids_series()
         # Full population: return the column without a join.
         if _is_full_population(ids, df):
@@ -496,6 +497,7 @@ class _BaseView:
         col = getattr(self, name)
         if hasattr(col, "array"):
             return col.array
+        self.__dict__["model"]._contract_record_mutable_borrow(name)
         return col.to_numpy()
 
     def array(self, *columns: str):
@@ -661,6 +663,7 @@ class _BaseView:
             out = apply_scatter_add(base, positions, delta)
             new_columns.append(pl.Series(col_name, out, strict=False))
 
+        model._contract_record_reduction(increments)
         # No written_columns — scatter_add is the multi-write reducer.
         model._set_frame(df.with_columns(new_columns))
 

@@ -166,7 +166,12 @@ class BenchmarkRunner:
             else:  # AMBER and AgentPy
                 model = model_class(config)
             if model is not None:
-                model.run()
+                if framework == 'AMBER':
+                    model.cpu(mode='oop').run()
+                elif framework == 'AMBER (vectorized)':
+                    model.cpu(mode='vectorized').run()
+                else:
+                    model.run()
         except Exception as e:
             tracemalloc.stop()
             print(f"  ❌ Error: {e}")
