@@ -17,8 +17,9 @@ Getting Started Examples
    - Script: ``examples/schelling_vectorized.py``
 
 **GPU quickstart**
-   Native placement (``model.gpu().run()`` on a view-API model) and the
-   optional ``ArrayKernelModel`` array lane. CuPy when available, else NumPy.
+   Native placement (``model.gpu().run()`` on a vectorized view-API model
+   with ``step_vectorized``) and the optional ``ArrayKernelModel`` array
+   lane. CuPy when available, else NumPy. See :doc:`../going_faster`.
 
    - Script: ``examples/gpu_quickstart.py``
 

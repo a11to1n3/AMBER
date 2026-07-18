@@ -33,7 +33,7 @@ Basic Usage
            # Optional tracked-Agent implementation
            pass
 
-   # Run the model (fluent placement, 0.4.3)
+   # Run the model (fluent placement, 0.4.4)
    model = MyModel({'steps': 100, 'seed': 42})
    results = model.cpu(mode="vectorized").run()
    # results = model.gpu().run()   # vectorized lane on GPU
@@ -57,7 +57,7 @@ Key Methods
 * ``get_agent_data(agent_id)`` - Retrieve data for a specific agent
 * ``record_model(name, value)`` - Record a model-level metric
 
-**Execution / placement (0.4.3):**
+**Execution / placement (0.4.4):**
 
 * ``cpu(mode=None)`` - Place the next ``run`` on CPU (optional
   ``mode='vectorized'|'oop'``); returns ``self`` for chaining
@@ -65,7 +65,7 @@ Key Methods
   columns; GPU runs are vectorized-only
 * ``approve_fast_path(evidence)`` - Explicitly allow a private optimized GPU
   loop on this model instance and retain the caller-supplied evidence label;
-  AMBER does not verify that label
+  AMBER does not verify that label (requires ``contract="off"``)
 * ``revoke_fast_path_approval()`` - Return the instance to the general runner
 * ``run(...)`` - Execute the full simulation and return results.
   Accepts ``device=``, ``mode=``, ``contract=``; legacy ``backend=`` still

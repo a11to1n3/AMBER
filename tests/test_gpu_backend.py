@@ -9,7 +9,7 @@ from ambr.gpu import GPU_AVAILABLE, to_host
 
 
 class _Wealth(am.Model):
-    """Canonical quickstart idiom — same step body as docs/quickstart.rst."""
+    """Canonical quickstart idiom — matches docs/quickstart.rst vectorized lane."""
 
     def setup(self):
         n = int(self.p["n"])

@@ -3,16 +3,19 @@ GPU backend
 
 AMBER's GPU support has two layers:
 
-1. **Native placement (0.4.3, preferred for a single large run)** —
-   ``model.gpu().run()`` on the same view-API ``Model`` you use on CPU.
-   Numeric columns stay device-resident for the run; the ``step`` body does
-   not change. Switch back with ``model.cpu(mode="vectorized").run()``.
+1. **Native placement (0.4.4, preferred for a single large run)** —
+   ``model.gpu().run()`` on a vectorized ``Model`` (``step_vectorized`` or
+   legacy ``step``). Numeric columns stay device-resident for the run.
+   Switch back with ``model.cpu(mode="vectorized").run()``. Private
+   model-specific loops require ``approve_fast_path(evidence)`` and
+   ``contract="off"`` (see :doc:`contract`).
 2. **Array-module helpers** — ``get_array_module``, ``to_device``,
    ``to_host``, ``scatter_add`` for code that writes against ``xp``
    (CuPy when available, else NumPy).
 
 Requires **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install CuPy matching
 your CUDA toolkit (see :doc:`../installation` and :doc:`../going_faster`).
+Polars Lazy ``engine="gpu"`` is **not** AMBER's agent GPU runtime.
 
 Native placement
 ----------------

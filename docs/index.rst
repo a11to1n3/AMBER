@@ -26,13 +26,13 @@ Features
   :doc:`from_agentpy` and :doc:`going_faster`)
 * **Vectorized view API**: update the whole population in a handful of Polars
   expressions — no per-agent loops, regardless of population size
-* **Snapshot-view contract**: opt-in runtime checking that the columnar fast
-  path preserves the intended update schedule (the zero-overhead default is off)
+* **Snapshot-view contract**: opt-in operational monitor at instrumented
+  write/borrow seams (not a schedule proof; zero-overhead default is off)
 * **CPU acceleration**: optional Numba (``pip install 'ambr[perf]'``) for
   ``scatter_add`` / subset writes — recommended on Mac without CUDA
-* **Device placement (0.4.3)**: Keras-style ``model.cpu(mode=...).run()`` /
-  ``model.gpu().run()`` — same view-API ``step`` on CPU or GPU (device-resident
-  columns); see :doc:`going_faster`
+* **Device placement (0.4.4)**: Keras-style ``model.cpu(mode=...).run()`` /
+  ``model.gpu().run()`` with ``step_vectorized`` / ``step_oop`` hooks
+  (GPU is vectorized-only; device-resident columns); see :doc:`going_faster`
 * **GPU ensemble**: CuPy array helpers with NumPy fallback, plus a batched
   ensemble that runs ``B`` simulations in one device pass for calibration
 * **Flexible environments**: grid, continuous space, and network topologies
@@ -65,7 +65,7 @@ Create your first model:
            # Bulk-create the population in one columnar write — no per-agent loop.
            self.add_agents(100, wealth=self.rng.integers(1, 10, size=100))
 
-       def step(self):
+       def step_vectorized(self):
            # Every agent with wealth > 0 gives $1 to a random other agent.
            donors = self.agents.where(self.agents.wealth > 0)
            donors.wealth -= 1
@@ -75,13 +75,13 @@ Create your first model:
    # Fluent placement (default mode is vectorized; run(mode=...) still overrides)
    model = WealthModel({'steps': 50, 'seed': 42})
    results = model.cpu(mode="vectorized").run()
-   # Same Model + step on GPU (NVIDIA + CuPy):  model.gpu().run()
+   # Vectorized lane on GPU (NVIDIA + CuPy):  model.gpu().run()
    print(results.model)       # also results['model']
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for what is new in **0.4.3** (native ``cpu()`` / ``gpu()``
-placement and device-resident view API).
+See :doc:`changelog` for what is new in **0.4.4** (honest lanes,
+operational contract, ``approve_fast_path``).
 
 Table of Contents
 -----------------

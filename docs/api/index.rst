@@ -27,8 +27,8 @@ Utilities
    results
    performance
 
-Advanced (0.4 / 0.4.1 / 0.4.3)
------------------------------
+Advanced (0.4 / 0.4.1 / 0.4.3 / 0.4.4)
+------------------------------------
 
 .. toctree::
    :maxdepth: 2
@@ -73,9 +73,10 @@ Quick Reference
 * :class:`ambr.Sample` - Parameter sampling for experiments
 * :class:`ambr.IntRange` - Integer range specification for parameters
 
-**Snapshot-view contract (0.4):**
+**Snapshot-view contract (0.4 / 0.4.4):**
 
-* :class:`ambr.contract.ContractCertificate` - Per-step conformance record from ``model.run(contract=...)``
+* :class:`ambr.contract.ContractCertificate` - Per-step operational monitor
+  record from ``model.run(contract=...)`` (not a schedule proof)
 
 **Tensor lane (0.4):**
 
@@ -88,10 +89,13 @@ Quick Reference
 * :class:`ambr.ArrayKernelModel` - single-run CuPy/NumPy array model
 * Optional ``pip install 'ambr[perf]'`` (Numba) for CPU scatter JIT
 
-**Device placement (0.4.3):**
+**Device placement & lanes (0.4.3 / 0.4.4):**
 
 * :meth:`ambr.Model.cpu` / :meth:`ambr.Model.gpu` - Keras-style placement;
-  same view-API ``step`` on CPU or GPU (see :doc:`gpu`, :doc:`../going_faster`)
+  ``step_vectorized`` / ``step_oop`` dispatch (GPU is vectorized-only;
+  see :doc:`gpu`, :doc:`../going_faster`)
+* :meth:`ambr.Model.approve_fast_path` / :meth:`ambr.Model.revoke_fast_path_approval`
+  - opt-in private GPU loop with caller-supplied evidence label
 * ``ambr.EXECUTION_DEVICES`` / ``EXECUTION_MODES`` / ``ExecutionConfig`` -
   placement constants (package exports)
 

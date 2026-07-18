@@ -4,10 +4,12 @@ Going faster (lanes)
 AMBER does **not** hide speed behind a silent ``gpu=True`` flag that rewrites
 semantics. From **0.4.3** you place a run with Keras-style
 ``model.cpu(mode=...).run()`` / ``model.gpu().run()`` (mode defaults to
-``vectorized``; ``run(mode=...)`` still overrides). Vectorized runs dispatch
-``step_vectorized()`` and GPU keeps numeric columns device-resident. CPU OOP
-runs dispatch ``step_oop()`` over tracked Agent objects. There are still four
-**lanes** for *how* you write the step — helpers tell you which to pick.
+``vectorized``; ``run(mode=...)`` still overrides). From **0.4.4**, vectorized
+runs dispatch ``step_vectorized()`` and GPU keeps numeric columns
+device-resident; CPU OOP runs dispatch ``step_oop()`` over tracked Agent
+objects (GPU is vectorized-only). Legacy ``step()`` is the fallback when a
+lane hook is missing. There are still four **lanes** for *how* you write the
+step — helpers tell you which to pick.
 
 Check this machine
 ------------------
@@ -85,11 +87,13 @@ Lane 4 — GPU
 Requires an **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install CuPy matching
 your CUDA, then either:
 
-**A. Single large run — same view-API model (0.4.3, preferred)::
+**A. Single large run — vectorized view-API model (0.4.4, preferred)::
 
    results = MyVectorizedModel({"n": 1_000_000, "steps": 50, "seed": 0}).gpu().run()
    # CPU counterpart:
    # results = MyVectorizedModel(...).cpu(mode="vectorized").run()
+   # Optional private GPU loop (only if the model defines one; not monitored):
+   # model.approve_fast_path("my-label").gpu().run(contract="off")
 
 **B. Array-kernel model —** :class:`~ambr.lanes.ArrayKernelModel`::
 

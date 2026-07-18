@@ -2,10 +2,12 @@ Benchmarks & Performance
 ========================
 
 AMBER stores the whole population as a columnar Polars DataFrame and compiles
-each step into a handful of vectorized expressions. From **0.4.3**, the same
-vectorized ``Model`` + view-API ``step`` runs on GPU via ``model.gpu().run()``
-(:doc:`api/gpu`) — not a separate kernel rewrite. Batched calibration is
-separate (:doc:`api/gpu_ensemble`).
+each step into a handful of vectorized expressions. From **0.4.4**, the
+vectorized lane (``step_vectorized`` / legacy ``step``) runs on GPU via
+``model.gpu().run()`` (:doc:`api/gpu`) with device-resident columns. Published
+AMBER (GPU) rows may use an explicit ``approve_fast_path(evidence)`` label
+before placement; the label is caller provenance, not a runtime certificate.
+Batched calibration is separate (:doc:`api/gpu_ensemble`).
 
 The full, reproducible suite — correctness checks, raw timings, and per-model
 tables — lives under ``benchmarks/`` (see ``benchmarks/README.md``). Reproduce
@@ -16,8 +18,9 @@ Large-N multi-framework scaling (1k→10M)
 
 **Protocol:** NVIDIA RTX 5090, 50 steps, 10 runs (trimmed mean). Ten
 frameworks: AMBER (GPU / vectorized / loop), mesa-frames, FLAME GPU 2,
-Agents.jl, SimPy, Melodie, AgentPy, Mesa. AMBER (GPU) is the same view-API
-classes under ``model.gpu().run()``. Full table:
+Agents.jl, SimPy, Melodie, AgentPy, Mesa. AMBER (GPU) uses the native
+vectorized models under ``model.gpu().run()`` (with evidence-labeled
+approval where a private fast loop is selected). Full table:
 ``benchmarks/results/summary_table.md``.
 
 .. image:: ../benchmarks/results/scaling_chart.png

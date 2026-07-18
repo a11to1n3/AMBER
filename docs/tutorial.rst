@@ -48,7 +48,7 @@ operations — no per-agent loop.
        'seed': 42
    })
    results = model.cpu(mode="vectorized").run()
-   # Same step body on GPU:  model.gpu().run()  (NVIDIA + CuPy)
+   # Vectorized lane on GPU:  model.gpu().run()  (NVIDIA + CuPy)
 
    # Examine results
    print("Final wealth distribution:")

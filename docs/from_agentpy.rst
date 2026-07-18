@@ -102,9 +102,11 @@ Move to the view API when loops dominate runtime::
 See :doc:`quickstart` for the full canonical-verb table, and
 :doc:`api/contract` if you enable ``contract='check'``.
 
-Same view-API step on GPU (0.4.3)::
+Vectorized lane on GPU (0.4.4; implement ``step_vectorized`` or legacy
+``step``)::
 
    results = MyVectorizedModel(...).gpu().run()
    # CPU: MyVectorizedModel(...).cpu(mode="vectorized").run()
+   # OOP agents: MyOOPModel(...).cpu(mode="oop").run()  # not on GPU
 
 See :doc:`going_faster` for placement, Numba, and ensemble calibration.
