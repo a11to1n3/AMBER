@@ -64,6 +64,10 @@ class ActiveExecution:
     config: ExecutionConfig
     xp: Any = np
     device_columns: Dict[str, Any] = field(default_factory=dict)
+    # Columns mutated during the active run.  Keeping this separate from the
+    # resident-column set lets GPU teardown flush only changed state; static
+    # columns such as ``id`` do not need a PCIe round-trip every run.
+    dirty_columns: set[str] = field(default_factory=set)
     device_rng: Any = None
     ids_are_arange: bool = False
 
@@ -144,6 +148,11 @@ def _numeric_host_array(series: pl.Series) -> np.ndarray | None:
 
 
 def _validate_mode(model: "Model", config: ExecutionConfig) -> None:
+    if config.device == "gpu" and config.mode == "oop":
+        raise ValueError(
+            "GPU execution supports mode='vectorized' only; "
+            "use cpu(mode='oop') for Python Agent objects."
+        )
     if config.mode != "oop":
         return
     agents = getattr(model, "agents", None)
@@ -183,6 +192,38 @@ def begin_execution(model: "Model", config: ExecutionConfig) -> None:
     model._execution = ex
 
 
+def begin_fast_execution(
+    model: "Model",
+    config: ExecutionConfig,
+    device_columns: Dict[str, Any],
+    *,
+    device_rng: Any = None,
+) -> None:
+    """Start a device-first run supplied by a private model fast path.
+
+    Unlike :func:`begin_execution`, this does not upload a pre-existing
+    Polars frame.  It is used only by built-in optimized models that create
+    their initial numeric columns directly on the selected device; the public
+    ``model.gpu().run()`` contract and normal teardown remain the same.
+    """
+    if active_execution(model) is not None:
+        raise RuntimeError("begin_fast_execution called while a run is already active")
+    _validate_mode(model, config)
+    require_gpu()
+    ex = ActiveExecution(
+        config=config,
+        xp=get_array_module(True),
+        device_columns=device_columns,
+        # Fast setup starts from an id-only placeholder frame, so every
+        # device-created column must be materialized at teardown even for a
+        # zero-step run.
+        dirty_columns=set(device_columns),
+        device_rng=device_rng or make_device_rng(model.p.get("seed")),
+        ids_are_arange=("id" in device_columns),
+    )
+    model._execution = ex
+
+
 def sync_device_column_to_frame(model: "Model", name: str) -> None:
     ex = active_execution(model)
     if ex is None or name not in ex.device_columns:
@@ -192,12 +233,15 @@ def sync_device_column_to_frame(model: "Model", name: str) -> None:
     model.population.replace_frame(df.with_columns(pl.Series(name, host)))
 
 
-def sync_all_device_columns(model: "Model") -> None:
+def sync_all_device_columns(model: "Model", *, dirty_only: bool = False) -> None:
     ex = active_execution(model)
     if ex is None or ex.config.device != "gpu":
         return
-    for name in list(ex.device_columns):
+    names = ex.dirty_columns if dirty_only else ex.device_columns
+    for name in list(names):
         sync_device_column_to_frame(model, name)
+    if dirty_only:
+        ex.dirty_columns.clear()
 
 
 def end_execution(model: "Model") -> None:
@@ -206,6 +250,9 @@ def end_execution(model: "Model") -> None:
     if ex is None:
         return
     if ex.config.device == "gpu":
-        sync_all_device_columns(model)
+        # Device columns are the canonical state during the run.  Only flush
+        # columns that the model actually wrote; unchanged columns remain in
+        # the original Polars frame and need no host transfer.
+        sync_all_device_columns(model, dirty_only=True)
         synchronize()
     model._execution = None

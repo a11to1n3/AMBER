@@ -13,8 +13,9 @@ AMBER is a Python framework for agent-based modeling that uses Polars for effici
 AMBER stores the entire population as a columnar Polars DataFrame and
 exposes a vectorized view API (`agents.where(...)`, `agents.at[ids]`,
 `scatter_add`) that compiles per-step updates down to a handful of
-Polars expressions. From **0.4.3**, the same `Model` + `step` runs on GPU via
-`model.gpu().run()` (no separate kernel rewrite).
+columnar operations. Models can provide `step_vectorized()` and `step_oop()`
+for explicit native lanes; legacy models with only `step()` keep the fallback.
+The vectorized lane runs on GPU via `model.gpu().run()`.
 
 **Large-N multi-framework scaling (1k→10M agents, 50 steps, 10 runs trimmed
 mean, NVIDIA RTX 5090).** Ten frameworks: AMBER (GPU / vectorized / loop),
@@ -88,10 +89,16 @@ class WealthModel(am.Model):
     def setup(self):
         self.add_agents(100, wealth=self.rng.integers(1, 10, size=100))
 
-    def step(self):
-        donors = self.agents.where(self.agents.wealth > 0)
-        donors.wealth -= 1
-        recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
+    def step_vectorized(self):
+        xp = self.xp
+        wealth = self.agents.array("wealth")
+        donors = xp.nonzero(wealth > 0)[0]
+        if int(donors.size) == 0:
+            return
+        wealth[donors] -= 1
+        recipients = self.rng.choice(
+            self.agents.array("id"), size=int(donors.size)
+        )
         self.agents.at[recipients].scatter_add(wealth=1)
 
 # Fluent placement (0.4.3): device + optional mode; run(mode=...) still overrides.
@@ -133,10 +140,10 @@ print(Drift({"n": 100_000, "steps": 20}).run().info)
 the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).
 
-> **New in 0.4.3:** Keras-style **`model.cpu(mode=...)` / `model.gpu(mode=...)`**
-> placement and a **native GPU view API** — the same `where` / column write /
-> `scatter_add` `step` runs device-resident under `.gpu().run()`. Main AMBER
-> (GPU) benchmarks use those models (not a separate kernel rewrite). See the
+> **Execution lanes:** Keras-style **`model.cpu(mode=...)` / `model.gpu()`**
+> placement dispatches `step_vectorized()` for vectorized CPU/GPU runs and
+> `step_oop()` for CPU Agent-object runs. GPU execution is vectorized-only;
+> Python Agent objects use `cpu(mode="oop")`. See the
 > [changelog](CHANGELOG.md).
 >
 > **New in 0.4.1:** [AgentPy-shaped UX](docs/from_agentpy.rst) (`RunResults`,
@@ -202,9 +209,11 @@ declarative metrics, and set `record_initial = True` to capture a `t=0` row.
 
 ## 🔒 Snapshot-view contract
 
-The columnar fast path is only valid for rules that preserve the intended update
-schedule. AMBER turns that from a silent assumption into a checkable, per-step
-artifact — run with a contract mode and inspect the certificates:
+Whether a vectorized refactor preserves an intended update schedule is a
+semantic question. AMBER's runtime monitor reports selected operational hazards
+at instrumented API seams; it does not prove schedule equivalence for arbitrary
+NumPy, CuPy, or user-kernel code. Run with a contract mode and inspect the
+per-step records:
 
 ```python
 results = model.run(steps=100, contract="check")   # "off" | "check" | "warn" | "raise"
@@ -214,22 +223,31 @@ for cert in results["contract"]:
 ```
 
 `check` records a `ContractCertificate` per step; `warn` also emits a warning per
-violation; `raise` stops on the first error. Mode `off` (default) adds zero overhead.
+violation; `raise` stops on the first error. Mode `off` (default) adds no monitor
+bookkeeping. `cert.clean` means that no monitored error or warning was observed,
+not that every possible activation order is equivalent.
 
 The monitor watches **two write paths** (and combinations):
 
 * **Buffered (OOP)** — `agent.col = …` / queued cell writes
 * **Lane / view** — `agents.col = …`, `agents.set(...)`, `borrow`/`commit`
 * **Cross-path** — same column via both OOP and view in one step → `cross_path_write`
+* **Mutable raw arrays** — `agents.array(...)` → `uncertified_mutable_borrow`
 
 `scatter_add` is the sanctioned multi-write reducer (not treated as a conflicting
 ordinary commit). Prefer those APIs over assigning `population.data` directly.
 
 ## 🎮 GPU backend & batched calibration
 
-**Single-run (native, 0.4.3):** place the same view-API model on device — no
-rewrite of `step`. Numeric columns stay device-resident for the run; contract
-modes still apply on the CPU snapshot at step boundaries.
+**Single-run (native, 0.4.3):** place a model on device through the same public
+API. Models may provide `step_vectorized()` and an optional private
+model-specific fast loop behind `gpu().run()`. Numeric columns stay
+device-resident for the run. Contract modes use the instrumented general path;
+private fast loops are selected only with `contract="off"` and an explicit
+per-instance `approve_fast_path(evidence)` declaration. The evidence string is
+a caller-supplied provenance label, not something AMBER verifies. Without it,
+`gpu().run()` uses the instrumented-capable general path. Private loops are not
+covered by the monitor.
 
 ```python
 # Same WealthModel as the vectorized quickstart
@@ -301,9 +319,9 @@ am.print_status()
 
 - **Simple API**: AgentPy-shaped OOP lane + vectorized columnar views on one model
 - **High Performance**: Polars DataFrames; optional Numba (`ambr[perf]`) for scatters
-- **Device placement**: Keras-style `model.cpu(mode=...)` / `model.gpu()` — same `step` on CPU or GPU
+- **Device placement**: Keras-style `model.cpu(mode=...)` / `model.gpu()` with mode-specific step hooks
 - **Speed lanes**: `am.print_status()` / `am.recommend(n)` / `ArrayKernelModel`
-- **Snapshot-view contract**: runtime checking that columnar updates preserve the intended schedule
+- **Snapshot-view monitor**: runtime diagnostics for observed write/borrow conflicts and untraceable mutable arrays
 - **GPU backend**: native view-API path + CuPy helpers + batched ensemble for calibration
 - **Optimization**: grid / random / Bayesian (SMAC) search, plus GPU-batched calibration
 - **Declarative reporting**: `model_reporters` / `agent_reporters` and a typed `params` schema

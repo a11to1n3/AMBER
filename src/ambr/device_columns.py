@@ -28,12 +28,22 @@ class DeviceColumn:
         ex = active_execution(self._model)
         if ex is None or self._name not in ex.device_columns:
             raise KeyError(self._name)
+        self._model._contract_record_borrow(self._name)
         return ex.device_columns[self._name]
 
     @property
     def array(self):
         """Zero-copy access to the backing NumPy or CuPy column."""
-        return self._array()
+        array = self._array()
+        # ``agents.array(...)`` is a mutable zero-copy borrow.  Marking the
+        # column dirty on borrow is conservative but preserves correctness for
+        # callers that mutate the returned CuPy array in place, which cannot be
+        # observed by the assignment/scatter hooks below.
+        ex = active_execution(self._model)
+        if ex is not None and ex.config.device == "gpu":
+            ex.dirty_columns.add(self._name)
+        self._model._contract_record_mutable_borrow(self._name)
+        return array
 
     def to_numpy(self) -> np.ndarray:
         """Explicit host export (PCIe round-trip on GPU)."""
@@ -116,6 +126,8 @@ def device_scatter_write(
     )
     base[pos] = vals
     ex.device_columns[col_name] = base
+    ex.dirty_columns.add(col_name)
+    model._contract.record_commit([col_name])
 
 
 def device_scatter_add(
@@ -144,6 +156,8 @@ def device_scatter_add(
     )
     scatter_add(base, pos, d)
     ex.device_columns[col_name] = base
+    ex.dirty_columns.add(col_name)
+    model._contract_record_reduction([col_name])
 
 
 # Re-export for contract snapshots / model hooks.
