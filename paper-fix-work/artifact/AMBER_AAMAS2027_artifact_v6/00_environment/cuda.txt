@@ -1,6 +1,0 @@
-=== CUDA_PATH ===
-/usr/local/cuda-12.9
-=== nvcc ===
-tools/host_b_rerun/capture_host_b_env.sh: line 32: nvcc: command not found
-=== cuda libs ===
-lrwxrwxrwx 1 root root 24 Mar 15  2025 /usr/local/cuda-12.9/lib64 -> targets/x86_64-linux/lib

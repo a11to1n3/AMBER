@@ -1,2 +1,0 @@
-=== julia ===
-tools/host_b_rerun/capture_host_b_env.sh: line 80: julia: command not found
