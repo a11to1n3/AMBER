@@ -69,3 +69,12 @@ benchmarks/results/amber_*.log
 # Local release notes / scratch (never ship)
 PR_DESCRIPTIONS.md
 *.local.md
+
+# Paper / AAMAS island — local workstation only; never commit to the library package
+paper-fix-work/
+
+# Host campaign raw trees / local scratch
+artifacts/host_b_*/
+artifacts/**/cupy_cache/
+tmp/
+tools/**/*.log

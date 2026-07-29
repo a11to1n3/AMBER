@@ -488,14 +488,27 @@ def _configure_flamegpu_runtime() -> None:
     old benchmark default also pointed at ``~/cuda-12.0``, which is not a
     valid toolkit path on the benchmark host. Resolve an installed toolkit
     and add the packaged CUDA runtime libraries before importing pyflamegpu.
+
+    Note: glibc only reads ``LD_LIBRARY_PATH`` at process start, so updating
+    ``os.environ`` is not enough for ``import pyflamegpu``. We also preload
+    NVRTC / nvJitLink via ``ctypes.CDLL(..., RTLD_GLOBAL)`` so the extension
+    resolves correctly when the parent process was launched without those
+    library dirs (e.g. CUDA 13 pip packages under ``nvidia/cu13/lib``).
     """
+    import ctypes
+
     cuda_candidates: List[Path] = []
     for value in (os.environ.get("CUDA_PATH"), os.environ.get("CUDA_HOME")):
         if value:
             cuda_candidates.append(Path(value).expanduser())
     cuda_candidates.extend(
         Path(value)
-        for value in ("/usr/local/cuda", "/usr/local/cuda-12.9", "/usr/local/cuda-12.0")
+        for value in (
+            "/usr/local/cuda",
+            "/usr/local/cuda-13.0",
+            "/usr/local/cuda-12.9",
+            "/usr/local/cuda-12.0",
+        )
     )
 
     cuda_path = next(
@@ -508,14 +521,19 @@ def _configure_flamegpu_runtime() -> None:
     # NVIDIA's pip wheels install these outside the system loader path. Find
     # them through sys.path so this remains portable across venv/system-Python
     # layouts; existing user-provided entries are retained.
+    # ``nvidia/cu13/lib`` holds CUDA-13 NVRTC/nvJitLink used by pyflamegpu+cuda130.
     library_dirs: List[Path] = []
     for root in map(Path, sys.path):
         library_dirs.extend(
             (
+                root / "nvidia" / "cu13" / "lib",
                 root / "nvidia" / "nvjitlink" / "lib",
                 root / "nvidia" / "cuda_nvrtc" / "lib",
+                root / "nvidia" / "cuda_runtime" / "lib",
             )
         )
+    if cuda_path is not None:
+        library_dirs.append(cuda_path / "lib64")
     library_dirs = [path for path in library_dirs if path.is_dir()]
     if library_dirs:
         existing = [
@@ -525,6 +543,25 @@ def _configure_flamegpu_runtime() -> None:
         ]
         merged = list(dict.fromkeys([str(path) for path in library_dirs] + existing))
         os.environ["LD_LIBRARY_PATH"] = ":".join(merged)
+
+    # Preload shared libs the pyflamegpu extension links against. Order matters:
+    # nvrtc depends on builtins / jitlink in some builds.
+    preload_names = (
+        "libnvJitLink.so.13",
+        "libnvJitLink.so.12",
+        "libnvrtc-builtins.so.13.0",
+        "libnvrtc-builtins.so.12.9",
+        "libnvrtc.so.13",
+        "libnvrtc.so.12",
+    )
+    for lib_dir in library_dirs:
+        for name in preload_names:
+            candidate = lib_dir / name
+            if candidate.is_file():
+                try:
+                    ctypes.CDLL(str(candidate), mode=ctypes.RTLD_GLOBAL)
+                except OSError:
+                    pass
 
 def _bench_flamegpu(
     model_name: str, n: int, steps: int, runs: int
@@ -622,7 +659,8 @@ def _run_agentsjl(agent_counts: List[int], steps: int, runs: int, budget: float 
             cwd=str(MODELS_DIR),
             capture_output=True,
             text=True,
-            timeout=900,
+            # Full multi-model scale can exceed 15 minutes (SIR is O(n^2)).
+            timeout=7200,
         )
         if proc.returncode != 0:
             raise RuntimeError(

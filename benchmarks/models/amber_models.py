@@ -612,11 +612,12 @@ class AMBERVectorizedSIRModel(am.Model):
                     y,
                     status,
                     infection_time,
-                    step=self.t,
+                    step=int(self.t),
                     world_size=world_size,
                     radius=radius,
                     transmission=transmission,
                     recovery_time=recovery_time,
+                    global_seed=int(self.p.get("seed") or 0),
                 )
                 self.agents.x = x
                 self.agents.y = y
@@ -675,17 +676,19 @@ class AMBERVectorizedSIRModel(am.Model):
         radius = float(self.p.get('infection_radius', 5.0))
         transmission = float(self.p.get('transmission_rate', 0.1))
         recovery_time = int(self.p.get('recovery_time', 14))
-        for _ in range(max_steps):
+        global_seed = int(self.p.get('seed') or 0)
+        for step_i in range(max_steps):
             dx = self.rng.uniform(-speed, speed, n)
             dy = self.rng.uniform(-speed, speed, n)
             x, y = fused_random_walk(x, y, dx, dy, 0.0, world_size)
             x, y, status, infection_time = sir_kernel_step(
                 x, y, status, infection_time,
-                step=self.t,
+                step=step_i,
                 world_size=world_size,
                 radius=radius,
                 transmission=transmission,
                 recovery_time=recovery_time,
+                global_seed=global_seed,
             )
             self._append_fast_step(
                 susceptible=int(xp.count_nonzero(status == self.STATUS_S)),
