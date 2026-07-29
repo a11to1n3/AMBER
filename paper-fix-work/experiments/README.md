@@ -25,8 +25,8 @@ fair performance measurement
 
 ```bash
 source ~/AMBER/.venv/bin/activate
-export PYTHONPATH=~/AMBER_aamas_exp/src:~/AMBER_aamas_exp
-cd ~/AMBER_aamas_exp
+export PYTHONPATH=<repo>/src:<repo>/paper-fix-work
+cd <repo>/paper-fix-work
 python experiments/run_all.py --out experiments/raw --tag host_a
 ```
 
