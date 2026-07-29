@@ -389,8 +389,10 @@ If you use AMBER in academic work, please cite the paper:
 
 Paper: https://arxiv.org/abs/2601.16292
 
-(Source drafts and build artifacts for the manuscript are **not** kept in this
-repository — only the public citation.)
+For the **software**, this repository also ships [`CITATION.cff`](CITATION.cff)
+(GitHub “Cite this repository”). Manuscript drafts and build artifacts are
+**not** kept in the library tree — only the public paper citation and software
+metadata.
 
 ## 🤝 Contributing
 

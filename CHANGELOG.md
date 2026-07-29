@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.4.5 - 2026-07-29
+
+Research-grade package hygiene: honest 10M headline evidence, pair-keyed GPU
+SIR counter-tape tests, software citation metadata, and optional ``ambr[gpu]``.
+
 ### Added
 
 - **Tests:** `tests/test_sir_counter_tape.py` locks the SplitMix64 counter-tape
@@ -10,6 +15,7 @@
   `sir_kernel_step(..., global_seed=...)`, and exercises FLAME NVRTC preload
   configuration without requiring pyflamegpu.
 - **`CITATION.cff`** for repository citation metadata.
+- Optional **`ambr[gpu]`** extra (CuPy) for the NVIDIA GPU lane.
 
 ### Changed
 
@@ -24,6 +30,9 @@
   labeled setup-inclusive/exploratory; multi-framework cells not imputed.
 - **Benchmarks docs:** optional dependency matrix; AMBER-only vs multi-framework
   paths; missing OOM/budget cells are not zeros.
+- **Installation / going_faster:** document ``ambr[gpu]``; README How to cite
+  references ``CITATION.cff``; Sphinx index points at 0.4.5; calibration
+  throughput wording de-hyped as exploratory.
 
 ## v0.4.4 - 2026-07-18
 

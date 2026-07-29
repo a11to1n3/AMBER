@@ -84,8 +84,13 @@ See :doc:`api/tensor_lane` and ``examples/flocking_tensor.py``.
 Lane 4 — GPU
 ------------
 
-Requires an **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install CuPy matching
-your CUDA, then either:
+Requires an **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install the GPU extra
+(or a CUDA-matched CuPy wheel)::
+
+   pip install 'ambr[gpu]'
+   # if needed: pip install cupy-cuda12x   # match your toolkit
+
+Then either:
 
 **A. Single large run — vectorized view-API model (0.4.4, preferred)::
 

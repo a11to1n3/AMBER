@@ -41,6 +41,11 @@ Schelling         295 ms         18.7 s         ~63× (setup-inclusive; explorat
   older stack in places). Missing cells (OOM / budget) are not zeros.
 - **Reproduce:**
   ``python benchmarks/run_all_frameworks.py --agents 10000000 --steps 50 --runs 10 --frameworks "AMBER (GPU)" "FLAME GPU 2"``
+- Production-scale SIR infection draws in the benchmark GPU kernels use a
+  **pair-keyed SplitMix64 counter tape** (``global_seed``, step, unordered
+  agent pair). The pure-Python reference is locked in
+  ``tests/test_sir_counter_tape.py``. This is a benchmark/internal path, not a
+  change to the public ``Model.step_vectorized`` API.
 
 .. image:: ../benchmarks/results/scaling_chart.png
    :alt: Multi-framework scaling chart (exploratory full sweep)
@@ -50,7 +55,9 @@ Calibration throughput
 ----------------------
 
 For derivative-free calibration, the GPU *ensemble* axis batches ``B``
-simulations of ``N`` agents into one device pass (:func:`ambr.gpu_ensemble.smac_batch_calibrate`).
-On a well-mixed SIR recovery task, AMBER's GPU batched ensemble reaches the best
-held-out validation loss at roughly **270× the slowest framework** and ~3× the
-fastest CPU competitor, evaluating ~970 candidate parameter sets per second.
+simulations of ``N`` agents into one device pass
+(:func:`ambr.gpu_ensemble.smac_batch_calibrate`). Reported speedups in older
+notes (e.g. “hundreds of times vs the slowest peer”) are **task- and
+stack-specific** exploratory results — not part of the snapshot_correct 10M
+headline table above. Prefer re-running the ensemble benchmarks on your host
+before citing absolute throughput.
