@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use AMBER in research, please cite this software."
+type: software
+title: "AMBER (Agent-based Modeling with Blazingly Efficient Records)"
+abstract: >-
+  AMBER is a Python framework for agent-based modeling that uses Polars for
+  efficient columnar population state, with vectorized and optional GPU
+  execution lanes.
+authors:
+  - family-names: Pham
+    given-names: Anh-Duy
+    alias: a11to1n3
+repository-code: "https://github.com/a11to1n3/AMBER"
+url: "https://github.com/a11to1n3/AMBER"
+license: BSD-3-Clause
+version: "0.4.5"
+date-released: "2026-07-29"
+keywords:
+  - agent-based modeling
+  - multi-agent systems
+  - polars
+  - simulation
+  - scientific computing

@@ -69,6 +69,10 @@ AMBER extras (install what you need):
    # CPU acceleration (Numba + SciPy) — recommended on Mac / no-CUDA machines
    pip install 'ambr[perf]'
 
+   # NVIDIA GPU lane (CuPy). Prefer a CUDA-matched wheel if the default fails,
+   # e.g. ``pip install cupy-cuda12x`` instead of the generic ``cupy`` pin.
+   pip install 'ambr[gpu]'
+
    # SMAC Bayesian / multi-objective optimization (pins scikit-learn for SMAC 2.4)
    pip install 'ambr[advanced]'
 
@@ -82,8 +86,6 @@ Other useful packages:
 
 * **jupyter** - interactive development
 * **plotly** - interactive visualizations
-* **cupy-cuda12x** - NVIDIA CUDA for ``model.gpu().run()`` and array kernels
-  (not Apple Metal/MPS)
 
 .. code-block:: bash
 
@@ -115,8 +117,9 @@ Common Issues
 * ``pip install 'ambr[perf]'`` for Numba-accelerated ``scatter_add`` / subset writes
 * Installing numpy with accelerated BLAS libraries
 * Running on systems with sufficient RAM
-* For large-N runs on NVIDIA GPUs: same view-API model via
-  ``model.gpu().run()``, or ``ArrayKernelModel`` — see :doc:`going_faster` (CuPy)
+* For large-N runs on NVIDIA GPUs: ``pip install 'ambr[gpu]'`` (or a
+  CUDA-matched CuPy wheel), then the same view-API model via
+  ``model.gpu().run()``, or ``ArrayKernelModel`` — see :doc:`going_faster`
 
 **SMAC / advanced install**: If SMAC fails with a scikit-learn ``DTYPE`` error,
 reinstall the pinned extra::

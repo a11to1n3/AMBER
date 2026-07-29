@@ -145,11 +145,41 @@ class GPUSIRBinnedModel:
 # same way Polars compiles group-by/join to kernels over Arrow columns. It is
 # snapshot-structured: it reads step-entry columns and writes `new_inf`
 # separately (race-free), but this private path is not runtime-monitored.
-# Inline counter-hash PRNG supplies each per-pair draw.
+# Per-pair infection draws use the shared SplitMix64 counter tape
+# (global_seed, step, EVT_INFECTION=4, min(i,j), max(i,j), draw_index=0).
+# Pure-Python reference and lock tests: tests/test_sir_counter_tape.py.
 # --------------------------------------------------------------------------- #
+
+_MODULE_VERSION = 2  # bump when _MODULE_SRC changes (forces RawModule reload)
 
 _MODULE_SRC = r'''
 extern "C" {
+// SplitMix64 — must match tests/test_sir_counter_tape.py counter_u01 bit-for-bit.
+__device__ __forceinline__ unsigned long long mix64(unsigned long long z){
+    z += 0x9E3779B97F4A7C15ULL;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+__device__ __forceinline__ float counter_u01(
+    unsigned long long global_seed,
+    unsigned int step,
+    unsigned int event_type,
+    unsigned int agent_id,
+    unsigned int partner_id,
+    unsigned int draw_index)
+{
+    unsigned long long x = global_seed;
+    x = mix64(x ^ (unsigned long long)step);
+    x = mix64(x ^ (unsigned long long)event_type);
+    x = mix64(x ^ (unsigned long long)agent_id);
+    x = mix64(x ^ (unsigned long long)partner_id);
+    x = mix64(x ^ (unsigned long long)draw_index);
+    unsigned long long u = mix64(x);
+    // top 53 mantissa bits -> U(0,1), same as Python (u >> 11) / 2^53
+    return (float)((u >> 11) * (1.0 / 9007199254740992.0));
+}
+// Legacy 32-bit hashrand retained only for non-attested diagnostics if needed.
 __device__ __forceinline__ float hashrand(unsigned int a, unsigned int b, unsigned int c){
     unsigned int h = a * 747796405u + 2891336453u;
     h ^= (b + 0x9e3779b9u + (h << 6) + (h >> 2));
@@ -200,13 +230,16 @@ __global__ void bucketize_reorder(
 // columns are physically permuted into cell order (xs/ys/ss), so an agent's
 // neighbour cell-groups are *contiguous* ranges -> the inner-loop reads are
 // memory-coalesced (the dominant cost otherwise). `order` carries the original
-// agent id (for the per-agent PRNG seed); output is in sorted order and
-// scattered back by the caller. Reads old `ss`, writes new_inf_sorted (race-free).
+// agent id. Infection Bernoulli draws are keyed by the unordered pair
+// (min(i,j), max(i,j)) so visit order cannot change the assigned RV.
+// Reads old `ss`, writes new_inf_sorted (race-free snapshot).
+// EVT_INFECTION = 4 (must match tests/test_sir_counter_tape.py).
 __global__ void sir_join_sorted(
     const float* __restrict__ xs, const float* __restrict__ ys,
     const signed char* __restrict__ ss, const long long* __restrict__ order,
     const long long* __restrict__ cell_start,
-    int ncell, float cs, float r2, float trans, unsigned int step,
+    int ncell, float cs, float r2, float trans,
+    unsigned int step, unsigned long long global_seed,
     int n, signed char* __restrict__ new_inf_sorted)
 {
     int t = blockIdx.x * blockDim.x + threadIdx.x;
@@ -215,8 +248,7 @@ __global__ void sir_join_sorted(
     float xi = xs[t], yi = ys[t];
     int cx = (int)(xi / cs); cx = max(0, min(cx, ncell - 1));
     int cy = (int)(yi / cs); cy = max(0, min(cy, ncell - 1));
-    unsigned int id = (unsigned int)order[t];    // original agent id -> PRNG seed
-    unsigned int rc = 0;
+    unsigned int id = (unsigned int)order[t];    // original agent id
     for (int dx = -1; dx <= 1; ++dx){
         int ncx = cx + dx; if (ncx < 0 || ncx >= ncell) continue;
         for (int dy = -1; dy <= 1; ++dy){
@@ -227,7 +259,11 @@ __global__ void sir_join_sorted(
                 if (ss[k] != 1) continue;         // infected sources only
                 float ddx = xs[k] - xi, ddy = ys[k] - yi;
                 if (ddx * ddx + ddy * ddy <= r2){
-                    if (hashrand(id, step, rc++) < trans){
+                    unsigned int jid = (unsigned int)order[k];
+                    unsigned int lo = id < jid ? id : jid;
+                    unsigned int hi = id < jid ? jid : id;
+                    // EVT_INFECTION = 4
+                    if (counter_u01(global_seed, step, 4u, lo, hi, 0u) < trans){
                         new_inf_sorted[t] = 1;
                         return;
                     }
@@ -240,18 +276,30 @@ __global__ void sir_join_sorted(
 '''
 
 
+def _load_sir_module():
+    """Compile/load the SIR CUDA module; reload when source version changes."""
+    import cupy as cp
+
+    if (
+        GPUSIRKernelModel._module is None
+        or GPUSIRKernelModel._module_version != _MODULE_VERSION
+    ):
+        GPUSIRKernelModel._module = cp.RawModule(code=_MODULE_SRC)
+        GPUSIRKernelModel._module_version = _MODULE_VERSION
+    return GPUSIRKernelModel._module
+
+
 class GPUSIRKernelModel:
     """SIR as a columnar fixed-radius self-join (counting-sort group-by + kernel)."""
 
     _module = None
+    _module_version = None
 
     def __init__(self, n, steps, cfg):
         self.n, self.steps, self.cfg = n, steps, cfg
 
     def run(self, return_state=False):
-        if GPUSIRKernelModel._module is None:
-            GPUSIRKernelModel._module = cp.RawModule(code=_MODULE_SRC)
-        mod = GPUSIRKernelModel._module
+        mod = _load_sir_module()
         cell_and_count = mod.get_function("cell_and_count")
         bucketize_reorder = mod.get_function("bucketize_reorder")
         sir_join_sorted = mod.get_function("sir_join_sorted")
@@ -304,7 +352,7 @@ class GPUSIRKernelModel:
             sir_join_sorted((blocks,), (tpb,), (
                 xs, ys, ss, order, cell_start,
                 np.int32(ncell), np.float32(cs), np.float32(r2), np.float32(trans),
-                np.uint32(step), np.int32(n), new_inf_sorted,
+                np.uint32(step), np.uint64(SEED), np.int32(n), new_inf_sorted,
             ))
             # scatter results back to original agent order
             new_inf = cp.zeros(n, dtype=cp.int8)
@@ -337,8 +385,13 @@ def sir_kernel_step(
     radius: float,
     transmission: float,
     recovery_time: int,
+    global_seed: int = 0,
 ):
     """Run one exact cell-binned SIR spatial join on caller-owned columns.
+
+    Infection Bernoulli draws use the shared SplitMix64 counter tape keyed by
+    ``(global_seed, step, EVT_INFECTION=4, min(i,j), max(i,j), 0)`` so that
+    candidate visit order cannot change the random values assigned to pairs.
 
     Counting/bucketization costs O(N + C); exact neighbour traversal adds P,
     the number of candidate pairs examined. Thus total work is O(N + C + P),
@@ -352,9 +405,7 @@ def sir_kernel_step(
     """
     import cupy as cp
 
-    if GPUSIRKernelModel._module is None:
-        GPUSIRKernelModel._module = cp.RawModule(code=_MODULE_SRC)
-    mod = GPUSIRKernelModel._module
+    mod = _load_sir_module()
     cell_and_count = mod.get_function("cell_and_count")
     bucketize_reorder = mod.get_function("bucketize_reorder")
     sir_join_sorted = mod.get_function("sir_join_sorted")
@@ -399,7 +450,9 @@ def sir_kernel_step(
         (
             xs, ys, ss, order, cell_start,
             np.int32(ncell), np.float32(cs), np.float32(float(radius) ** 2),
-            np.float32(transmission), np.uint32(step), np.int32(n),
+            np.float32(transmission), np.uint32(int(step)),
+            np.uint64(int(global_seed) & ((1 << 64) - 1)),
+            np.int32(n),
             new_inf_sorted,
         ),
     )

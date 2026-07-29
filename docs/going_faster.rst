@@ -84,8 +84,13 @@ See :doc:`api/tensor_lane` and ``examples/flocking_tensor.py``.
 Lane 4 — GPU
 ------------
 
-Requires an **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install CuPy matching
-your CUDA, then either:
+Requires an **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install the GPU extra
+(or a CUDA-matched CuPy wheel)::
+
+   pip install 'ambr[gpu]'
+   # if needed: pip install cupy-cuda12x   # match your toolkit
+
+Then either:
 
 **A. Single large run — vectorized view-API model (0.4.4, preferred)::
 
@@ -94,6 +99,12 @@ your CUDA, then either:
    # results = MyVectorizedModel(...).cpu(mode="vectorized").run()
    # Optional private GPU loop (only if the model defines one; not monitored):
    # model.approve_fast_path("my-label").gpu().run(contract="off")
+   #
+   # ``approve_fast_path(evidence)`` is **caller-attested**: AMBER records the
+   # label and requires it (plus ``contract="off"``) before private loops run.
+   # It does **not** verify that the evidence proves equivalence to a reference
+   # trajectory. Prefer the instrumented vectorized path unless you own that
+   # attestation outside the library.
 
 **B. Array-kernel model —** :class:`~ambr.lanes.ArrayKernelModel`::
 

@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+## v0.4.5 - 2026-07-29
+
+Research-grade package hygiene: honest 10M headline evidence, pair-keyed GPU
+SIR counter-tape tests, software citation metadata, and optional `ambr[gpu]`.
+
+### Added
+
+- **Tests:** `tests/test_sir_counter_tape.py` locks the SplitMix64 counter-tape
+  reference used by production GPU SIR infection draws (pair-keyed
+  `(global_seed, step, EVT_INFECTION, min(i,j), max(i,j))`), documents
+  `sir_kernel_step(..., global_seed=...)`, and exercises FLAME NVRTC preload
+  configuration without requiring pyflamegpu.
+- **Tracked headline evidence:** `benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json`
+  and `summary_table_snapshot_correct_10run_10m.md` (README / Sphinx source of truth).
+- **`CITATION.cff`** for repository citation metadata.
+- Optional **`ambr[gpu]`** extra (CuPy) for the NVIDIA GPU lane.
+
+### Changed
+
+- **GPU SIR scale kernels** (`benchmarks/models/amber_gpu_scale_models.py`) and
+  **vectorized SIR wiring** (`amber_models.py`): infection draws use pair-keyed
+  SplitMix64 with explicit `global_seed` / step (order-invariant RVs for
+  cross-backend attestation).
+- **`benchmarks/run_all_frameworks.py`:** FLAME GPU 2 CUDA 13 NVRTC/nvJitLink
+  preload via `ctypes` (glibc does not re-read `LD_LIBRARY_PATH` after start);
+  Agents.jl subprocess timeout raised for long scale runs.
+- **README performance section:** single committed source of truth
+  (`benchmark_results_snapshot_correct_10run_10m.json`); Schelling ratio
+  labeled setup-inclusive/exploratory; multi-framework cells not imputed.
+- **Benchmarks docs:** optional dependency matrix; AMBER-only vs multi-framework
+  paths; missing OOM/budget cells are not zeros;
+  `summary_table.md` bannered exploratory/historical.
+- **Installation / going_faster:** document `ambr[gpu]`; README How to cite
+  references `CITATION.cff`; Sphinx index points at 0.4.5; calibration
+  throughput wording de-hyped as exploratory.
+
+### Notes
+
+- Paper / AAMAS materials stay **outside** the library tree (e.g.
+  `~/Documents/AMBER_AAMAS`); `.gitignore` blocks `paper-fix-work/` and
+  `AMBER_AAMAS/` under the package repo.
+
 ## v0.4.4 - 2026-07-18
 
 Honest execution lanes, operational contract wording, and opt-in private GPU

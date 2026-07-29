@@ -1,24 +1,50 @@
-# AMBER vs AgentPy vs Mesa Performance Benchmark
+# AMBER benchmarks
 
-This directory contains performance benchmarks comparing AMBER against **AgentPy** and **Mesa**.
+Performance and correctness harnesses for AMBER and optional peer frameworks.
+**Core install** (`pip install ambr`) does **not** pull multi-framework or GPU
+stacks — those are optional for this directory.
 
-AMBER ships **two** benchmark implementations so you can see what the
-columnar backend actually buys you:
+## Lanes (what you are timing)
 
-* **`AMBER`** — per-agent Python loops over a hand-rolled `agent_objects_list`.
-  This is the apples-to-apples comparison with AgentPy / Mesa: all three
-  frameworks run the same OOP-style code, and the numbers show how their
-  *naive* code paths compare.
-* **`AMBER (vectorized)`** — the same models written with AMBER's view API
-  (`add_agents(n, **cols)`, `agents.where(...)`, `agents.at[ids].scatter_add(...)`).
-  This is the idiom the library now ships and the docs teach. It pays
-  the Polars overhead per step but eliminates per-agent Python object
-  work, so the step cost is nearly independent of population size.
+* **`AMBER` / loop** — per-agent Python OOP path (fair vs AgentPy / Mesa).
+* **`AMBER (vectorized)`** — columnar view API (`add_agents`, `where`, `scatter_add`).
+* **`AMBER (GPU)`** — same vectorized models via `model.gpu().run()` (needs CuPy + NVIDIA).
+  Private kernel models in `models/amber_gpu_scale_models.py` are **benchmark
+  internals**, not the public `ambr` API. Production SIR infection draws use a
+  pair-keyed SplitMix64 counter tape (`global_seed`, step, pair ids); see
+  `tests/test_sir_counter_tape.py`.
+
+## Optional dependencies
+
+| Goal | Install |
+|------|---------|
+| AMBER CPU only | `pip install ambr` (+ `requirements.txt` for older `runner.py` peers) |
+| AMBER GPU | `pip install 'ambr[gpu]'` or `cupy` matching your CUDA |
+| Multi-framework Python peers | Mesa, mesa-frames, AgentPy, Melodie, SimPy as needed |
+| FLAME GPU 2 | `pip install --extra-index-url https://whl.flamegpu.com/whl/cuda130/ pyflamegpu` (or cuda120 wheel); CUDA NVRTC libs on `LD_LIBRARY_PATH` / preload |
+| Agents.jl | Julia + `Agents.jl`; runner spawns a subprocess |
+
+Missing optional software → that framework is **skipped**, not timed as zero.
+
+## Missing cells (not zeros)
+
+Large-N multi-framework runs may **OOM** (e.g. mesa-frames SIR ≥100k) or hit
+per-run **budgets**. Do not impute missing cells as 0 s. Prefer JSON rows that
+record a status, or document skips in the campaign notes.
+
+## Headline README numbers
+
+The package README cites
+`results/benchmark_results_snapshot_correct_10run_10m.json`
+(AMBER GPU vs FLAME at 10M, 10 runs, all samples retained). Schelling ratios
+are setup-inclusive for the FLAME harness — exploratory, not pure kernel
+speedup. Other charts under `results/` may use different protocols (trimmed
+means, older stacks); check each file’s provenance.
 
 ## Quick Start
 
 ```bash
-# Install benchmark dependencies
+# Install benchmark dependencies (peers optional)
 pip install -r requirements.txt
 
 # Quick run (small scale)
@@ -30,6 +56,10 @@ python runner.py --full
 # Compare just AMBER variants vs AgentPy
 python runner.py --frameworks AMBER "AMBER (vectorized)" AgentPy \
     --agents 500 1000 5000 --steps 50 --runs 10
+
+# Large-N multi-framework (optional peers; GPU host)
+python run_all_frameworks.py --agents 10000000 --steps 50 --runs 10 \
+    --frameworks "AMBER (GPU)" "FLAME GPU 2" --budget 1200
 ```
 
 ## Metrics Measured
@@ -98,27 +128,30 @@ while the other implementations use sequential/asynchronous infection. Treat
 the SIR timings as a comparison of the same spatial epidemic workload class,
 not as proof of identical stochastic trajectories.
 
-## Published results — large-N multi-framework (1k→10M)
+## Published results
 
-**One** checked-in performance plot and table. NVIDIA RTX 5090, 50 steps,
-10 runs (trimmed mean). Ten frameworks. AMBER (GPU) uses the same view-API
-models under an explicit benchmark evidence label followed by
-`model.gpu().run()` (0.4.4+); the label records caller approval and is not a
-runtime certificate.
+### Headline (package README / Sphinx)
 
-- Chart: [`results/scaling_chart.png`](results/scaling_chart.png)
-- Full per-model tables: [`results/summary_table.md`](results/summary_table.md)
+| File | Role |
+|------|------|
+| [`results/benchmark_results_snapshot_correct_10run_10m.json`](results/benchmark_results_snapshot_correct_10run_10m.json) | **Authoritative** 10M AMBER (GPU) vs FLAME, 10 runs, all samples |
+| [`results/summary_table_snapshot_correct_10run_10m.md`](results/summary_table_snapshot_correct_10run_10m.md) | Human-readable summary of that JSON |
 
-![Large-N multi-framework scaling](results/scaling_chart.png)
+Wealth / walk / SIR ≈ **1.8–2.1×** FLAME/AMBER. Schelling ≈ **63×** is
+**setup-inclusive / exploratory** — not the same claim class.
 
-**At 1M / 10M (where each framework still finishes):**
+### Exploratory multi-framework sweep (historical)
 
-| Model | AMBER (GPU) | AMBER (vectorized) | FLAME GPU 2 | Next best CPU-scale peer |
-|---|---:|---:|---:|---:|
-| Wealth | 3.91 s / 193 s | 6.44 s / 214 s | **28 ms / 226 ms** | Agents.jl 8.53 s @ 1M |
-| Random walk | 198 ms / 2.04 s | 531 ms / 6.23 s | **20 ms / 201 ms** | mesa-frames 3.55 s / 20.8 s |
-| Schelling | **428 ms / 5.17 s** | 2.64 s / 59.8 s | 2.06 s / 20.8 s | mesa-frames 4.33 s / 86.9 s |
-| SIR (cell-list) | 882 ms / **9.39 s** | 31.3 s / 308 s | **108 ms / 3.80 s** | — |
+| File | Role |
+|------|------|
+| [`results/summary_table.md`](results/summary_table.md) | Broader 1k→10M multi-framework table (**trimmed** means; older absolute times) |
+| [`results/scaling_chart.png`](results/scaling_chart.png) | Chart for that exploratory sweep |
+
+Do **not** mix absolute times from `summary_table.md` with the snapshot_correct
+headline without an explicit “different campaign/protocol” caption. Missing
+cells (OOM / budget) are not zeros.
+
+![Exploratory multi-framework scaling](results/scaling_chart.png)
 
 ## Polars Lazy GPU probe (not product path)
 
@@ -129,18 +162,17 @@ AMBER's agent GPU runtime and is not used for published charts. Prefer
 
 ## Interpreting the numbers
 
-* **Schelling:** AMBER (GPU) is the fastest measured row at 1M and 10M.
-* **Wealth / random walk:** FLAME GPU 2 leads; AMBER (GPU) still leads other
-  Python-hosted stacks that reach those scales. Light kernels pay GPU overhead.
-* **SIR:** AMBER uses **cell-list** infection (O(N·K), `max_per_cell=64`).
-  GPU 10M = 9.39 s (~33× vs vectorized 308 s); FLAME still leads at 3.80 s.
+* **Headline class:** wealth / walk / SIR under snapshot_correct protocol.
+* **Schelling:** often setup-inclusive for FLAME; treat ratios carefully.
+* **SIR:** AMBER uses **cell-list** infection (work O(N + C + P) in the scale
+  kernels). Peers may use different infection ordering — structural
+  correctness, not identical trajectories.
 * Object OOP frameworks (Mesa, AgentPy, …) typically drop out above 100k–1M.
 
 **Sync vs async SIR update semantics.** AMBER (vectorized) uses a
 **synchronous** infection phase; several peers use sequential/async infection.
 Both are valid discretizations; correctness checks population conservation
-rather than identical trajectories. Use the split SIR runner below for
-semantics-aligned evidence.
+rather than identical trajectories.
 
 ## Reproducing these numbers
 

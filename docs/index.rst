@@ -80,8 +80,10 @@ Create your first model:
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for what is new in **0.4.4** (honest lanes,
-operational contract, ``approve_fast_path``).
+See :doc:`changelog` for what is new in **0.4.5** (honest 10M headline
+benchmarks, pair-keyed GPU SIR counter-tape, ``ambr[gpu]``,
+``CITATION.cff``). 0.4.4 added honest lanes, the operational contract, and
+``approve_fast_path``.
 
 Table of Contents
 -----------------

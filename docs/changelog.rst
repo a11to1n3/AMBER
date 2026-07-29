@@ -9,6 +9,39 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+[0.4.5] - 2026-07-29
+--------------------
+
+Research-grade package hygiene: honest 10M headline evidence, pair-keyed GPU
+SIR counter-tape tests, software citation metadata, and optional ``ambr[gpu]``.
+
+Added
+~~~~~
+- Tests locking SplitMix64 counter-tape SIR infection draws
+  (``tests/test_sir_counter_tape.py``).
+- Tracked headline evidence:
+  ``benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json`` and
+  ``summary_table_snapshot_correct_10run_10m.md``.
+- ``CITATION.cff`` software citation metadata.
+- Optional ``ambr[gpu]`` extra (CuPy); documented in installation / going_faster.
+
+Changed
+~~~~~~~
+- Production GPU SIR scale kernels and vectorized SIR model wiring: pair-keyed
+  SplitMix64 with ``global_seed`` / step.
+- FLAME GPU 2 runtime preload for CUDA 13 NVRTC; longer Agents.jl timeout.
+- README / Sphinx benchmarks: headline locked to
+  ``benchmark_results_snapshot_correct_10run_10m.json``; Schelling labeled
+  setup-inclusive; multi-framework ``summary_table.md`` marked exploratory.
+- Installation docs list ``ambr[gpu]``; index points at 0.4.5 notes; README
+  cites ``CITATION.cff`` for software citation; calibration throughput wording
+  de-hyped as exploratory.
+
+Notes
+~~~~~
+- Paper / AAMAS materials stay outside the library tree; package ``.gitignore``
+  blocks ``paper-fix-work/`` and ``AMBER_AAMAS/``.
+
 [0.4.4] - 2026-07-18
 --------------------
 

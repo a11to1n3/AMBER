@@ -17,35 +17,48 @@ columnar operations. Models can provide `step_vectorized()` and `step_oop()`
 for explicit native lanes; legacy models with only `step()` keep the fallback.
 The vectorized lane runs on GPU via `model.gpu().run()`.
 
-**Large-N multi-framework scaling (1k→10M agents, 50 steps, 10 runs trimmed
-mean, NVIDIA RTX 5090).** Ten frameworks: AMBER (GPU / vectorized / loop),
-mesa-frames, FLAME GPU 2, Agents.jl, SimPy, Melodie, AgentPy, Mesa.
-Full tables:
-[`benchmarks/results/summary_table.md`](benchmarks/results/summary_table.md).
-Reproducer: [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.py).
-Correctness gates:
-[`benchmarks/correctness_check.py`](benchmarks/correctness_check.py).
+### Headline comparison (committed evidence)
 
-![Framework scaling 1k→10M agents](benchmarks/results/scaling_chart.png)
+**Source of truth for the README table:**  
+[`benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json`](benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json)  
+(summary:
+[`summary_table_snapshot_correct_10run_10m.md`](benchmarks/results/summary_table_snapshot_correct_10run_10m.md)).
 
-**At 1M / 10M agents (where each framework still finishes):**
+**Protocol:** NVIDIA RTX 5090; 10M agents; 50 steps; **10 runs** retained
+(no outlier deletion); one untimed warm-up per cell; timed scope =
+construct + setup + step loop + result assembly. AMBER GPU synchronizes
+after the run; FLAME GPU 2 returns at a simulation-complete boundary.
+This is an **implementation comparison** under that protocol — not a claim
+of byte-identical dynamics across frameworks.
 
-| Model | AMBER (GPU) | AMBER (vectorized) | FLAME GPU 2 | Next best CPU-scale peer |
-|---|---:|---:|---:|---:|
-| Wealth | 3.91 s / 193 s | 6.44 s / 214 s | **28 ms / 226 ms** | Agents.jl 8.53 s @ 1M |
-| Random walk | 198 ms / 2.04 s | 531 ms / 6.23 s | **20 ms / 201 ms** | mesa-frames 3.55 s / 20.8 s |
-| Schelling | **428 ms / 5.17 s** | 2.64 s / 59.8 s | 2.06 s / 20.8 s | mesa-frames 4.33 s / 86.9 s |
-| SIR (cell-list) | 882 ms / **9.39 s** | 31.3 s / 308 s | **108 ms / 3.80 s** | — |
+**AMBER (GPU) vs FLAME GPU 2 at 10M agents** (mean wall-clock):
 
-- **Schelling:** AMBER (GPU) is the fastest row at 1M and 10M among measured
-  frameworks (beats FLAME GPU 2 and mesa-frames).
-- **Wealth / random walk:** FLAME GPU 2 leads; AMBER (GPU) still beats other
-  Python-hosted stacks that reach those scales.
-- **SIR:** AMBER uses **cell-list** infection. GPU reaches 10M at 9.39 s
-  (~33× faster than vectorized’s 308 s); FLAME still leads at 3.80 s.
-- **API:** implement `step_vectorized()` (or legacy `step()`); place with
-  `.cpu(mode="vectorized")` or `.gpu()`. GPU is vectorized-only. Details:
-  [`benchmarks/README.md`](benchmarks/README.md).
+| Model | AMBER (GPU) | FLAME GPU 2 | Speedup (FLAME / AMBER) |
+|---|---:|---:|---:|
+| Wealth | **94 ms** | 194 ms | ~2.05× |
+| Random walk | **80 ms** | 161 ms | ~2.00× |
+| SIR (cell-list) | **2.08 s** | 3.68 s | ~1.77× |
+| Schelling | **295 ms** | 18.7 s | ~63× (setup-inclusive; **exploratory**) |
+
+- **Wealth / walk / SIR** are the comparable headline class (~1.8–2.1×).
+- **Schelling** includes heavy Python-side setup inside the timed region for
+  the FLAME harness; do not treat ~63× as a pure step-kernel speedup.
+- Multi-framework scale-out charts (Mesa, mesa-frames, Agents.jl, …) are
+  **exploratory** and live under
+  [`benchmarks/results/`](benchmarks/results/); some cells OOM or hit
+  budgets — missing cells are not zeros.
+- Reproducer: [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.py).  
+  Correctness gates: [`benchmarks/correctness_check.py`](benchmarks/correctness_check.py).  
+  Details: [`benchmarks/README.md`](benchmarks/README.md).
+
+![Framework scaling chart](benchmarks/results/scaling_chart.png)
+
+**API:** implement `step_vectorized()` (or legacy `step()`); place with
+`.cpu(mode="vectorized")` or `.gpu()`. GPU is vectorized-only. Private
+optimized GPU loops require an explicit
+`approve_fast_path(evidence)` label (caller-attested provenance; AMBER
+checks presence of the label, not the evidence content) and
+`contract="off"` — see [`docs/going_faster.rst`](docs/going_faster.rst).
 
 ## 🚀 Quick Start
 
@@ -376,8 +389,10 @@ If you use AMBER in academic work, please cite the paper:
 
 Paper: https://arxiv.org/abs/2601.16292
 
-(Source drafts and build artifacts for the manuscript are **not** kept in this
-repository — only the public citation.)
+For the **software**, this repository also ships [`CITATION.cff`](CITATION.cff)
+(GitHub “Cite this repository”). Manuscript drafts and build artifacts are
+**not** kept in the library tree — only the public paper citation and software
+metadata.
 
 ## 🤝 Contributing
 
