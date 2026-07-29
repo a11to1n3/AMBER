@@ -118,18 +118,18 @@ scripts provide the corresponding executable and evidence record.
 A separate campaign implements the ChatGPT AAMAS *Experimental improvement plan*
 minimum package (semantic attestation, monitor coverage/overhead, activation
 effects, cold/warm native performance). Code lives under repository
-`experiments/`; the recorded RTX 3090 host run is on `duypham-Z590` at
+`experiments/`; the recorded RTX 3090 host run is on `host_a (RTX 3090)` at
 `~/AMBER_aamas_exp/experiments/raw/`. Summary:
-`experiments/raw/REPORT_duypham_z590.md`. Manuscript integration notes:
+`experiments/raw/REPORT_host_a.md`. Manuscript integration notes:
 `paper-fix-work/EXPERIMENT_CAMPAIGN_INTEGRATION.md`.
 
 | Claim | Runner | Artifact |
 |---|---|---|
-| C1 semantic parity + negatives | `experiments/semantic/run_attestation.py` | `experiments/raw/semantic/attestation_duypham_z590.json` |
-| C2 monitor coverage | `experiments/monitor/run_coverage.py` | `experiments/raw/monitor/coverage_duypham_z590.json` |
-| C2 monitor overhead N,q,c | `experiments/monitor/run_overhead.py` | `experiments/raw/monitor/overhead_duypham_z590.json` |
-| C3 SIR + Schelling activation | `experiments/benchmarks/run_activation.py` | `experiments/raw/semantic/activation_duypham_z590.json` |
-| C4 performance (+ FLAME) | `experiments/benchmarks/run_performance.py` | `experiments/raw/performance/performance_duypham_z590.json` |
+| C1 semantic parity + negatives | `experiments/semantic/run_attestation.py` | `experiments/raw/semantic/attestation_host_a.json` |
+| C2 monitor coverage | `experiments/monitor/run_coverage.py` | `experiments/raw/monitor/coverage_host_a.json` |
+| C2 monitor overhead N,q,c | `experiments/monitor/run_overhead.py` | `experiments/raw/monitor/overhead_host_a.json` |
+| C3 SIR + Schelling activation | `experiments/benchmarks/run_activation.py` | `experiments/raw/semantic/activation_host_a.json` |
+| C4 performance (+ FLAME) | `experiments/benchmarks/run_performance.py` | `experiments/raw/performance/performance_host_a.json` |
 
 Reproduce on a CUDA host with the project venv:
 

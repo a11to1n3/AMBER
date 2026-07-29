@@ -1,8 +1,8 @@
 # Integrating the experimental improvement campaign into the AAMAS manuscript
 
 Source: ChatGPT share *AAMAS Submission Review* (experimental improvement plan).  
-Host: `duypham-Z590` (RTX 3090).  
-Artifacts: `experiments/raw/REPORT_duypham_z590.*` and JSON under `experiments/raw/`.
+Host: `host_a (RTX 3090)` (RTX 3090).  
+Artifacts: `experiments/raw/REPORT_host_a.*` and JSON under `experiments/raw/`.
 
 ## What the campaign closed
 
@@ -57,12 +57,12 @@ The plan’s evidential chain is no longer only rhetorical:
 
 | Claim | Artifact |
 |---|---|
-| Attestation | `experiments/raw/semantic/attestation_duypham_z590.json` |
-| Monitor coverage | `experiments/raw/monitor/coverage_duypham_z590.json` |
-| Monitor overhead | `experiments/raw/monitor/overhead_duypham_z590.json` |
-| Activation | `experiments/raw/semantic/activation_duypham_z590.json` |
-| Performance | `experiments/raw/performance/performance_duypham_z590.json` |
-| Summary | `experiments/raw/REPORT_duypham_z590.md` |
+| Attestation | `experiments/raw/semantic/attestation_host_a.json` |
+| Monitor coverage | `experiments/raw/monitor/coverage_host_a.json` |
+| Monitor overhead | `experiments/raw/monitor/overhead_host_a.json` |
+| Activation | `experiments/raw/semantic/activation_host_a.json` |
+| Performance | `experiments/raw/performance/performance_host_a.json` |
+| Summary | `experiments/raw/REPORT_host_a.md` |
 
 ## Next manuscript engineering (not done in this campaign)
 
