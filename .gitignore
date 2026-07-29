@@ -70,17 +70,23 @@ benchmarks/results/amber_*.log
 PR_DESCRIPTIONS.md
 *.local.md
 
-# Local scratch / campaign workstations
-tmp/
-tools/**/*.log
 
-# Paper workspace (keep only committed artifact under paper-fix-work/artifacts/)
+# ---------------------------------------------------------------------------
+# Paper island (paper-fix-work/) — isolate manuscript work from the library
+# Track only: paper-fix-work/README.md, evidence/README.md, experiments/,
+# tools/, artifact/ (v6 package). Ignore drafts, builds, and full campaign pulls.
+# ---------------------------------------------------------------------------
 paper-fix-work/AAMAS-Overleaf-project/
 paper-fix-work/AAMAS-Overleaf-project.zip
 paper-fix-work/AAMAS-submission-ready/
 paper-fix-work/AMBER-AAMAS-submission-package.zip
 paper-fix-work/tmp/
 paper-fix-work/output/
+paper-fix-work/figs/
+paper-fix-work/campaign_results/
+paper-fix-work/reproducibility/
+paper-fix-work/artifacts/
+paper-fix-work/scripts/__pycache__/
 paper-fix-work/*.pdf
 paper-fix-work/*.aux
 paper-fix-work/*.bbl
@@ -88,13 +94,13 @@ paper-fix-work/*.blg
 paper-fix-work/*.log
 paper-fix-work/*.out
 paper-fix-work/*.txt
-paper-fix-work/campaign_results/
-paper-fix-work/reproducibility/
-paper-fix-work/scripts/__pycache__/
-paper-fix-work/figs/
 paper-fix-work/emergence_threshold_controlled.json
 paper-fix-work/monitor_cost_current.json
+paper-fix-work/build_*.log
+paper-fix-work/.DS_Store
 
-# Host campaign raw trees (evidence lives in the anonymous artifact package)
+# Host campaign raw trees outside the island
 artifacts/host_b_*/
 artifacts/**/cupy_cache/
+tmp/
+tools/**/*.log

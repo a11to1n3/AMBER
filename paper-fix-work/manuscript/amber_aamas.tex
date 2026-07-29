@@ -1,0 +1,1825 @@
+\documentclass[sigconf,nonacm,review,natbib=true]{acmart}
+
+%% Inconsolata has no italic face in the bundled AAMAS toolchain.  Listings
+%% occasionally request one through a language style, so make the intended
+%% upright substitution explicit rather than leaving a font fallback warning.
+\DeclareFontShape{TU}{inconsolata(0)}{m}{it}{<->ssub*inconsolata(0)/m/n}{}
+
+%% ---- AAMAS submission: double-blind review, ACM sigconf (acmart) ----
+\settopmatter{printacmref=false}
+\setcopyright{none}
+\renewcommand\footnotetextcopyrightpermission[1]{}
+\pagestyle{plain}
+
+\let\Bbbk\relax
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{pifont}
+\usepackage[capitalise,nameinlink]{cleveref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{placeins}
+\usepackage{stfloats}
+\usepackage{cuted}
+\usepackage{listings}
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\lstdefinestyle{applisting}{
+  basicstyle=\ttfamily\scriptsize,
+  identifierstyle=\ttfamily\upshape,
+  keywordstyle=\ttfamily\bfseries\upshape,
+  commentstyle=\ttfamily\upshape,
+  stringstyle=\ttfamily\upshape,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  frame=single,
+  rulecolor=\color{black!25},
+  framerule=0.35pt,
+  aboveskip=5pt,
+  belowskip=5pt,
+  xleftmargin=1.5pt,
+  xrightmargin=1.5pt,
+}
+\lstdefinelanguage{Julia}{
+  morekeywords={function,end,using,struct,agent,if,return,for,in,true,false,nothing},
+  sensitive=true,
+}
+%% appendix: supplementary material separated from the eight-page body
+\newcommand{\appendixfigurelayout}{%
+  \clearpage
+  \onecolumn
+  \raggedbottom
+}
+\newcommand{\appendixbreak}{%
+  \FloatBarrier
+}
+
+%% ---- theorem environments ----
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\newtheorem{lemma}{Lemma}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\theoremstyle{plain}
+\newtheorem*{proposition*}{Proposition}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+
+
+%% number theorem-like environments as 3.<n> to match the manuscript's Section 3 numbering
+\renewcommand\thetheorem{3.\arabic{theorem}}
+\renewcommand\theproposition{3.\arabic{proposition}}
+\renewcommand\thecorollary{3.\arabic{corollary}}
+\renewcommand\thedefinition{3.\arabic{definition}}
+\renewcommand\thelemma{3.\arabic{lemma}}
+
+
+%% cleveref names
+\crefname{theorem}{Theorem}{Theorems}
+\crefname{proposition}{Proposition}{Propositions}
+\crefname{corollary}{Corollary}{Corollaries}
+\crefname{definition}{Definition}{Definitions}
+
+\begin{document}
+
+\title{AMBER: Activation Semantics for Columnar Agent-Based Modelling at Scale}
+
+%% Replace TBD with the assigned venue tracking number before submission.
+\newcommand{\submissionid}{TBD}
+\author{Paper ID: \submissionid}
+\renewcommand{\shortauthors}{Paper ID: \submissionid}
+
+\begin{abstract}
+Columnar and GPU execution can remove Python interpreter bottlenecks in
+agent-based models (ABMs), but a performance refactor may also change the
+activation regime: a snapshot update reads one step-entry state, whereas an
+in-place schedule can expose earlier same-step writes. We separate four layers
+that are often conflated. First, for an event multiset fixed at step entry, we
+prove that snapshot execution agrees with every sequential event order when no
+event reads another's target and shared targets use one associative--commutative
+reducer. Second, AMBER implements a bounded runtime diagnostic for operations
+observable at its API seams, including duplicate ordinary writes,
+commit-before-borrow hazards, structural changes, and untraceable mutable-array
+access; a clean report is not a proof about arbitrary array code. Third,
+controlled ring-lattice SIR programs show that replacing the declared snapshot
+rule by an in-place random-sequential rule shifts a finite-horizon attack-rate
+crossing by $6.9\%$ under per-step reshuffling; a fixed-order robustness
+condition and a mesa-frames blocking study show the same direction. Fourth, an
+approval-gated GPU path uses AMBER's public API. On one RTX~5090, a corrected
+ten-run benchmark at $10^7$ agents finds speedups of $1.77$--$2.05\times$ over
+our corresponding FLAME GPU~2 implementations on three directly comparable
+workloads; a setup-inclusive Schelling row is reported separately. Together
+these layers connect a formal guarantee, observable reports, scientific
+effects, and speed without using one as evidence for another.
+\end{abstract}
+
+\begin{CCSXML}
+<ccs2012>
+<concept>
+<concept_id>10010147.10010919.10010177</concept_id>
+<concept_desc>Computing methodologies~Multi-agent systems</concept_desc>
+<concept_significance>500</concept_significance>
+</concept>
+<concept>
+<concept_id>10010147.10010341.10010342</concept_id>
+<concept_desc>Computing methodologies~Simulation theory</concept_desc>
+<concept_significance>500</concept_significance>
+</concept>
+<concept>
+<concept_id>10011007.10011074.10011099.10011692</concept_id>
+<concept_desc>Software and its engineering~Formal software verification</concept_desc>
+<concept_significance>300</concept_significance>
+</concept>
+</ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Computing methodologies~Multi-agent systems}
+\ccsdesc[500]{Computing methodologies~Simulation theory}
+\ccsdesc[300]{Software and its engineering~Formal software verification}
+
+\keywords{agent-based simulation; execution semantics; vectorization;
+runtime monitoring; emergent behaviour}
+
+\maketitle
+
+
+% ===== BODY =====
+
+\section{Introduction}
+
+Agent-based models (ABMs) derive collective behaviour from local rules, as in
+epidemic, segregation, market, and opinion models. Large populations,
+stochastic replications, and parameter sweeps make such studies expensive. In
+Python, an object-level scheduler sends every agent update through the
+interpreter.
+
+Columnar CPU or GPU operations remove much of that overhead, but data layout is
+only half of the translation. An ABM step also has an \emph{activation regime}.
+Snapshot activation reads step-entry state; a schedule can expose same-step
+writes. Replacing an immutable input buffer with an in-place
+or blockwise update can therefore change the model silently. For example, a
+newly infected agent may transmit immediately under one regime but only at the
+next step under another.
+
+We follow that semantic choice through four evidence layers. A reduction-aware
+form of Bernstein non-interference first gives a sufficient condition for every
+ordering of a \emph{fixed} event multiset to match snapshot execution. AMBER
+then records hazards observable at its OOP, columnar, and device seams, while
+marking mutable-array access as uncertified. Controlled SIR programs quantify
+the consequence of changing activation. Finally, an independently tested GPU
+path asks whether explicit semantics can coexist with population-scale
+throughput. Each layer has a distinct scope.
+
+\textbf{Contributions.}
+
+\begin{enumerate}
+\item \textbf{A sufficient condition for order independence (Section~3).}
+For events fixed at step entry, reduction-aware non-interference makes snapshot
+execution equal every sequential order. We extend the result to trajectories
+and derive a double-buffer construction and four-class taxonomy.
+
+\item \textbf{A bounded runtime diagnostic (Sections~3--5).} The per-step
+monitor observes AMBER's buffered, columnar, and device seams. It reports
+duplicate/cross-seam writes, late borrows, structural changes, and mutable-array
+access. Reports concern the observed trace, not hidden indexing or the private
+GPU loop.
+
+\item \textbf{Semantic evidence (Sections~5.1--5.2).} Row-wise CPU
+and batched GPU implementations of one snapshot SIR rule give consistent
+crossing estimates. A matched in-place ordered variant moves the crossing by
+$6.9\%$ of the snapshot estimate when the order is reshuffled every step; a
+fixed order and a mesa-frames blocking study move in the
+same direction. These model-level experiments are not theorem instances or
+monitor runs.
+
+\item \textbf{A corrected benchmark.} In Section~5.4, ten retained runs per
+configuration at $N{=}10^7$ put AMBER GPU ahead of our FLAME GPU~2
+implementations by $1.77$--$2.05\times$ on wealth transfer, random walk, and
+SIR. A $63.4\times$ Schelling row includes a Python per-agent FLAME setup loop
+inside the timed region and is therefore exploratory. Raw samples, medians,
+IQRs, and bootstrap median intervals are released. We treat these as
+implementation comparisons, not universal framework rankings.
+\end{enumerate}
+
+Figure~\ref{fig:arch} contrasts the OOP and array emphases in our released
+examples and places AMBER's hybrid API between them.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=1.00\textwidth]{figs/plot01.pdf}
+\caption{AMBER combines agent-centric/OOP and columnar/accelerator execution
+under one model API to pursue both performance and explicit activation
+alignment. The side groupings describe the emphasis of released examples, not
+universal framework limits. OOP/vectorized development runs are instrumented;
+private optimized GPU loops require an explicit per-instance approval label.}
+\Description{A horizontal vector schematic places AMBER between agent-centric and array-or-accelerator emphases. The left box lists AgentPy, Mesa, Agents.jl, Melodie, and SimPy as released object-or-struct-per-agent examples. The central AMBER box shows one model and run API exposing OOP, vectorized-columnar, and GPU modes; OOP and vectorized modes are marked instrumented, while private GPU loops are marked approval-gated. The right box lists mesa-frames, FLAME GPU 2, and capability-only AgentTorch as released column, tensor, or device examples. A footer states that placement is not a universal capability limit.}
+\label{fig:arch}
+\end{figure*}
+
+\begin{table*}[t]
+\centering
+\small
+\caption{Capabilities represented in the released comparison (Section~5.4).
+\ding{51}~= represented in the cited release/API; \ding{55}~= not identified
+there and is not an impossibility claim. \emph{Best $N$} is the largest
+population completed by the released implementation under the stated budget.
+Contract columns describe API features, not confluence proofs.}
+\label{tab:capabilities}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.12}
+\newcolumntype{Y}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{@{} >{\raggedright\arraybackslash}p{2.15cm} *{4}{Y} Y *{3}{Y} @{}}
+\toprule
+& \multicolumn{4}{c}{\textbf{Performance}} & \multicolumn{4}{c}{\textbf{Runtime checking}} \\
+\cmidrule(lr){2-5}\cmidrule(lr){6-9}
+\textbf{Framework} &
+  {\centering Columnar / \\ vectorized\par} &
+  {\centering GPU \\ backend\par} &
+  {\centering Best $N$ \\ (speed)\par} &
+  {\centering Calibr. \\ built in\par} &
+  {\centering Diff. \\ engine\par} &
+  {\centering Conflict \\ checks\par} &
+  {\centering Runtime \\ monitor\par} &
+  {\centering Raw-array\\warning\par} \\
+\midrule
+\textbf{AMBER (ours)} & \ding{51} & \ding{51} & $10^7$ & \ding{51} & \ding{55} & \textbf{\ding{51}} & \textbf{\ding{51}} & \textbf{\ding{51}} \\
+FLAME GPU~2 & \ding{51} & \ding{51} & $10^7$ & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} \\
+AgentTorch$^{\ddagger}$ & \ding{51} & \ding{51} & --- & \ding{51}$^{\nabla}$ & \ding{51} & \ding{55} & \ding{55} & \ding{55} \\
+mesa-frames & \ding{51} & \ding{55} & $10^6$ & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} \\
+Agents.jl & \ding{55} & \ding{55} & $10^6$ & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} \\
+Melodie & \ding{55} & \ding{55} & $10^6$ & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} \\
+AgentPy & \ding{55} & \ding{55} & $10^5$ & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} \\
+SimPy & \ding{55} & \ding{55} & $10^5$ & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} \\
+Mesa & \ding{55} & \ding{55} & $10^4$ & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} \\
+\bottomrule
+\end{tabularx}
+
+{\footnotesize $^{\ddagger}$~AgentTorch is included for capability comparison
+(differentiable GPU ABM); it was not in our matched speed run.
+$^{\nabla}$~AgentTorch supports gradient-based calibration; AMBER's reported
+calibration experiment uses black-box SMAC.}
+\end{table*}
+
+
+\section{Background and Related Work}
+
+An ABM evolves a population state by repeatedly applying local rules. Three
+literatures locate our contribution: scalable ABM execution, activation
+semantics, and dependence or runtime checking. AMBER connects them, but does
+not collapse them: the general runner exposes an API-level diagnostic, whereas
+the optimized GPU path is assessed with model-specific reference tests rather
+than a runtime certificate.
+
+\subsection{Agent-based modelling at scale}
+
+Several Python ABM libraries expose object-per-agent scheduler loops
+\citep{kazil2020,foramitti2021,yu2023}; established toolchains use related
+per-agent execution models \citep{wilensky1999,north2013}. Our timed comparison
+also includes an implementation using SimPy's discrete-event processes
+\citep{simpy2026}; this is a benchmark row, not a claim
+that SimPy is specialized for fixed-step ABMs. Agents.jl provides a compiled
+Julia implementation rather than a Python interpreter loop
+\citep{datseris2022}, while Repast HPC addresses distributed-memory scale-out
+\citep{collier2013}. In our particular wealth implementations and fixed time
+budget, the non-GPU baselines stop between $10^4$ and $10^6$ agents; this is a
+measurement of the released programs, not a general framework ceiling. A 2024
+multi-engine study likewise argues for reliability tooling alongside raw speed
+\citep{antelmi2024}.
+
+Two designs change data layout and execution together.
+\emph{Columnar (vectorized)} execution stores one array per attribute and
+applies batched operations. Mesa-frames \citep{mesaframes} and AMBER's
+vectorized CPU mode use this pattern. \emph{GPU} execution maps operations to
+device kernels, continuing earlier data-parallel ABM work
+\citep{lysenko2008,richmond2010}. FLAME GPU~2
+\citep{brayshaw2021,richmond2023} is designed for very large GPU-resident
+populations, while AgentTorch and related work
+\citep{chopra2023,chopra2025,querabofarull2023} additionally support
+differentiable simulation. In our RTX~5090 campaign, the four AMBER GPU
+implementations are faster than our FLAME GPU~2 counterparts, but the
+setup-inclusive Schelling ratio has a different evidential status from the
+other three workloads (Section~5.4).
+
+A common vectorized design evaluates a batch against shared input arrays, but
+frameworks also support layering, messaging, and explicit scheduling. Those
+mechanisms do not by themselves establish that a refactored program preserves
+the activation regime intended by its author. Section~2.2 explains why that
+distinction is consequential.
+
+\subsection{Activation semantics and emergent behaviour}
+
+An ABM's \emph{activation regime} specifies update order and simultaneity; it
+can change the emergent outcome
+\citep{axtell2001,railsback2019,grimm2006,grimm2010}. Classic digital-simulation
+studies show that imposed time discretization can alter aggregate conclusions
+\citep{huberman1993}. Simultaneous, uniform, and random schedules are
+first-class modelling choices; segregation and cellular automata likewise show
+that synchronous and sequential updates need not agree
+\citep{schelling1971,fates2014}. In an epidemiological ABM, an
+in-place update can let an agent infected earlier in a step transmit within
+that same step, the mechanism isolated in Sections~5.1--5.3.
+
+Snapshot-style columnar and GPU updates can implement simultaneous activation:
+every event reads a common step-entry state. This property is not automatic;
+an array program may still update in place or process local blocks
+sequentially. Where event order is immaterial, snapshot evaluation can be
+parallelized without changing the event-level result. Otherwise snapshot and
+scheduled activation specify different models. Existing guidance recommends
+double buffering for synchronous updates \citep{railsback2019,grimm2010}.
+Section~3 gives a sufficient event-level condition and an explicit two-buffer
+construction; it does not claim necessity.
+
+\subsection{Parallel-execution conditions and runtime verification}
+
+The formal root is Bernstein's classical parallel-execution conditions
+\citep{bernstein1966}: write sets may not conflict, and no computation may read
+another's writes. The same non-interference idea recurs in bulk-synchronous
+semantics and runtime loop-dependence tests
+\citep{valiant1990,rauchwerger1995}; deterministic-by-default parallel models
+make the complementary language-design argument \citep{bocchino2009}. Dynamic
+race analyses range from lockset checking through precise happens-before and
+production detectors \citep{savage1997,flanagan2009,serebryany2009}. AMBER's
+API monitor is narrower than those general thread-race tools. We adapt a
+reduction-aware condition to one ABM event multiset fixed at step entry. Theorem~\ref{thm:char}
+gives a sufficient condition under which snapshot activation equals every
+scheduled event order. Appendix~\ref{ax:tax} turns the condition into a
+conservative rule taxonomy, and Theorem~\ref{thm:conf} lifts the semantic
+premise to a whole trajectory. The implementation monitor is narrower: it
+reports selected conflicts at instrumented API seams.
+
+That framing draws on design-by-contract \citep{meyer1992} and runtime
+verification \citep{bartocci2018,leucker2009}. AMBER's diagnostic
+(Appendix~\ref{ax:cert}) checks concrete API operations; Proposition
+\ref{prop:errorsound} states only that reports correspond to those observed
+operations. It is neither a sound-and-complete decision procedure for semantic
+equivalence nor a monitor for arbitrary kernels. Its bookkeeping cost is
+$O(N+q+c)$ for population size $N$, observed buffered writes $q$, and schema
+columns $c$ checked at the step boundary (Section~5.3). Differentiable ABMs
+\citep{chopra2023,chopra2025,querabofarull2023} address the complementary goal
+of gradient-based fitting rather than this API-level diagnostic.
+
+Among the population-scale engines in Table~\ref{tab:capabilities}, FLAME
+GPU~2 \citep{richmond2023} provides compiled kernels, layering, and explicit
+messaging; mesa-frames \citep{mesaframes} vectorizes Mesa through Polars; and
+AgentTorch \citep{chopra2023,chopra2025} focuses on differentiable simulation.
+In the cited releases and documentation, we did not identify an equivalent API
+report combining duplicate ordinary writes, post-commit borrows, and
+untraceable mutable access. Our mesa-frames
+experiment shows that replacing a whole-array local snapshot computation with
+blockwise in-place computation before the same single whole-column commit can
+move an emergent threshold without an API warning. The two programs specify
+different operational schedules; this is not a framework bug.
+
+The gap is therefore not another scheduler feature. It is a disciplined link
+from a formal sufficient condition, through a deliberately bounded runtime
+observation, to controlled semantic evidence and an approval-gated fast path.
+The monitor can expose otherwise silent hazards, but a clean trace neither
+proves schedule equivalence nor certifies the private benchmark loop; the
+released approval label records a deployment decision rather than a theorem.
+
+
+\section{Execution semantics and the runtime diagnostic}
+\label{sec:theory}
+
+We model one simulation step as a multiset $W$ of write events generated from
+the step-entry state $S^{(t)}$. Event identities, targets, and read sets are
+therefore fixed before execution; rules that generate new events from same-step
+writes require a separate expansion or staging argument. \emph{Scheduled}
+activation applies $W$ sequentially to a running state in some order, whereas
+\emph{snapshot} activation evaluates every event against $S^{(t)}$ and resolves
+each target independently. Snapshot activation is one semantics that a
+vectorized backend can implement, not a property of array storage itself.
+
+A sufficient condition for agreement under every order is
+\emph{non-interference}: no event reads another event's target, and all events
+sharing a target use one associative--commutative (AC) reducer. This is a
+reduction-aware adaptation of Bernstein's conditions (Theorem~\ref{thm:char};
+full proof in Appendix~\ref{app:theory}). It is not an iff characterization:
+interfering events can agree at a particular state, and non-AC binary notation
+can induce commuting unary updates. Appendix~\ref{ax:tax} develops the induced
+P/G/R/U rule taxonomy; the system method below operationalizes the condition
+without treating that conservative taxonomy as a complete decision procedure.
+
+For an event $w$, let $\mathrm{tgt}(w)$ be its target cell and
+$\mathrm{rd}(w)$ its (possibly conservative) read set.
+
+\begin{definition}[non-interference]\label{def:noninterference}
+A fixed event multiset $W$ is non-interfering when, for every distinct
+$w,w'\in W$, neither event targets a cell read by the other, and any events
+sharing a target are reductions using the same associative--commutative
+operator.
+\end{definition}
+
+\begin{theorem}[sufficient condition for sound vectorization]\label{thm:char}
+If $W$ is fixed at $S^{(t)}$ and is non-interfering, then
+\[
+\mathrm{Snap}(W)(S^{(t)})=\mathrm{Sched}_{\pi}(W)(S^{(t)})
+\quad\text{for every event order }\pi.
+\]
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Earlier events cannot alter a cell read by the current event, so every
+contribution equals its value at $S^{(t)}$. Untouched cells and cells with one
+target therefore agree immediately; for a shared target, the
+common associative and commutative reducer makes the fold invariant to
+permutation. The full definitions, proof, caveats, and counterexamples to the
+converse are in Appendix~\ref{ax:char}.
+\end{proof}
+
+Non-interference is a semantic property of read and write sets. AMBER cannot
+recover those sets from arbitrary Python or CUDA code, so its runtime component
+checks a narrower operational contract. It records ordinary and reduction
+writes routed through the public seams, flags duplicate or cross-path ordinary
+writes and a borrow after a same-step commit, and reports mutable raw-array
+access as uncertified. Schema/population changes are also reported. A clean
+report therefore means ``no monitored violation was observed''; it does
+not entail that every sequential activation order agrees. The formal whole-run
+theorem is conditional on establishing non-interference at every step
+(Theorem~\ref{thm:conf}), while a common synchronous gather admits a
+one-barrier double-buffer construction (Theorem~\ref{thm:stage}). Monitor work is
+$O(N+q+c)$ for $q$ observed buffered writes and $c$ schema columns checked
+(Proposition~\ref{prop:cost}).
+
+
+\begin{strip}
+  \section{AMBER methodology and system realization}
+  \label{sec:amber}
+  Figure~\ref{fig:method} orders AMBER's evidence workflow; Algorithm~\ref{alg:amber}
+  realizes its instrumented runner and gated fast path. Theorem, runtime,
+  equivalence, and timing remain distinct claims.
+
+  \centering
+  \includegraphics[width=\textwidth]{figs/plot02.pdf}
+  \captionsetup{hypcap=false}
+  \captionof{figure}{AMBER's development-to-deployment flow. Hazards return to
+    repair; external evidence supports caller approval; runtime eligibility
+    selects the general or private loop. Reports, evidence, approval, and
+    timings remain distinct.}
+  \Description{A decision-driven flowchart. Model intent leads to selection of native OOP CPU, vectorized CPU, or GPU placement and then to an instrumented contract run. A hazard decision sends failures through repair or staging and back to the contract run. Clean runs proceed to workload evidence that may be coupled, distributional, or invariant-based. The caller either revises the model or records an approval label; a separate runtime eligibility decision selects the general native runner or the approval-gated private optimized loop. Both branches end by synchronizing, assembling the result, and retaining timing evidence.}
+  \label{fig:method}
+\end{strip}
+
+\begin{algorithm}[H]
+  \caption{AMBER instrumented execution and gated fast path}
+  \label{alg:amber}
+  \scriptsize
+  \begin{algorithmic}[1]
+    \Require model $M$, placement $p$, horizon $T$, contract mode $c$
+    \Ensure result $R$; reports $\mathcal{C}$ (empty when $c=\texttt{off}$)
+    \State $(d,m)\gets\Call{Resolve}{p}$; $\mathcal{C}\gets[\,]$; \Call{BeginExecution}{$M$}
+    \If{\Call{FastEligible}{$M,d,m,c$} \textbf{and} \Call{Approved}{$M$}}
+      \State $a\gets\Call{ApprovalLabel}{M}$ \Comment{non-empty, caller supplied}
+      \State \Call{SetupFast}{$M,d$}
+      \For{$t=0,\ldots,T-1$}
+        \State \Call{FastStep}{$M,d$}
+      \EndFor
+    \Else
+      \For{$t=0,\ldots,T-1$}
+        \If{$c\neq\texttt{off}$}
+          \State $C_t\gets\Call{BeginReport}{\text{schema},\text{IDs}}$
+        \EndIf
+        \State \Call{Dispatch}{$M,m$} \Comment{OOP or vectorized step hook}
+        \If{$c\neq\texttt{off}$}
+          \State $C_t\gets\Call{FinalizeReport}{C_t,\text{writes},\text{borrows},\text{drift}}$
+          \State append $C_t$ to $\mathcal{C}$; \Call{ApplyPolicy}{$c,C_t$}
+        \EndIf
+        \State advance time; collect requested reporters
+      \EndFor
+    \EndIf
+    \State \Call{EndExecution}{$M,d$} \Comment{synchronizes device state}
+    \State \Return $(\Call{Assemble}{$M$},\mathcal{C})$
+  \end{algorithmic}
+\end{algorithm}
+
+\textbf{Eligibility and policy.} Fast-path eligibility requires GPU/vectorized
+placement, contract \texttt{off}, no initial record, progress, or reporters,
+private setup/step hooks, and a non-empty approval label installed through
+\texttt{approve\_fast\_path(evidence)}. The label is caller-supplied
+provenance; \texttt{run()} checks its presence but does not validate the
+evidence. Without it, the same public call uses the general runner. Reports are
+stored in all instrumented modes; \texttt{warn} also emits them and
+\texttt{raise} stops only on errors. Execution teardown synchronizes GPU state
+before assembly.
+
+\textbf{Native modes.} \texttt{cpu()} dispatches tracked Python \texttt{Agent}
+objects in \texttt{oop} mode or Polars columns in \texttt{vectorized} mode;
+\texttt{gpu()} stores numeric columns in CuPy. All share setup/result APIs and
+may use mode-specific step hooks.
+
+\textbf{Observed write seams.} OOP, vectorized, and device assignments enter a
+tracked queue, frame setter, or scatter seam; incompatible cross-seam writes are
+rejected. Immutable column and TensorLane reads count as borrows. Raw mutable
+array access cannot be reconstructed and therefore yields an uncertified-borrow
+warning. Deprecated wholesale frame replacement is outside the conflict seam,
+although endpoint schema/id changes remain visible.
+
+\textbf{Report meaning.} At step entry the monitor snapshots schema and agent
+IDs. During the step it records target cells for buffered writes and column
+identities for vectorized/device operations. Errors denote concrete conflicts
+at those seams; warnings denote additions, births/deaths, or untraceable mutable
+access. A \emph{clean} record has no errors or warnings; an \emph{OK} record has
+no errors. Neither property is complete for cross-agent indexing hidden inside
+user arrays. Endpoint structural checks can also miss a mutate-and-revert
+sequence within one step.
+
+\textbf{Four contract modes and a separate fast path.} The \texttt{contract}
+argument accepts \texttt{off}, \texttt{check}, \texttt{warn}, and
+\texttt{raise}. \texttt{check} stores reports, \texttt{warn} also emits them,
+and \texttt{raise} stops on an error (warnings alone do not raise). The general
+runner uses the same step hook in these modes. With GPU vectorization, contract
+\texttt{off}, no initial record, no reporters or progress output, and available
+private setup/step hooks, the public API selects a model-specific loop only
+after explicit per-instance approval. Headline throughput therefore carries no
+runtime certificate, and approval itself is not semantic validation. In this
+paper the associated evidence consists of small workload smoke and invariant
+tests, not a coupled-equivalence suite for the timed kernels.
+
+Appendix~\ref{app:usage} shows all three native modes and the separate optimized
+benchmark path.
+
+
+\section{Experiments}
+
+The evaluation follows the paper's evidence layers: semantic sensitivity,
+monitor behavior, and throughput.
+Sections~5.1--5.2 use standalone NumPy/CuPy prototypes to compare declared
+snapshot updates with in-place ordered variants; they do not execute AMBER's
+contract. Section~5.3 evaluates the monitor only at the API seams it observes.
+Section~5.4 benchmarks the private optimized GPU path. Our corrected comparison
+with FLAME uses one RTX~5090 (32\,GB, sm\_120), CUDA driver
+595.71, 50 steps, one untimed warm-up, and ten retained runs per model with no
+outlier deletion. We report arithmetic means in Table~\ref{tab:flame} and
+release all samples, medians, IQRs, and bootstrap
+median intervals, following guidance to expose variability and experimental
+context in parallel-system benchmarking \citep{hoefler2015}. Other figures
+retain their own stated protocols and should not be read as one pooled
+benchmark campaign.
+
+\subsection{Activation semantics move an operational epidemic crossing}
+
+Row-wise CPU and batched GPU implementations of the same snapshot rule give
+similar crossing estimates; changing to an in-place ordered rule produces a
+larger, directionally consistent shift.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figs/plot03.pdf}
+\caption{Ring-lattice SIR semantic sensitivity ($N{=}4000$, 120 steps).
+The row-wise snapshot reference and batched CuPy snapshot implementation have
+overlapping crossing intervals;
+the in-place ordered implementation lets newly infected agents affect later
+updates in the same step and crosses attack${=}0.5$ at about 7\% lower
+transmissibility. These
+are standalone experiment programs, not AMBER contract certificates.}
+\Description{Three attack-rate curves over transmissibility. Row-wise CPU snapshot and batched GPU snapshot nearly overlap, while the in-place ordered curve crosses attack rate 0.5 at a lower transmissibility.}
+\label{fig:threshold}
+\end{figure*}
+
+We sweep 16 transmissibility values and locate the attack-rate crossing in
+three implementations, with 2000-resample bootstrap intervals. The CPU
+snapshot reference reads an immutable entry copy (48 seeds); a seed-batched
+CuPy version implements the same rule (96 seeds); and an ordered loop updates
+in place (48 seeds).
+For each CPU seed and transmissibility, the row-wise and in-place states share
+the initial state, a shared activation order reshuffled at every step, and
+per-agent infection/recovery draws; their contrast therefore isolates the
+update regime under a random sequential schedule. Bootstrap resampling retains
+each seed's trajectory across all transmissibility values. The CuPy implementation
+uses an independent device RNG and serves as a distributional snapshot
+cross-check. Accordingly, ``reference'' below means reference for the declared
+snapshot model, not a universally correct ABM schedule.
+Here, $\tau_c$ denotes the finite-$N$, 120-step operational estimate of the
+attack${=}0.5$ crossing, not an asymptotic critical point.
+Because same-step infections can alter later infection opportunities in the
+in-place program, event eligibility is not fixed at step entry. This experiment
+therefore compares two model-level activation regimes; it is not a direct
+instance of Theorem~\ref{thm:char}.
+
+\begin{table}[t]
+\centering\small
+\caption{Operational crossing estimate $\tau_c$ under the three execution regimes
+(attack${=}0.5$ crossing; bootstrap interval over seeds).}
+\label{tab:tc}
+\begin{tabular}{@{}l l@{}}
+\toprule
+Engine & $\tau_c$ (attack${=}0.5$), median [95\% CI] \\
+\midrule
+Row-wise snapshot reference & 0.2422 [0.2350, 0.2509] \\
+\textbf{Batched GPU snapshot} & \textbf{0.2399 [0.2348, 0.2447]} \\
+Batched GPU snapshot @ $N{=}10^5$ & 0.2433 [0.2407, 0.2461] \\
+In-place ordered update & 0.2257 [0.2182, 0.2330] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The snapshot estimates are $0.2422$ and $0.2399$; overlapping bootstrap
+intervals indicate consistency, not equivalence. The in-place estimate is
+$0.2257$. In the paired CPU contrast, the absolute shift is $0.0167$
+[0.0108, 0.0236], or $0.0167/0.2422=6.9\%$ of the row-wise estimate. Reusing
+one fixed activation order for the full trajectory yields a larger $12.1\%$
+shift [absolute interval 0.0195, 0.0390], so the direction is robust but its
+magnitude is schedule-dependent. This establishes sensitivity for this finite
+model and protocol, not a general claim that sequential activation is wrong. The
+$N{=}10^5$ snapshot row is a scale check only; it does not justify
+extrapolation to $10^7$. Crossing sensitivity at attack rates 0.3 and 0.7 is
+reported in Figure~\ref{fig:sens}.
+
+\paragraph{Released-framework sensitivity.}
+Using mesa-frames' public Polars API, we implemented the same ring model with
+24 seeds per transmissibility value. Each
+step copies status to a local NumPy array, processes it
+either as one whole-array pass or as 10, 40, 160, or 640 in-place local blocks,
+and then performs one final whole-column \texttt{set}. The one-block case gives
+$\tau_c{=}0.2406$; with more local blocks, later blocks see earlier local writes
+and the estimate decreases monotonically to $0.2242$
+(Figure~\ref{fig:anchor}). Thus every variant makes exactly one framework
+commit per step; the schedule difference is in the user-side computation. The
+paired-seed bootstrap intervals are [0.2251, 0.2553] and [0.2157, 0.2360] for
+one and 640 blocks, respectively. This is not a mesa-frames correctness bug,
+but it shows that a local refactor can change the modeled regime without an API
+warning.
+
+\subsection{Additional semantic-sensitivity prototypes}
+
+Standalone array prototypes probe whether the same concern appears beyond the
+controlled crossing experiment; their designs support only exploratory claims.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figs/plot21.pdf}
+\caption{Exploratory NumPy/CuPy sensitivity studies. Snapshot/staged and
+in-place variants differ in (a) the fitted SIR phase boundary, (b) Schelling
+segregation, and (c) bounded-confidence consensus. Panel (c) uses unmatched
+population sizes, so its gap is descriptive rather than a controlled effect.}
+\Description{Three small panels compare snapshot or staged execution with in-place execution for an SIR phase boundary, Schelling segregation, and bounded-confidence consensus.}
+\label{fig:sci}
+\end{figure*}
+
+The phase-boundary prototype gives slopes $-1.923$ and $-1.839$ for snapshot and
+in-place variants, respectively; the mean relative crossing shift across radii
+is $-7.4\%$ [bootstrap CI $-12.6\%$, $-1.5\%$]. The
+Schelling prototype likewise differs near tolerance $0.75$. The coordination
+prototype compares $N{=}20{,}000$ for the staged implementation with
+$N{=}2{,}000$ for the in-place implementation on separately generated graphs;
+finite-size and graph effects are therefore confounded with update semantics.
+These studies motivate matched AMBER experiments, but the present artifacts do
+not support claims that an AMBER certificate caught or prevented the effects.
+
+\subsection{What the runtime monitor observes---and misses}
+
+Current deterministic regression tests exercise each implemented report and
+retain one explicit false-negative example. This makes the monitor's boundary
+executable rather than leaving it only as a prose disclaimer.
+
+The monitor tests executable API behavior, not the standalone science scripts
+of Sections~5.1--5.2. Table~\ref{tab:detection} reports current tests against the
+same repository revision as the paper. Commit-then-borrow and duplicate
+ordinary writes produce errors; mutable raw-array access
+produces a warning; and a single declared integer reduction remains clean. The
+last row is equally important: a column borrowed once, transformed with
+\texttt{np.roll}, and committed once is not reported, because the runtime does
+not recover cell-level provenance from that expression. The test intentionally
+asserts this clean result so future documentation cannot silently overstate the
+monitor.
+
+\textbf{Cost.} Endpoint id/schema checks cost $O(N+c)$, where $c$ is the number
+of schema columns. Bookkeeping costs $O(q)$ for $q$ buffered writes. A current
+$q{=}0$ microbenchmark uses one or eight commits, populations of $10^4$,
+$10^5$, and $10^6$, 20 steps, and five retained runs per mode. The raw
+samples and arithmetic means are released with the paper; Figure~\ref{fig:cost}
+and Table~\ref{tab:scaling5} report this bounded regime. It is not directly
+comparable to the private GPU loop, which disables the contract. Across these
+cells, \texttt{check}/\texttt{off} ratios range from $2.95\times$ to
+$18.49\times$, with 0.515--71.99 added ms per step; the monitor is therefore a
+development diagnostic, not a zero-cost production feature.
+
+\begin{table}[t]
+\centering\footnotesize
+\caption{Current deterministic API-level regression scenarios. ``Pass'' means
+the implementation produced the documented result, including the explicit
+known-limit row; it is not a completeness claim.}
+\label{tab:detection}
+\begin{tabularx}{\columnwidth}{@{}>{\raggedright\arraybackslash}X l l l@{}}
+\toprule
+Scenario & Expected & Observed & Result \\
+\midrule
+Commit $\rightarrow$ borrow & error & read-after-write & pass \\
+Duplicate ordinary write & error & duplicate-write & pass \\
+Mutable raw array & warning & uncertified & pass \\
+One integer \texttt{scatter\_add} & clean & clean & pass \\
+Borrow, gather, commit & no report & clean & limit \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The final row is also a released end-to-end microcase. Starting from
+$x=[1,2,3]$, one borrow followed by \texttt{np.roll} and one commit produces
+the snapshot result $[3,1,2]$ and a clean report. Executing the analogous
+predecessor rule sequentially in order $(0,1,2)$ makes all three values equal
+to 3.
+The external comparison therefore catches a semantic mismatch the monitor
+cannot see, so no private-path approval is warranted for that translation.
+This connects the workflow's report and reference roles without claiming the
+monitor itself detected the dependence.
+
+\subsection{The optimized GPU path is practical at population scale}
+
+The full sweep places AMBER's three native modes beside seven timed baselines.
+At the corrected ten-run endpoints, AMBER GPU is faster than our FLAME GPU~2
+implementation on each of four $10^7$-agent workloads. The first three rows are
+the directly comparable headline range; Schelling is retained as an
+exploratory setup-inclusive implementation measurement.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figs/plot07.pdf}
+\caption{All-framework scaling context on the RTX~5090 (50 steps). Connected
+lines show the historical archived convention (mean after trimming the slowest
+of ten where samples were available). A final segment connects each
+series to its outlined $10^7$ AMBER GPU or FLAME GPU~2 marker, whose corrected
+value is the arithmetic mean over all ten retained runs. The outlined marker
+identifies the campaign/statistic change while preserving
+trajectory continuity.
+Missing endpoints mean no archived completion.
+AgentTorch is capability-only because no matched timing row was recorded. The
+Schelling label is explicitly setup-inclusive.}
+\Description{Four log-log panels show historical wall-time series for wealth transfer, random walk, SIR, and Schelling across three native AMBER modes and seven external timed implementations. Corrected ten-million-agent AMBER and FLAME endpoints are outlined and connected to the preceding point; they use all-ten arithmetic means rather than the historical trimmed convention. Each panel reports the endpoint ratio, with Schelling marked setup-inclusive.}
+\label{fig:gpu-benchmark}
+\end{figure*}
+
+Figure~\ref{fig:gpu-benchmark} places the corrected endpoints in the broader
+scaling landscape. Table~\ref{tab:flame} reports the authoritative final means
+and ratios; the released JSON retains all ten samples behind each outlined point.
+
+\begin{table}[t]
+\centering\small
+\caption{Final AMBER GPU versus FLAME GPU~2 campaign at $10^7$ agents
+(RTX~5090, 50 steps, ten retained runs). Entries are arithmetic means; raw
+samples, medians, IQRs, and bootstrap median intervals are in the released JSON.
+Speedup is FLAME/AMBER, so values above one favour AMBER. Schelling includes a
+Python per-agent FLAME initialization loop in the timed region and is not part
+of the headline $1.77$--$2.05\times$ range.}
+\label{tab:flame}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Model & AMBER GPU & FLAME GPU~2 & speedup \\
+\midrule
+Wealth transfer & 94.3\,ms & 193.5\,ms & \textbf{2.05$\times$} \\
+Random walk & 80.4\,ms & 160.7\,ms & \textbf{2.00$\times$} \\
+SIR epidemic & 2.079\,s & 3.682\,s & \textbf{1.77$\times$} \\
+Schelling (setup incl.) & 295.5\,ms & 18.72\,s & 63.4$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The FLAME GPU~2 SIR row is a successful runtime-compiled execution. The archive
+documents the launcher-path correction that replaced an earlier failed attempt;
+the failed run is not used in Table~\ref{tab:flame}.
+
+Timing includes construction, setup, 50 steps, and result assembly. AMBER
+synchronizes before returning; FLAME returns at a completed boundary. The
+timed FLAME Schelling implementation initializes agents through a Python
+per-agent loop, so its $63.4\times$ ratio conflates setup strategy with step
+execution and is exploratory rather than a kernel-throughput claim. The
+corrected wealth kernel compacts donor eligibility before atomic debit/credit,
+preventing a same-step
+recipient from becoming a donor. AMBER is faster in all four measured rows
+(Table~\ref{tab:flame}). These are nevertheless comparisons of our
+implementations of related workloads, not identical transition kernels. The
+SIR implementations use different random-number machinery, while Schelling
+uses different relocation conflict handling; such choices can affect both
+runtime and dynamics. AMBER's exact SIR fast path uses counting-sort cell bins
+and scans candidate pairs. Its work is $O(N+C+P)$ for $C$ cells and $P$
+candidate pairs examined, with a quadratic worst case if density grows in a
+fixed domain; the ten-million-agent timing is therefore empirical evidence for
+this configuration, not an asymptotic $O(N)$ guarantee. The FLAME models and
+other baselines were implemented by one team and may not represent each
+framework's maximum attainable performance.
+No contract certificate is attached to these private fast-loop timings; their
+released evidence is a four-workload GPU smoke/invariant test (including wealth
+conservation and result shape/range checks) plus the explicit approval label.
+It is not a coupled or distributional equivalence test of the timed kernels.
+
+The ancillary studies are narrower than the original framing. Twelve KS tests
+on small standalone CPU models fail to reject equality, but they are not
+equivalence tests and do not cover the measured GPU kernels or Schelling. The
+SLOC script counts an older public example rather than all private backend code.
+SMAC improves error at matched evaluation count but takes roughly
+$231$--$693\times$ more wall time than the recorded random-search runs. We retain
+these artifacts in the supplement as exploratory measurements rather than
+headline evidence of parity, conciseness, or practical calibration speed.
+
+\section{Discussion and Limitations}
+
+The results support a layered validation argument, not an end-to-end proof.
+The theorem is exact but conditional on a fixed event multiset, complete read
+sets, and truly AC reducers. The monitor is executable but observes only its API
+seams. The SIR study identifies a causal difference between two activation
+regimes under paired CPU randomness, but it does not establish that every model
+is sensitive. The GPU campaign establishes implementation-level throughput on
+one machine; related, rather than identical, transition kernels limit framework
+ranking claims.
+
+Monitor incompleteness is the most immediate engineering limitation. A
+gather expression borrowed once before commit, value-sensitive dependence, an
+unexecuted branch, mutate-and-revert structural changes, raw user kernels, and
+private optimized loops can escape cell-level reconstruction. Mutable-array
+warnings and device scatters avoid a vacuous clean record but do not solve
+provenance. Tagged arrays or static dependence analysis could tighten
+this boundary. Floating-point reductions need an orthogonal numerical policy
+because machine addition is not associative.
+
+The resulting workflow is pragmatic: declare the intended activation regime;
+use \texttt{check} or \texttt{raise} while developing through observable APIs;
+compare optimized paths against a coupled or distributional reference; and
+report performance and semantic evidence separately. This workflow is more
+informative than either a silent fast path or a certificate whose observational
+scope is left implicit.
+
+\section{Conclusion}
+
+Activation regime is part of an ABM specification. AMBER links four scoped
+forms of evidence: a sufficient event-level theorem, a bounded runtime
+diagnostic, controlled semantic-sensitivity measurements, and an independently
+tested GPU path. The theorem explains when fixed events are order-independent;
+the monitor exposes selected development hazards; the SIR study shows their
+scientific relevance; and the benchmark shows that explicit semantics can
+coexist with ten-million-agent throughput. Together they make the path from
+agent-centric intent to columnar or GPU execution more auditable.
+
+\paragraph{Reproducibility.} The final AMBER--FLAME campaign uses one RTX~5090
+(32\,GB, sm\_120, driver 595.71.05), Python 3.12.3, CuPy 14.1.1, a
+CUDA-12.0 FLAME GPU~2 wheel (2.0.0rc4), the CUDA 12.9 host toolkit, and ten
+retained runs. The released JSON contains all samples and provenance; other
+studies state their own protocols.
+
+
+
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{amber_references}
+
+
+\appendix
+\setcounter{tocdepth}{2}
+\appendixfigurelayout
+
+\section{Activation semantics: formal development and proofs}
+\label{app:theory}
+
+This appendix makes the paper's activation claim precise. It defines fixed
+step-entry events and a sufficient non-interference condition, lifts the
+one-step result to trajectories, and then connects the semantics to AMBER's
+bounded runtime report, staging construction, and monitor cost.
+
+\subsection{Population state and rules}\label{ax:pop}
+
+Let the population be a set of agents $[N]=\{1,\dots,N\}$ and let $C$ be a finite set of attributes (columns), each with value domain $V_c$. A \textbf{population state} is an assignment
+
+\[
+S \in \Sigma \;:=\; \prod_{i\in[N]}\prod_{c\in C} V_c ,
+\qquad S[i,c]\in V_c .
+\]
+
+A \textbf{cell} is a pair $(i,c)\in[N]\times C$. Columnar storage (a Polars DataFrame with one column per $c$) and row storage (one object per $i$) are two layouts of the same $S$; the semantics below are layout-independent.
+
+A single \textbf{step} maps $S^{(t)}\mapsto S^{(t+1)}$. We model the step as the multiset of \textbf{write events} the rule emits when evaluated at step-entry state $S^{(t)}$. A write event $w$ carries:
+
+\begin{itemize}
+\item a \textbf{target cell} $\mathrm{tgt}(w)=(j,c)\in[N]\times C$;
+\item a \textbf{mode} $\mathrm{mode}(w)\in\{\textsf{set},\
+\textsf{reduce}_{\oplus_w}\}$, where $\oplus_w:V_c\times V_c\to V_c$
+is the reducer carried by $w$;
+\item a \textbf{read set} $\mathrm{rd}(w)\subseteq[N]\times C$ and a \textbf{value map} $\phi_w:\Sigma\to V_c$ that depends on its argument only through the cells in $\mathrm{rd}(w)$.
+\end{itemize}
+
+Read sets may be conservative supersets of the cells actually consulted. The
+soundness theorem below does not need a tightness or non-triviality assumption;
+we make no necessity claim. This matters because a globally non-trivial event
+may be locally insensitive at $S^{(t)}$, and two interfering events can still
+coincide at that state.
+
+The rule is expanded once at step entry: fixing $S^{(t)}$ (and, for a
+stochastic rule, a random tape indexed independently of execution order) fixes
+the event multiset $W$, including each event's identity, target, mode, and read
+set. The rule may decide which events to emit from that input, but this event
+generation cannot observe same-step writes. Models with dynamic same-step event
+generation fall outside the one-step theorem unless that generation is first
+frozen or represented by an explicit staged semantics. Write
+
+\[
+\mathrm{WR}(W)=\{\mathrm{tgt}(w):w\in W\},\qquad
+\mathrm{RD}(W)=\textstyle\bigcup_{w\in W}\mathrm{rd}(w).
+\]
+
+
+\subsection{Two activation semantics}\label{ax:sem}
+
+\textbf{Snapshot (simultaneous) activation} evaluates every value map at the
+frozen step-entry state $S^{(t)}$. It is a declared execution semantics, not an
+automatic consequence of columnar storage. For
+$W_{j,c}=\{w\in W:\mathrm{tgt}(w)=(j,c)\}$, define
+$\mathrm{Snap}(W)(S^{(t)})$ cell-by-cell:
+
+\[
+S^{(t+1)}[j,c]=
+\begin{cases}
+S^{(t)}[j,c], & W_{j,c}=\varnothing,\\[2pt]
+\phi_w(S^{(t)}), & W_{j,c}=\{w\},\ \mathrm{mode}(w)=\textsf{set},\\[2pt]
+S^{(t)}[j,c]\oplus_w\phi_w(S^{(t)}),
+  & W_{j,c}=\{w\},\ \mathrm{mode}(w)=\textsf{reduce}_{\oplus_w},\\[2pt]
+\operatorname{fold}_{\oplus_c}\!\left(S^{(t)}[j,c],
+  \{\!\{\phi_w(S^{(t)}):w\in W_{j,c}\}\!\}\right),
+  & \begin{array}{l}|W_{j,c}|\ge2,\text{ all reductions use the}\\[-1pt]
+    \text{same AC operator }\oplus_c,\end{array}\\[5pt]
+\textbf{conflict}, & \text{otherwise.}
+\end{cases}
+\]
+
+Here $\operatorname{fold}_{\oplus_c}$ starts at the entry value and combines the
+multiset of contributions; AC makes its order immaterial. The conflict case
+includes multiple \textsf{set}s, mixed \textsf{set}/\textsf{reduce} modes,
+different reducers, and repeated non-AC reducers. The semantics deliberately
+does not assign those cases an order-independent resolution.
+
+\textbf{Scheduled (sequential) activation} --- parameterized by a total order $\pi$ on events (induced by an agent activation order). Initialize a mutable state $M\leftarrow S^{(t)}$ and process events in the order $\pi$: for event $w$, compute $v=\phi_w(M)$ against the \textbf{current} $M$ and apply it in place ---
+
+\[
+\textsf{set}:\ M[\mathrm{tgt}(w)]\leftarrow v,\qquad
+\textsf{reduce}_{\oplus_w}:\ M[\mathrm{tgt}(w)]\leftarrow M[\mathrm{tgt}(w)]\oplus_w v .
+\]
+
+The output is $\mathrm{Sched}_\pi(W)(S^{(t)})=M$. Because $\phi_w$ is read against the \emph{running} state, a scheduled agent can observe earlier agents' same-step writes.
+
+The paper's question is: \textbf{for which fixed event multisets does
+$\mathrm{Snap}=\mathrm{Sched}_\pi$ for every $\pi$?} When this equality holds,
+snapshot vectorization preserves the event-level result; when the equality
+fails, snapshot and scheduled activation are different models.
+
+
+\subsection{A sufficient non-interference theorem}\label{ax:char}
+
+\begin{definition}[non-interference, expanded]\label{def:noninterference-full} An event multiset $W$ is \emph{non-interfering} if, for every pair of distinct events $w,w'\in W$:
+
+\begin{itemize}
+\item \textbf{(I) no cross-event read/write dependence:}
+$\mathrm{tgt}(w)\notin\mathrm{rd}(w')$ and
+$\mathrm{tgt}(w')\notin\mathrm{rd}(w)$; and
+\item \textbf{(II) reductions only on shared targets:} if
+$\mathrm{tgt}(w)=\mathrm{tgt}(w')$, then both are reductions with the
+\textbf{same} operator $\oplus_c$, and $\oplus_c$ is associative and
+commutative (AC).
+\end{itemize}
+
+Condition (I) is the flow/anti-dependence clause; condition (II) is the output-dependence clause relaxed to admit AC reductions. Together they are Bernstein's conditions with a reduction carve-out.
+
+\end{definition}
+
+\begin{proposition}[AC folds are order-invariant]\label{prop:acfold}
+If all events on a cell $(j,c)$ are $\textsf{reduce}_{\oplus_c}$ with $\oplus_c$ AC and each contributes the fixed value $\delta_w=\phi_w(S^{(t)})$, the cell's final value $S^{(t)}[j,c]\oplus_c\bigoplus_w\delta_w$ is independent of the order in which the events are applied.
+\end{proposition}
+
+\begin{proof} Let $\delta_1,\dots,\delta_m$ be the increments. The scheduled fold computes $(((s\oplus\delta_{\sigma(1)})\oplus\delta_{\sigma(2)})\oplus\cdots)$ for the applied permutation $\sigma$, where $s=S^{(t)}[j,c]$. Associativity makes any re-bracketing of an iterated $\oplus$ equal, so the value depends only on the sequence $(\delta_{\sigma(1)},\dots,\delta_{\sigma(m)})$ and not on the grouping. Commutativity makes it invariant under permutation of that sequence: for any transposition of adjacent elements, $a\oplus b=b\oplus a$, and adjacent transpositions generate the symmetric group, so every $\sigma$ yields the same value. Hence the result is a function of the \emph{multiset} $\{\delta_w\}$ and $s$ alone. \end{proof}
+\begin{theorem}[expanded statement of Theorem~\ref{thm:char}]\label{thm:char-full}
+Let $W$ be the fixed event multiset emitted at $S^{(t)}$. If $W$ is
+non-interfering, then the snapshot result is well defined and
+\[
+\mathrm{Snap}(W)(S^{(t)})=
+\mathrm{Sched}_\pi(W)(S^{(t)})
+\qquad\text{for every event order }\pi .
+\]
+\end{theorem}
+
+\begin{proof} Assume (I)--(II). Before $w$ is evaluated, $w$ itself has not yet
+executed, and by (I) no earlier \emph{other} event can have modified a cell in
+$\mathrm{rd}(w)$. Thus $M$ and $S^{(t)}$ agree on $\mathrm{rd}(w)$, so
+$\phi_w(M)=\phi_w(S^{(t)})$ independently of $\pi$. Fix a cell $(j,c)$. It is
+either untouched, targeted by one event, or targeted by multiple events. The
+first two cases are immediate for either mode. In the third case, condition
+(II) requires one shared AC reducer, so Proposition~\ref{prop:acfold} gives an
+order-invariant result and excludes the snapshot conflict case. Hence every
+cell agrees under snapshot and scheduled execution for every $\pi$.
+\end{proof}
+
+\begin{remark}[why the converse is not claimed]
+Interference is evidence of a potential schedule dependence, not a proof of one
+at a fixed state. For example, let one event change $x:0\mapsto1$ and another
+write $y:=\mathbf 1[x=2]$. The second event genuinely depends on $x$ over the
+domain, yet both orders agree at this state. Likewise, two set events may write
+the same value, and Proposition~\ref{prop:commuting} gives non-AC updates whose
+induced unary maps commute. These counterexamples invalidate an iff statement.
+\end{remark}
+ 
+\subsection{A taxonomy of agent rules}\label{ax:tax}
+
+Theorem~\ref{thm:char} induces a conservative classification: satisfying a
+class condition is sufficient, while falling outside it calls for staging or
+model-specific analysis.
+
+\textbf{Class P --- pointwise self-maps.} Each agent $i$ emits one event with $\mathrm{tgt}=(i,c)$ and $\mathrm{rd}\subseteq\{i\}\times C$ (reads and writes only its own row). Distinct agents touch distinct target cells and read only their own, so (I)--(II) hold trivially. Such a rule satisfies the sufficient condition (e.g. per-agent age increment or independent noise on \texttt{x}).
+
+\textbf{Class G --- snapshot gathers.} Agent $i$ writes its own cell but reads
+a neighbourhood. Writing a fresh output column satisfies (I). Reading and
+writing the same column fails the sufficient test and may be schedule-sensitive;
+double buffering expresses the intended synchronous rule explicitly.
+
+\textbf{Class R --- commutative reductions (many-to-one).} Several source agents contribute to one target cell through an AC reducer: resource flows, contact counts, force accumulation. Written with \texttt{scatter\_add} ($\oplus=+$), duplicate target ids satisfy condition (II); when contributions are fixed from the entry state so that (I) also holds, Theorem~\ref{thm:char} makes the update safe. This is precisely why \texttt{agents.\allowbreak{}at[\allowbreak{}[\allowbreak{}1,1,3]\allowbreak{}]\allowbreak{}.\allowbreak{}scatter\_\allowbreak{}add(\allowbreak{}wealth=\allowbreak{}1)\allowbreak{}} must credit agent 1 twice rather than clobber. \textbf{Potentially unsafe variant:} expressing the same many-to-one flow with ordinary assignment (\texttt{agents.\allowbreak{}at[\allowbreak{}ids]\allowbreak{}.\allowbreak{}wealth =\allowbreak{} .\allowbreak{}.\allowbreak{}.\allowbreak{}} with repeated ids) is a Case-II conflict. Last-writer-wins is order-dependent when repeated targets receive different values; equal-value duplicates are still rejected conservatively.
+
+\textbf{Machine-arithmetic caveat.} The theorem requires an actually
+associative and commutative operator. Fixed-width integer addition is AC on a
+specified wraparound domain (for example, modulo $2^k$); overflow-raising or
+saturating arithmetic requires separate analysis, and IEEE floating-point
+addition is not associative. A
+floating \texttt{scatter\_add} can therefore vary in low-order bits with atomic
+order and requires a numerical tolerance or reproducible reduction; the API
+name alone does not discharge the theorem's premise.
+
+\textbf{Class U --- potentially order-sensitive rules.} Same-step cross-agent
+read/write overlap or non-AC many-to-one writes fail the sufficient condition.
+They should be staged, given an explicit schedule, or justified separately. The
+runtime monitor detects selected operational manifestations, not membership in
+U for arbitrary Python/CUDA code.
+
+\begin{remark}[the AC requirement is conservative]\label{rem:ac}
+Repeated subtraction induces commuting translations $x\mapsto x-\delta$ even
+though the binary operator is not AC. Proposition~\ref{prop:commuting}
+characterizes this family. AMBER exposes only declared AC scatter reducers, so
+the API may reject such an order-safe update without implying that all non-AC
+folds are unsafe.
+\end{remark}
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\textwidth}{@{}l l l >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
+\toprule
+Class & Reads & Writes & Safe to vectorize? & AMBER idiom \\
+\midrule
+\textbf{P} pointwise self-map & own row & own cell & always & \texttt{agents.\allowbreak{}col =\allowbreak{} f(\allowbreak{}agents.\allowbreak{}col)\allowbreak{}} \\
+\textbf{G} snapshot gather & neighbourhood & own cell & safe with a fresh output column & double-buffer: read old col, write new col \\
+\textbf{R} commutative reduction & non-interfering snapshot reads & shared cell, AC & safe under (I) with declared reducer & \texttt{agents.\allowbreak{}at[\allowbreak{}ids]\allowbreak{}.\allowbreak{}scatter\_\allowbreak{}add(\allowbreak{}col=\allowbreak{}delta)\allowbreak{}} \\
+\textbf{U} potential conflict & --- & --- & analyze, stage, or schedule & selected hazards reported \\
+\bottomrule
+\end{tabularx}
+\caption{The four rule classes, their read/write shapes, and the AMBER idiom for each.}\label{tab:classes}
+\end{table}
+
+
+
+
+\subsection{Commuting non-AC reducers}\label{ax:propA1}
+
+Remark~\ref{rem:ac} observes that the associative--commutative requirement on
+Class-R reducers is sufficient but conservative. We formalize this.
+
+\begin{proposition}[commuting induced updates]\label{prop:commuting}
+Let $D$ be a set of admissible fixed increments for reduce events on one cell,
+all using a common binary operator $\oplus$, and define
+$T_\delta(x)=x\oplus\delta$. For a finite sequence
+$\delta_1,\dots,\delta_m\in D$, consider the scheduled left-fold
+$g_\sigma(s)=T_{\delta_{\sigma(m)}}\circ\cdots\circ
+T_{\delta_{\sigma(1)}}(s)$. The increments are evaluated at step entry and are
+independent of the other events by clause (I).
+
+\begin{enumerate}
+\item If $\oplus$ is AC then $g_\sigma$ is independent of $\sigma$ for all
+states and increments (Proposition~\ref{prop:acfold}).
+\item More generally, every finite fold over increments from $D$ is
+order-independent for every starting state iff the induced unary maps
+$\{T_\delta:\delta\in D\}$ pairwise commute under composition. Subtraction is
+the canonical example:
+$T_\delta(x)=x-\delta$ are commuting translations although the binary operator
+$-$ is neither associative nor commutative.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof} Part 1 is Proposition~\ref{prop:acfold}. For part 2,
+sufficiency follows because any permutation is reached by adjacent
+transpositions, each of which preserves the composition when the corresponding
+maps commute. For necessity, choose any $\delta_1,\delta_2\in D$ and the
+two-increment sequence. Order independence for every $s$ says exactly
+$T_{\delta_1}\circ T_{\delta_2}=T_{\delta_2}\circ T_{\delta_1}$ as functions.
+Thus every pair commutes. For subtraction,
+$T_\delta(x)=x-\delta$ and
+$T_{\delta_1}(T_{\delta_2}(x))=x-\delta_2-\delta_1=
+T_{\delta_2}(T_{\delta_1}(x))$. The family therefore commutes even though the
+binary operator $-$ is neither associative nor commutative, so
+Definition~\ref{def:noninterference}(II) conservatively rejects it. \end{proof}
+
+AMBER's public scatter API accepts declared AC reductions. A non-AC operation
+therefore falls outside that idiom even when Proposition~\ref{prop:commuting}
+shows its induced updates commute. This is an API restriction, not evidence that
+the operation is schedule-dependent.
+
+\subsection{From theorem to an operational runtime report}\label{ax:cert}
+
+For arbitrary Python rule bodies, exact read/write provenance is unavailable at
+the ordinary array API. AMBER therefore monitors concrete operations rather
+than claiming to decide Theorem~\ref{thm:char}. It observes buffered OOP writes,
+columnar/TensorLane commits, device scatter writes, declared reductions, and
+immutable borrows. A \textbf{\texttt{ContractCertificate}} records:
+
+\begin{itemize}
+\item \textbf{duplicate ordinary write:} a buffered cell or whole column is
+written more than once without using a declared reduction;
+\item \textbf{cross-path write:} the same column receives incompatible writes
+through different observed seams in one step;
+\item \textbf{commit-before-borrow:} a column is borrowed after a same-step
+commit, so that borrow cannot be guaranteed to observe entry state;
+\item \textbf{uncertified mutable borrow:} \texttt{agents.array(...)} exposes a
+mutable NumPy/CuPy buffer whose later indexing/mutation is not traceable;
+\item \textbf{schema / population mutation:} the column set, a column dtype,
+or the id-set differs between step entry and exit. Such a step is outside the
+fixed-$\Sigma$ model of \S\ref{ax:pop}. Additions and births/deaths are warnings;
+column removal and dtype change are errors. Because this check compares only
+endpoints, a mutate-and-revert sequence can remain unobserved.
+\end{itemize}
+
+\begin{proposition}[operational meaning of reports]\label{prop:errorsound}
+Each duplicate-write, cross-path-write, or commit-before-borrow error
+corresponds to the concrete instrumented operations named by the report. While
+monitoring is active, mutable raw-array access through the observed accessor
+prevents a clean certificate. No converse or schedule-divergence conclusion is
+implied without model-specific read-set information.
+\end{proposition}
+
+\begin{proof} The monitor adds a duplicate report only when the corresponding
+per-step counter exceeds one, a cross-path report only when incompatible seam
+records share a column, and a commit-before-borrow report only when the column
+is already in the committed set. Mutable array access calls the dedicated
+warning seam. These are direct invariants of the implementation. The monitor
+does not inspect value sensitivity or arbitrary array indices, so stronger
+semantic conclusions would not follow.\end{proof}
+
+\begin{remark}[explicit incompleteness]
+A normal gather may borrow a column once and commit once. For example, from
+$x=(1,2,3)$ the snapshot assignment $x\leftarrow\mathrm{roll}(x,1)$ produces
+$(3,1,2)$, while forward and reverse per-cell schedules produce $(3,3,3)$ and
+$(2,1,2)$. Borrow-before-commit order alone does not reveal that cross-agent
+dependence. Through \texttt{agents.array}, AMBER now reports an uncertified
+mutable borrow; through an immutable but provenance-free expression, static or
+tagged-array analysis would still be required.
+\end{remark}
+ 
+\subsection{Worked examples}\label{ax:examples}
+
+\textbf{Safe construction (Class R) --- snapshot wealth transfer.} Freeze the
+donor set from step-entry wealth, emit one debit per donor, and aggregate
+recipient credits with addition. Fixed eligibility plus AC credit reduction
+satisfies the theorem; merely checking live wealth inside concurrent atomics
+would not.
+
+\textbf{Potential conflict (Class U $\rightarrow$ fix) --- SIR.} Reading and
+writing \texttt{status} in place fails condition (I). Computing
+\texttt{next\_status} from an immutable entry column and swapping explicitly
+implements synchronous semantics. The monitor catches commit-then-borrow
+versions; raw or borrow-once kernels require separate validation.
+
+\textbf{Potential conflict (Class U) --- duplicate ordinary assignment.} \texttt{agents.\allowbreak{}at[\allowbreak{}[\allowbreak{}1,1,3]\allowbreak{}]\allowbreak{}.\allowbreak{}wealth =\allowbreak{} v} issues two \textsf{set}s to cell $(1,\text{wealth})$: Case II. Ordinary duplicate assignment has no declared schedule-independent resolution and is potentially order-dependent when values differ; equal values are a conservative rejection. The monitor raises duplicate-unreduced-write. The sanctioned accumulation rewrite is \texttt{scatter\_add}, which is Class R when condition (I) and the arithmetic caveat also hold.
+
+
+\subsection{Trajectory confluence}\label{ax:conf}
+
+Theorem~\ref{thm:char} is a statement about one step. It lifts to trajectories
+when its semantic premise---not merely a clean runtime certificate---holds at
+every reached state.
+
+Fix an initial state $S^{(0)}$, a rule-expansion map $R$, and a random tape
+$\omega=(\omega_0,\omega_1,\ldots)$ indexed by step and stable event/agent
+identity rather than execution position. At step $t$, expand the rule exactly
+once as $W_t=R(S^{(t)},\omega_t)$. A \textbf{scheduled run} chooses an order
+$\pi_t$ of $W_t$; a \textbf{snapshot run} resolves the same $W_t$ at once:
+\[
+S^{(t+1)}=\mathrm{Sched}_{\pi_t}(W_t)(S^{(t)})
+\quad\text{vs.}\quad
+S^{(t+1)}=\mathrm{Snap}(W_t)(S^{(t)}).
+\]
+Write a schedule as the sequence $\Pi=(\pi_0,\pi_1,\dots)$.
+
+\begin{definition}[non-interfering run]\label{def:noninterfering-run}
+A snapshot run of length $T$ is \emph{non-interfering} if, at every reached
+state $S^{(t)}$, the fixed event multiset $R(S^{(t)})$ satisfies
+Definition~\ref{def:noninterference}, where $R(S^{(t)})$ abbreviates
+$R(S^{(t)},\omega_t)$. Thus event generation is a deterministic function of
+state and the coupled tape, not activation order.
+\end{definition}
+
+\begin{theorem}[confluence]\label{thm:conf}
+If the snapshot run of $R$ from $S^{(0)}$ is non-interfering for $T$ steps,
+then for every schedule $\Pi=(\pi_0,\dots,\pi_{T-1})$ the scheduled run
+coincides with the snapshot run state-for-state: \[
+S^{(t)}_{\Pi}=S^{(t)}_{\mathrm{Snap}}\qquad\text{for all } 0\le t\le T .
+\] In particular all schedules agree with each other; for stochastic rules the
+trajectory is a function of $(S^{(0)},R,\omega)$.
+
+\end{theorem}
+
+\begin{proof} Induct on $t$. Equal states and the same $\omega_t$ emit the same
+$W_t=R(S^{(t)},\omega_t)$. By
+Definition~\ref{def:noninterfering-run}, $W_t$ is non-interfering, so
+Theorem~\ref{thm:char} equates the snapshot update with the selected
+$\pi_t$. Hence the next states agree.\end{proof}
+ 
+\subsection{A one-barrier double-buffer construction}\label{ax:stage}
+
+The common same-column synchronous gather can be implemented by double
+buffering: read the old column, write a fresh workspace column, then commit or
+swap that workspace.
+
+Model a rule as a set of events whose reads and writes range over columns $\mathrm{Cols}=\{c_1,\dots,c_m\}$. A \textbf{staging} with $b$ barriers partitions the step into $b{+}1$ ordered phases $P_0,\dots,P_b$; each phase is executed snapshot-style on the state left by the previous phase, and a \textbf{barrier} is a point at which all writes so far are committed and become visible to later reads. A staging is \textbf{valid} if within every phase the events are non-interfering (so each phase is itself vectorizable by Theorem~\ref{thm:char}) and the composed result equals the intended \textbf{synchronous snapshot} semantics of the rule (every agent reads the step-entry neighbourhood and writes its post-step value).
+
+Consider the canonical rule
+\[
+c[i]\ \leftarrow\ f\big(\,c[j] : j\in \mathcal N(i)\,\big)
+\qquad\text{(read and write the same column $c$).}
+\]
+
+\begin{theorem}[one-barrier sufficient construction]\label{thm:stage}
+Let $c'$ be temporary workspace outside the observable model state. The
+two-phase staging $P_0=\{$read $c$, write $c'\}$, barrier,
+$P_1=\{$copy $c'\to c\}$ reproduces the declared synchronous snapshot update
+on the original columns and uses one inter-phase barrier.
+
+\end{theorem}
+
+\begin{proof} Phase 0 reads $c$ and writes only $c'$, so (I) holds; each
+$(i,c')$ has one writer, so (II) holds in the state extended by the workspace.
+Theorem~\ref{thm:char} yields
+$c'[i]=f(c[j]:j\in\mathcal N(i))$ evaluated at step entry. Phase 1 is a
+pointwise copy from $c'$ to $c$ and is likewise non-interfering. Their
+composition, projected onto the original columns after discarding $c'$, is
+exactly the declared snapshot update.\end{proof}
+
+The theorem does not claim one barrier is necessary. A zero-barrier
+implementation can be correct if it reads an immutable entry buffer and writes
+a separate output buffer inside one kernel launch. Likewise, longest-path
+layering of a dependency DAG implements topological staged semantics, not a
+global step-entry snapshot; the topological-staging harness is therefore
+retained only as an experiment about that different semantics.
+A pointer swap between the entry and output buffers is observationally
+equivalent to the explicit copy when buffer identity is not part of model state.
+
+\subsection{A cost model for the monitor}\label{ax:cost}
+
+The monitor combines population/schema checks with bookkeeping proportional to
+the operations it observes.
+
+Let $N$ be population size, $c$ the number of schema columns checked at the
+step boundary, and $q$ the number of observed buffered cell writes. Building
+and comparing endpoint id sets and schema/dtype maps costs $O(N+c)$; tracking
+borrowed and committed columns costs at most $O(c)$; and the per-cell write map
+costs $O(q)$ expected time under standard hash-table assumptions.
+
+\begin{proposition}[monitor cost]\label{prop:cost}
+The per-step bookkeeping work and auxiliary space of
+\textnormal{\texttt{check}} mode are, respectively,
+\[
+O(N+q+c)\quad\text{and}\quad O(N+q+c).
+\]
+It does not evaluate the rule's arithmetic, but it depends on the number and
+kind of observed writes. For whole-column vectorized code $q$ can be zero; for
+an OOP step $q$ may be $\Theta(Nc)$.
+
+\end{proposition}
+
+\begin{proof} Endpoint comparisons store and examine at most $N$ ids and $c$
+schema entries. Borrow/commit bookkeeping stores at most $c$ column names, with
+expected constant-time hash operations. Each buffered write performs one
+expected constant-time hash-map update and can add one entry, giving $O(q)$
+time and space. Summing the terms proves both bounds.\end{proof}
+
+
+\section{Bounded executable checks}
+\label{app:referee}
+
+The released \texttt{theorem\_referee.py} implements \texttt{Snap} and
+\texttt{Sched} directly. It is useful as a bounded regression suite, but it is
+not a proof assistant and does not model the implementation monitor.
+
+\subsection{Method}\label{ax:ref:method}
+
+The harness uses finite value domains and small populations. For each generated
+event multiset it compares snapshot execution with scheduled permutations over
+sampled states; selected small cases enumerate the finite state/order grid.
+
+Three search modes are used:
+
+\begin{itemize}
+\item \textbf{Randomized states and schedules} for generated event multisets;
+\item \textbf{finite exhaustive grids} where the state/order product is small;
+\item \textbf{multi-step checks} for rules generated to satisfy
+Definition~\ref{def:noninterference} at each reached state.
+\end{itemize}
+
+\subsection{Findings}\label{ax:ref:findings}
+
+Table~\ref{tab:referee} reports the historical run with corrected
+interpretation. None of 1327 generated non-interfering multisets violated the
+sufficient direction on the tested states and orders. Among 6673 interfering
+multisets, 34 dedicated value-preserving controls had no divergence on their
+exhaustively enumerated finite state/order grids. Those controls demonstrate
+that interference is not sufficient for divergence in the constructed cases;
+they do not establish a general necessity characterization.
+
+\begin{table}[!ht]
+\centering\small
+\caption{Bounded semantic checks. Counts concern the mathematical event model,
+not certificates emitted by the implementation monitor.}
+\label{tab:referee}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{@{}l l >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
+\toprule
+Check & Cases & Finding & Interpretation \\
+\midrule
+Thm.~\ref{thm:char} & 1327 non-interfering & no bounded counterexample & regression-consistent with sufficient direction \\
+Converse controls & 6673 interfering & 34 exhaustive finite-grid no-witness cases & constructed interference can remain order-invariant \\
+Thm.~\ref{thm:conf} & 6000 premise-satisfying runs & no bounded counterexample & generated deterministic trajectories \\
+Thm.~\ref{thm:stage} & ring, $N{=}6$, all $6!$ orders & double buffer agrees; zero-buffer differs & validates the construction on this grid \\
+Prop.~\ref{prop:commuting} & subtraction family & no order difference & non-AC notation, commuting induced maps \\
+\bottomrule
+\end{tabularx}
+
+\end{table}
+
+\subsection{Interpretation}\label{app:ref:interp}
+
+The development harness exposed three useful lessons:
+
+\begin{enumerate}
+\item \textbf{Understated read sets} can invalidate a theorem application even
+when the runtime trace looks benign.
+\item \textbf{Snapshot conflict handling} must distinguish one reduction from
+mixed or repeated incompatible writes.
+\item \textbf{Interference need not imply divergence.} Value-preserving writes,
+local insensitivity, equal set values, and commuting non-AC maps all defeat a
+general converse. The paper now states only the valid sufficient direction.
+\end{enumerate}
+
+\subsection{Scope of the evidence}\label{ax:ref:scope}
+
+This evidence is bounded: finite values, small populations, and randomized cases
+above the exhaustive grid. It is a regression check, not a proof of the general
+theorem or a validation of every runtime-monitor path.
+
+\subsection{Contrasting topological-staging experiment}\label{app:ref:barrier}
+
+The companion \texttt{topological\_staging\_experiment.py} generates 90
+dependency DAGs and compares layered execution with a \emph{sequential
+topological} reference for
+$x_c\leftarrow1+\sum_{p\to c}x_p$.
+
+Longest-path layering matches that topological reference on all generated
+graphs, while one fewer layer differs. Later phases intentionally read earlier
+writes, so this validates topological staged semantics, not the global
+step-entry snapshot semantics of Theorem~\ref{thm:stage}.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=\textwidth]{figs/plot11.pdf}
+\caption{Topological-staging experiment over 90 DAGs. The result concerns a
+sequential topological reference and is not a lower bound for global snapshot
+semantics.}
+\Description{Bars summarize 90 dependency DAG checks. Longest-path layering matches the sequential topological reference, whereas one fewer layer can differ.}
+\label{fig:barrier}
+\end{figure}
+
+\section{Supplementary experimental evidence}
+\label{app:suppexp}
+
+This appendix provides the supporting plots and tables cited by the main
+experiments. Each item inherits the scope and caveats of its corresponding
+section. Appendix~\ref{app:usage} then gives side-by-side wealth-transfer API
+examples for the Section~5.4 implementations.
+
+\subsection{Supporting figures for \S5.1 (threshold experiment)}\label{app:supp:sec51}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figs/plot17.pdf}
+\caption{mesa-frames sensitivity study. \textbf{(a)} Attack-rate curves change
+as the number of local update blocks per step increases. \textbf{(b)} Recovered
+$\tau_c$ drifts from the one-local-block result. Every variant performs one
+final whole-column \texttt{set}; only the local NumPy computation differs.}
+\Description{Left panel plots attack-rate curves for one through 640 local update blocks. Right panel plots the recovered epidemic crossing estimate against local update-block count; all variants make one final framework commit per step.}
+\label{fig:anchor}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figs/plot18.pdf}
+\caption{Crossing-level sensitivity. At attack-rate crossings 0.3/0.5/0.7,
+the batched GPU snapshot implementation tracks the row-wise snapshot reference;
+the in-place ordered variant is lower. At the 0.7 crossing, 1789/2000 row-wise
+and 1890/2000 GPU bootstrap resamples cross within the swept range, so those
+intervals are conditional on valid crossings.}
+\Description{Threshold estimates with uncertainty intervals at attack-rate crossing levels 0.3, 0.5, and 0.7 for row-wise snapshot, batched GPU snapshot, and in-place ordered execution.}
+\label{fig:sens}
+\end{figure}
+
+\appendixbreak
+\subsection{Supporting figures for \S5.3--5.4}\label{app:supp:sec54}
+
+The remaining figures separate four questions: CPU distributional agreement,
+historical public-example size, calibration quality and cost, and runtime
+monitor overhead. They are complementary diagnostics rather than a composite
+framework ranking.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figs/plot13.pdf}
+\caption{Small-model CPU distribution checks. Three ECDF panels compare AMBER
+vectorized and loop paths with AgentPy, Mesa, and mesa-frames. Across the 12
+pairwise KS checks, 12/12 have $p>0.05$; failure to reject is not equivalence,
+and this check does not cover the headline GPU kernels or Schelling.}
+\Description{Three empirical cumulative-distribution panels compare five CPU implementations for wealth transfer, random walk, and well-mixed SIR; each panel reports the minimum pairwise KS p-value.}
+\label{fig:parity}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figs/plot14.pdf}
+\caption{Historical logical SLOC for released public benchmark examples by
+framework and model. A dash denotes no implementation in the recorded
+artifact. Private optimized backend code is excluded, so this is not a full
+implementation-size or conciseness comparison.}
+\Description{A matrix reports historical logical source-line counts for public wealth, random-walk, SIR, and Schelling examples across AMBER and seven comparison frameworks.}
+\label{fig:usability}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figs/plot15.pdf}
+\caption{Calibration at matched forward-model evaluation counts (four trials
+per point). Panel (a) reports recovered-parameter $L_2$ error and trial SD;
+panel (b) reports wall-clock cost. Batched SMAC records lower error at three of
+four budgets but costs roughly $231$--$693\times$ more wall time than random
+search.}
+\Description{Two panels compare batched SMAC and random search over four matched evaluation budgets: mean parameter error with standard deviations and mean logarithmic wall time.}
+\label{fig:calib}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\textwidth]{figs/plot12.pdf}
+\caption{Fresh current-code monitor microbenchmark in the $q{=}0$ whole-column
+regime. Panel (a) shows the median paired added cost and IQR over five retained
+runs; panel (b) shows the arithmetic-mean wall-time ratio. The general
+implementation bound remains $O(N+q+c)$ (Proposition~\ref{prop:cost}).}
+\Description{Two panels show monitor overhead for one and eight columns across ten thousand, one hundred thousand, and one million agents: added milliseconds per step and check-to-off wall-time ratio.}
+\label{fig:cost}
+\end{figure}
+
+\begin{table}[H]
+\centering\small
+\caption{Current monitor microbenchmark (20 steps, five retained runs).
+Entries are arithmetic-mean \texttt{check}/\texttt{off} ratios with mean added
+milliseconds per step in parentheses. Timed scope includes model construction,
+setup, the step loop, and result assembly. These values do not compare against
+the private headline GPU loop, which \texttt{check} disables.}
+\label{tab:scaling5}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Whole-column commits & $10^4$ & $10^5$ & $10^6$ \\
+\midrule
+1 column & 10.18$\times$ (0.515) & 18.49$\times$ (6.695) & 15.38$\times$ (68.13) \\
+8 columns & 2.95$\times$ (0.849) & 3.61$\times$ (7.332) & 3.68$\times$ (71.99) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\appendixbreak
+\subsection{Synthesis table}\label{app:supp:multiaxis}
+
+\begin{table}[H]
+\centering\footnotesize
+\caption{Scope of the released artifacts. Dashes mean the corresponding
+experiment did not test that path; they are not negative framework judgments.}
+\label{tab:multiaxis}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X}
+\toprule
+Path & Wealth speed & Runtime evidence & Distribution study & Calibration & Monitor study & SLOC scope \\
+\midrule
+\textbf{AMBER private GPU} & 94.3\,ms & smoke/invariant tests + approval label & not tested & separate artifact & not monitored & private code excluded \\
+AMBER general vectorized & 15.2\,s & API diagnostics & CPU only; no equivalence margin & separate artifact & targeted tests + current cost run & public example \\
+FLAME GPU~2 & 193.5\,ms & transition tests only & not tested & --- & --- & RTC host/device split \\
+mesa-frames & 23.6\,s (1M) & semantic prototype & reference only & --- & --- & public example \\
+AgentPy & 122\,s (1M) & reference run & reference only & --- & --- & public example \\
+Mesa & 24.9\,s ($10^4$) & reference run & reference only & --- & --- & public example \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\appendixbreak
+\section{Framework usage examples}
+\label{app:usage}
+
+This appendix shows the APIs used by the wealth-transfer implementations. The
+benchmark's AMBER OOP, vectorized CPU, and GPU paths freeze donor eligibility
+at step entry; the snapshot-safe fused CUDA kernel receives that donor list
+explicitly.
+Listings for external frameworks illustrate their native APIs, but transition
+details (self-transfer handling, RNG, layering) are not byte-identical. Full
+runnable sources, rather than these abbreviated listings, define the benchmark.
+
+\subsection{Execution paradigms and dispatch}
+\label{app:usage:overview}
+
+AMBER exposes three native execution paths behind one public run API:
+\texttt{cpu(mode="oop")}, \texttt{cpu(mode="vectorized")}, and
+\texttt{gpu()}. A model may implement \texttt{step\_oop} and
+\texttt{step\_vectorized} separately. For the headline GPU benchmark, the same
+public \texttt{gpu().run()} call selects a private model-specific loop when the
+contract and reporters are off \emph{and} the instance carries a non-empty
+\texttt{approve\_\allowbreak fast\_\allowbreak path(\allowbreak evidence)}
+label. The benchmark uses the released
+GPU smoke/invariant suite as that label's provenance. Thus API continuity and
+approval should not be mistaken for an identical step body or a runtime
+certificate.
+
+\begin{table}[H]
+\centering\small
+\caption{Execution paradigms represented in the wealth benchmark. AMBER shares
+the public model/run API across native paths but uses path-specific hooks.}
+\label{tab:usage_paradigm}
+\begin{tabularx}{\textwidth}{@{} l X X @{}}
+\toprule
+Framework & Population representation & Step dispatch \\
+\midrule
+AgentPy, Mesa, Agents.jl & one object (or struct) per agent & per-agent \texttt{step} in a scheduler loop \\
+mesa-frames \citep{mesaframes} & Polars \texttt{DataFrame} via \texttt{AgentSetPolars} & vectorized column \texttt{set} after NumPy work \\
+AMBER (OOP) & tracked Python agent objects & \texttt{cpu(mode="oop").run()} $\rightarrow$ \texttt{step\_oop} \\
+AMBER (vectorized) & Polars \texttt{DataFrame} + view API & \texttt{cpu(mode="vectorized").run()} $\rightarrow$ \texttt{step\_vectorized} \\
+AMBER (GPU) & CuPy-resident numeric columns & approval + \texttt{gpu().run()} $\rightarrow$ optional model-specific loop \\
+FLAME GPU~2 \citep{richmond2023} & \texttt{AgentVector} on device & layered RTC agent functions + messaging \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\appendixbreak
+\subsection{AMBER: OOP, vectorized CPU, and GPU}
+\label{app:usage:amber}
+
+\paragraph{OOP CPU path (\S5.4 ``loop'').}
+Listing~\ref{lst:amber-loop} sketches the corrected OOP lane. Donor eligibility
+and recipient draws are fixed before writes; deltas are aggregated so each
+agent receives one final buffered assignment.
+
+\begin{lstlisting}[style=applisting,language=Python,caption={AMBER wealth transfer --- OOP loop baseline (\S5.4 ``loop'').},label={lst:amber-loop}]
+import ambr as am
+
+class WealthAgent(am.Agent):
+    def setup(self):
+        self.wealth = 1
+
+class WealthTransfer(am.Model):
+    def setup(self):
+        n = int(self.p["n"])
+        self.add_agents(n, agent_class=WealthAgent)
+
+    def step_oop(self):
+        agents = list(self.agents)
+        entry = {a.id: a.wealth for a in agents}
+        delta = {a.id: 0 for a in agents}
+        donors = [a for a in agents if entry[a.id] > 0]
+        for donor in donors:
+            recipient = self.random.choice(agents)
+            delta[donor.id] -= 1
+            delta[recipient.id] += 1
+        for agent in agents:
+            agent.wealth = entry[agent.id] + delta[agent.id]
+
+WealthTransfer({"n": 10_000, "steps": 50}).cpu(mode="oop").run()
+\end{lstlisting}
+
+\paragraph{Vectorized CPU (\S5.4 ``vectorized'').}
+The vectorized CPU lane computes donors and recipients from the entry column,
+then applies one combined debit-and-credit \texttt{scatter\_add}. Contract
+checking reports the operations it observes; it is not a
+schedule-faithfulness proof.
+
+\begin{lstlisting}[style=applisting,language=Python,caption={AMBER wealth transfer --- vectorized CPU idiom.},label={lst:amber-cpu}]
+import ambr as am
+import numpy as np
+
+class WealthTransfer(am.Model):
+    def setup(self):
+        n = int(self.p["n"])
+        self.add_agents(n, wealth=np.ones(n, dtype=np.int64))
+
+    def step_vectorized(self):
+        wealth = self.agents.wealth.to_numpy()
+        donor_pos = np.flatnonzero(wealth > 0)
+        if donor_pos.size == 0:
+            return
+        ids = self.agents.ids.to_numpy()
+        recipients = self.rng.choice(ids, size=donor_pos.size)
+        targets = np.concatenate((ids[donor_pos], recipients))
+        deltas = np.concatenate((
+            -np.ones(donor_pos.size, dtype=np.int64),
+             np.ones(donor_pos.size, dtype=np.int64)))
+        self.agents.at[targets].scatter_add(wealth=deltas)
+
+WealthTransfer({"n": 10_000, "steps": 50}).cpu(
+    mode="vectorized").run(contract="check")
+\end{lstlisting}
+
+\paragraph{GPU backend (\S5.4 ``GPU'').}
+The benchmark calls
+\texttt{model.approve\_fast\_path("workload smoke/invariant suite").gpu().run()}
+to select a private no-contract loop. The approval string records a caller
+decision; AMBER does not verify it. The fused kernel first computes
+\texttt{donor\_positions = nonzero(wealth > 0)} and then atomically debits those
+frozen donors and credits sampled recipients. The final ten-run mean is
+94.3\,ms versus 193.5\,ms for FLAME GPU~2 (Table~\ref{tab:flame}). Because the
+private loop bypasses the general instrumented runner, this timing is not
+described as certified.
+
+\appendixbreak
+\subsection{Columnar Python: mesa-frames}
+\label{app:usage:columnar}
+
+mesa-frames \citep{mesaframes} stores agents in a Polars-backed
+\texttt{AgentSetPolars}. Listing~\ref{lst:mesaframes} reads wealth to NumPy,
+computes one snapshot result, and commits it with \texttt{set}. Section~5.1
+shows that changing the local computation from one whole-array pass to
+blockwise in-place mutation before the same final \texttt{set} changes the
+operational schedule; this is an API-semantics observation, not a framework bug.
+\begin{lstlisting}[style=applisting,language=Python,caption={mesa-frames wealth transfer (Polars \texttt{AgentSetPolars}).},label={lst:mesaframes}]
+from mesa_frames import AgentSetPolars, ModelDF
+import polars as pl
+import numpy as np
+
+class WealthSet(AgentSetPolars):
+    def __init__(self, model, n):
+        super().__init__(model)
+        self.add(pl.DataFrame({
+            "unique_id": np.arange(n, dtype=np.int64),
+            "wealth": np.ones(n, dtype=np.int64),
+        }))
+
+    def step(self):
+        ids = self.agents["unique_id"].to_numpy()
+        wealth = self.agents["wealth"].to_numpy()
+        donors = wealth > 0
+        k = int(donors.sum())
+        if k == 0:
+            return
+        recipients = self.model.rng.choice(ids, size=k)
+        new = wealth.copy()
+        pos = {int(u): i for i, u in enumerate(ids)}
+        np.add.at(new, np.flatnonzero(donors), -1)
+        np.add.at(new, [pos[int(r)] for r in recipients], 1)
+        self.set("wealth", new)
+
+class WealthModel(ModelDF):
+    def __init__(self, n=10_000, steps=50):
+        super().__init__(seed=0)
+        self.rng = np.random.default_rng(0)
+        self.steps = steps
+        self.agents += WealthSet(self, n)
+
+    def run(self):
+        for _ in range(self.steps):
+            self.agents.do("step")
+
+WealthModel().run()
+\end{lstlisting}
+
+\appendixbreak
+\subsection{Object-loop CPU frameworks}
+\label{app:usage:loops}
+
+These examples advance agents through scheduler-style APIs. The Python programs
+incur per-agent interpreter work, while Agents.jl executes compiled Julia code.
+In our released wealth implementations, the largest completed populations under
+the fixed budget lie between $10^4$ and $10^6$ in the archived historical
+scaling sweep; this is not asserted as an intrinsic framework limit.
+
+\begin{lstlisting}[style=applisting,language=Python,caption={AgentPy wealth transfer.},label={lst:agentpy}]
+import agentpy as ap
+
+class WealthAgent(ap.Agent):
+    def setup(self):
+        self.wealth = 1
+
+    def step(self):
+        if self.wealth > 0:
+            other = self.model.agents.random()
+            if other is not self:
+                self.wealth -= 1
+                other.wealth += 1
+
+class WealthModel(ap.Model):
+    def setup(self):
+        self.agents = ap.AgentList(self, self.p.n, WealthAgent)
+
+    def step(self):
+        self.agents.step()
+
+WealthModel({"n": 10_000, "steps": 50}).run(steps=50, display=False)
+\end{lstlisting}
+
+\noindent\begin{minipage}{\textwidth}
+\begin{lstlisting}[style=applisting,language=Python,caption={Mesa 3.x wealth transfer.},label={lst:mesa}]
+import mesa
+
+class WealthAgent(mesa.Agent):
+    def __init__(self, model):
+        super().__init__(model)
+        self.wealth = 1
+
+    def step(self):
+        if self.wealth > 0:
+            other = self.model.random.choice(list(self.model.agents))
+            if other is not self:
+                self.wealth -= 1
+                other.wealth += 1
+
+class WealthModel(mesa.Model):
+    def __init__(self, n=10_000, seed=None):
+        super().__init__(seed=seed)
+        for _ in range(n):
+            WealthAgent(self)
+
+    def step(self):
+        self.agents.shuffle_do("step")
+
+m = WealthModel()
+for _ in range(50):
+    m.step()
+\end{lstlisting}
+\end{minipage}
+
+\begin{lstlisting}[style=applisting,language=Julia,caption={Agents.jl wealth transfer.},label={lst:agentsjl}]
+using Agents
+
+@agent struct WealthAgent(NoSpaceAgent)
+    wealth::Float64
+end
+
+function wealth_step!(agent, model)
+    agent.wealth > 0 || return
+    partner = random_agent(model)
+    if partner !== nothing && partner.id != agent.id
+        agent.wealth -= 1
+        partner.wealth += 1
+    end
+end
+
+model = StandardABM(WealthAgent; agent_step! = wealth_step!)
+for _ in 1:10_000
+    add_agent!(model, 1.0)
+end
+step!(model, 50)
+\end{lstlisting}
+
+\appendixbreak
+\subsection{FLAME GPU~2}
+\label{app:usage:flame}
+
+FLAME GPU~2 \citep{richmond2023} is the GPU baseline in \S5.4. It separates
+\emph{host} model construction (Python) from \emph{device} agent logic
+(runtime-compiled CUDA-C). Wealth transfer uses two RTC layers:
+\texttt{wt\_give} debits donors and posts a bucket message keyed by recipient
+ID; \texttt{wt\_receive} credits the recipient. Listing~\ref{lst:flame} shows
+the give function; the host wires the layers, allocates an
+\texttt{AgentVector}, and calls the simulation (full host code is in the
+archive). The corrected ten-run campaign finds AMBER faster in all four rows of
+Table~\ref{tab:flame}, but Schelling includes Python per-agent FLAME
+initialization in the timed region and is exploratory. The transition details
+and random-number machinery are not identical, so these results compare our
+implementations rather than establishing universal framework rankings. The historical SLOC artifact also
+excludes AMBER's private backend and is not used as a conciseness claim.
+\begin{lstlisting}[style=applisting,language=Python,caption={FLAME GPU~2 --- RTC give layer (wealth transfer).},label={lst:flame}]
+import pyflamegpu as fg
+
+WT_GIVE = r"""
+FLAMEGPU_AGENT_FUNCTION(wt_give, flamegpu::MessageNone,
+                        flamegpu::MessageBucket) {
+    const int w = FLAMEGPU->getVariable<int>("wealth");
+    if (w > 0) {
+        const unsigned int n =
+            FLAMEGPU->environment.getProperty<unsigned int>("n");
+        const unsigned int r =
+            FLAMEGPU->random.uniform<unsigned int>(1u, n);
+        FLAMEGPU->message_out.setKey(r);
+        FLAMEGPU->message_out.setVariable<int>("amount", 1);
+        FLAMEGPU->setVariable<int>("wealth", w - 1);
+    }
+    return flamegpu::ALIVE;
+}"""
+\end{lstlisting}
+
+\end{document}
