@@ -146,15 +146,15 @@ class GPUSIRBinnedModel:
 # snapshot-structured: it reads step-entry columns and writes `new_inf`
 # separately (race-free), but this private path is not runtime-monitored.
 # Per-pair infection draws use the shared SplitMix64 counter tape
-# (global_seed, step, EVT_INFECTION=4, min(i,j), max(i,j), draw_index=0),
-# matching experiments/rng/counter_rng.py for cross-backend attestation.
+# (global_seed, step, EVT_INFECTION=4, min(i,j), max(i,j), draw_index=0).
+# Pure-Python reference and lock tests: tests/test_sir_counter_tape.py.
 # --------------------------------------------------------------------------- #
 
 _MODULE_VERSION = 2  # bump when _MODULE_SRC changes (forces RawModule reload)
 
 _MODULE_SRC = r'''
 extern "C" {
-// SplitMix64 — must match experiments/rng/counter_rng.py bit-for-bit.
+// SplitMix64 — must match tests/test_sir_counter_tape.py counter_u01 bit-for-bit.
 __device__ __forceinline__ unsigned long long mix64(unsigned long long z){
     z += 0x9E3779B97F4A7C15ULL;
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
@@ -233,7 +233,7 @@ __global__ void bucketize_reorder(
 // agent id. Infection Bernoulli draws are keyed by the unordered pair
 // (min(i,j), max(i,j)) so visit order cannot change the assigned RV.
 // Reads old `ss`, writes new_inf_sorted (race-free snapshot).
-// EVT_INFECTION = 4 (must match experiments/rng/counter_rng.py).
+// EVT_INFECTION = 4 (must match tests/test_sir_counter_tape.py).
 __global__ void sir_join_sorted(
     const float* __restrict__ xs, const float* __restrict__ ys,
     const signed char* __restrict__ ss, const long long* __restrict__ order,
