@@ -1,24 +1,50 @@
-# AMBER vs AgentPy vs Mesa Performance Benchmark
+# AMBER benchmarks
 
-This directory contains performance benchmarks comparing AMBER against **AgentPy** and **Mesa**.
+Performance and correctness harnesses for AMBER and optional peer frameworks.
+**Core install** (`pip install ambr`) does **not** pull multi-framework or GPU
+stacks — those are optional for this directory.
 
-AMBER ships **two** benchmark implementations so you can see what the
-columnar backend actually buys you:
+## Lanes (what you are timing)
 
-* **`AMBER`** — per-agent Python loops over a hand-rolled `agent_objects_list`.
-  This is the apples-to-apples comparison with AgentPy / Mesa: all three
-  frameworks run the same OOP-style code, and the numbers show how their
-  *naive* code paths compare.
-* **`AMBER (vectorized)`** — the same models written with AMBER's view API
-  (`add_agents(n, **cols)`, `agents.where(...)`, `agents.at[ids].scatter_add(...)`).
-  This is the idiom the library now ships and the docs teach. It pays
-  the Polars overhead per step but eliminates per-agent Python object
-  work, so the step cost is nearly independent of population size.
+* **`AMBER` / loop** — per-agent Python OOP path (fair vs AgentPy / Mesa).
+* **`AMBER (vectorized)`** — columnar view API (`add_agents`, `where`, `scatter_add`).
+* **`AMBER (GPU)`** — same vectorized models via `model.gpu().run()` (needs CuPy + NVIDIA).
+  Private kernel models in `models/amber_gpu_scale_models.py` are **benchmark
+  internals**, not the public `ambr` API. Production SIR infection draws use a
+  pair-keyed SplitMix64 counter tape (`global_seed`, step, pair ids); see
+  `tests/test_sir_counter_tape.py`.
+
+## Optional dependencies
+
+| Goal | Install |
+|------|---------|
+| AMBER CPU only | `pip install ambr` (+ `requirements.txt` for older `runner.py` peers) |
+| AMBER GPU | `pip install 'ambr[gpu]'` or `cupy` matching your CUDA |
+| Multi-framework Python peers | Mesa, mesa-frames, AgentPy, Melodie, SimPy as needed |
+| FLAME GPU 2 | `pip install --extra-index-url https://whl.flamegpu.com/whl/cuda130/ pyflamegpu` (or cuda120 wheel); CUDA NVRTC libs on `LD_LIBRARY_PATH` / preload |
+| Agents.jl | Julia + `Agents.jl`; runner spawns a subprocess |
+
+Missing optional software → that framework is **skipped**, not timed as zero.
+
+## Missing cells (not zeros)
+
+Large-N multi-framework runs may **OOM** (e.g. mesa-frames SIR ≥100k) or hit
+per-run **budgets**. Do not impute missing cells as 0 s. Prefer JSON rows that
+record a status, or document skips in the campaign notes.
+
+## Headline README numbers
+
+The package README cites
+`results/benchmark_results_snapshot_correct_10run_10m.json`
+(AMBER GPU vs FLAME at 10M, 10 runs, all samples retained). Schelling ratios
+are setup-inclusive for the FLAME harness — exploratory, not pure kernel
+speedup. Other charts under `results/` may use different protocols (trimmed
+means, older stacks); check each file’s provenance.
 
 ## Quick Start
 
 ```bash
-# Install benchmark dependencies
+# Install benchmark dependencies (peers optional)
 pip install -r requirements.txt
 
 # Quick run (small scale)
@@ -30,6 +56,10 @@ python runner.py --full
 # Compare just AMBER variants vs AgentPy
 python runner.py --frameworks AMBER "AMBER (vectorized)" AgentPy \
     --agents 500 1000 5000 --steps 50 --runs 10
+
+# Large-N multi-framework (optional peers; GPU host)
+python run_all_frameworks.py --agents 10000000 --steps 50 --runs 10 \
+    --frameworks "AMBER (GPU)" "FLAME GPU 2" --budget 1200
 ```
 
 ## Metrics Measured

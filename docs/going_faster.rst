@@ -94,6 +94,12 @@ your CUDA, then either:
    # results = MyVectorizedModel(...).cpu(mode="vectorized").run()
    # Optional private GPU loop (only if the model defines one; not monitored):
    # model.approve_fast_path("my-label").gpu().run(contract="off")
+   #
+   # ``approve_fast_path(evidence)`` is **caller-attested**: AMBER records the
+   # label and requires it (plus ``contract="off"``) before private loops run.
+   # It does **not** verify that the evidence proves equivalence to a reference
+   # trajectory. Prefer the instrumented vectorized path unless you own that
+   # attestation outside the library.
 
 **B. Array-kernel model —** :class:`~ambr.lanes.ArrayKernelModel`::
 

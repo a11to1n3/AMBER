@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Added
+
+- **Tests:** `tests/test_sir_counter_tape.py` locks the SplitMix64 counter-tape
+  reference used by production GPU SIR infection draws (pair-keyed
+  `(global_seed, step, EVT_INFECTION, min(i,j), max(i,j))`), documents
+  `sir_kernel_step(..., global_seed=...)`, and exercises FLAME NVRTC preload
+  configuration without requiring pyflamegpu.
+- **`CITATION.cff`** for repository citation metadata.
+
+### Changed
+
+- **GPU SIR scale kernels** (`benchmarks/models/amber_gpu_scale_models.py`):
+  infection Bernoulli draws use pair-keyed SplitMix64 with explicit
+  `global_seed` (order-invariant RVs for cross-backend attestation).
+- **`benchmarks/run_all_frameworks.py`:** FLAME GPU 2 CUDA 13 NVRTC/nvJitLink
+  preload via `ctypes` (glibc does not re-read `LD_LIBRARY_PATH` after start);
+  Agents.jl subprocess timeout raised for long scale runs.
+- **README performance section:** single committed source of truth
+  (`benchmark_results_snapshot_correct_10run_10m.json`); Schelling ratio
+  labeled setup-inclusive/exploratory; multi-framework cells not imputed.
+- **Benchmarks docs:** optional dependency matrix; AMBER-only vs multi-framework
+  paths; missing OOM/budget cells are not zeros.
+
 ## v0.4.4 - 2026-07-18
 
 Honest execution lanes, operational contract wording, and opt-in private GPU
