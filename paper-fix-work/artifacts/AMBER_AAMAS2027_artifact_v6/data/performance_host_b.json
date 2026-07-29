@@ -1,0 +1,1982 @@
+{
+  "tag": "host_b",
+  "host": "host_b",
+  "platform": "Linux-5.15.0-174-generic-x86_64-with-glibc2.39",
+  "elapsed_s": 593.596159696579,
+  "cupy": true,
+  "ambr": true,
+  "flame": true,
+  "rows": [
+    {
+      "timestamp": 1785225751.5096998,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "wealth",
+      "population": 10000,
+      "steps": 50,
+      "framework": "reference",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 2.054437451006379,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 1.6943217379739508,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 1.6972336759790778,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 1.6990757949533872,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 1.699669700989034,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 1.6981547354662325,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785225759.128635,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "wealth",
+      "population": 10000,
+      "steps": 50,
+      "framework": "vectorized_numpy",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 1.5172577729681507,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 1.5229672699933872,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 1.5246581510291435,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 1.5256973679643124,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 1.5282831059885211,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 1.525177759496728,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785225766.3168147,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "wealth",
+      "population": 10000,
+      "steps": 50,
+      "framework": "private_gpu_style",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 1.4806557620177045,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 1.4244108520215377,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 1.428734008979518,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 1.4275487099657767,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 1.426794762024656,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 1.4271717359952163,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785225848.0535183,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "wealth",
+      "population": 100000,
+      "steps": 50,
+      "framework": "reference",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 16.371749281999655,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 16.38630774000194,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 16.39829360798467,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 16.298312609957065,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 16.281984099012334,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 16.342310174979502,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785225920.242426,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "wealth",
+      "population": 100000,
+      "steps": 50,
+      "framework": "vectorized_numpy",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 14.286057141958736,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 14.46075321099488,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 14.538104170002043,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 14.46068036800716,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 14.44325277901953,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 14.46071678950102,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785225991.6963563,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "wealth",
+      "population": 100000,
+      "steps": 50,
+      "framework": "private_gpu_style",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 14.282773376035038,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 14.322911107970867,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 14.31997065700125,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 14.263281953986734,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 14.264928687014617,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 14.292449672007933,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226014.0181434,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "random_walk",
+      "population": 5000,
+      "steps": 50,
+      "framework": "reference",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 4.471524301043246,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 4.4693840550025925,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 4.468684344959911,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 4.4599241130054,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 4.452212160977069,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 4.464304228982655,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226036.312555,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "random_walk",
+      "population": 5000,
+      "steps": 50,
+      "framework": "vectorized_numpy",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 4.45955532201333,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 4.443903447012417,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 4.450016113987658,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 4.461427572998218,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 4.479480004985817,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 4.455721843492938,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226048.6221986,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "random_walk",
+      "population": 5000,
+      "steps": 50,
+      "framework": "private_gpu_style",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 2.712739454989787,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 2.3940469099907205,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 2.39680785802193,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 2.401723431015853,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 2.4042923219967633,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 2.3992656445188913,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226137.7498937,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "random_walk",
+      "population": 20000,
+      "steps": 50,
+      "framework": "reference",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 17.80308971303748,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 17.87513737200061,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 17.886721631046385,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 17.782872048963327,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 17.77982754801633,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 17.829004710481968,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226227.3267472,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "random_walk",
+      "population": 20000,
+      "steps": 50,
+      "framework": "vectorized_numpy",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 18.0725148540223,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 17.894099617027678,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 17.785439536033664,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 17.90292783197947,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 17.92182527499972,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 17.898513724503573,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226277.3282435,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "random_walk",
+      "population": 20000,
+      "steps": 50,
+      "framework": "private_gpu_style",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 9.909590019960888,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 9.99263662303565,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 10.036744237993844,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 10.03578918997664,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 10.026684194977861,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 10.03123669247725,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226279.2733433,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "sir",
+      "population": 5000,
+      "steps": 50,
+      "framework": "reference",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.39240202005021274,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.39271388901397586,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.3953772700042464,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.39381282799877226,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.3707513289991766,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.39326335850637406,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226281.1270287,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "sir",
+      "population": 5000,
+      "steps": 50,
+      "framework": "vectorized_numpy",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.3717411250108853,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.3695482879993506,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.36953090701717883,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.3704687670106068,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.37237431097310036,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.3700085275049787,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226282.982369,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "sir",
+      "population": 5000,
+      "steps": 50,
+      "framework": "private_gpu_style",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.37321457103826106,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.3696856750175357,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.3707481470191851,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.3697440949617885,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.3719267140259035,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.3702461209904868,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226286.7465966,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "sir",
+      "population": 10000,
+      "steps": 50,
+      "framework": "reference",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.7439602770027705,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.7546413929667324,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.7550483100349084,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.7541336340364069,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.7564156590378843,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.7548448515008204,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226290.5532234,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "sir",
+      "population": 10000,
+      "steps": 50,
+      "framework": "vectorized_numpy",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.7470132290036418,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.7529213610105217,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.7552531079854816,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.7514752820134163,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.7999256729963236,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.7540872344980016,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226294.66303,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "sir",
+      "population": 10000,
+      "steps": 50,
+      "framework": "private_gpu_style",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.7993250300060026,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.8183702030219138,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.8268938969704323,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.8339808160089888,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.8312116710003465,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.8290527839853894,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226296.0115213,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "schelling",
+      "population": 32,
+      "steps": 50,
+      "framework": "reference",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.2682867159601301,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.2689812839962542,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.27122141094878316,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.26962546998402104,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.2703484410303645,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.26998695550719276,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226297.367748,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "schelling",
+      "population": 32,
+      "steps": 50,
+      "framework": "vectorized_numpy",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.2709938989719376,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.2696708849980496,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.2714852509670891,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.2721906609949656,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.2718637330108322,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.27167449198896065,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226298.7097492,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "schelling",
+      "population": 32,
+      "steps": 50,
+      "framework": "private_gpu_style",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.2718679620302282,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.27201952296309173,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.26534460997208953,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.26653145300224423,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.26621681899996474,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.2663741360011045,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226300.6780286,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "schelling",
+      "population": 48,
+      "steps": 30,
+      "framework": "reference",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.3927482180297375,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.393448497983627,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.3945205470081419,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.39305529900593683,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.3944827379891649,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.39396561798639596,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226302.6541479,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "schelling",
+      "population": 48,
+      "steps": 30,
+      "framework": "vectorized_numpy",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.39571929298108444,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.39763687999220565,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.3940588629920967,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.3943078659940511,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.39437471999553964,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.39434129299479537,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226304.6238616,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "semantics_matched",
+      "workload": "schelling",
+      "population": 48,
+      "steps": 30,
+      "framework": "private_gpu_style",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.39323955395957455,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.39165243098977953,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.39211055100895464,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.39925866201519966,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.3934289669850841,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.3927697589970194,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226305.2017658,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "wealth",
+      "population": 10000,
+      "steps": 50,
+      "framework": "AMBER_vectorized_cpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.08495728601701558,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.03301740199094638,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.03204078896669671,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.03210411698091775,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.0320690119988285,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.032086564489873126,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226305.5168853,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "wealth",
+      "population": 10000,
+      "steps": 50,
+      "framework": "AMBER_gpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.1574940910213627,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.03956837399164215,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.0395356829976663,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.03926879895152524,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.0392012830125168,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.03940224097459577,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226307.0563233,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "wealth",
+      "population": 100000,
+      "steps": 50,
+      "framework": "AMBER_vectorized_cpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.31989152799360454,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.3026370289735496,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.3023352210293524,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.3114263750030659,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.30309862695867196,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.3028678279661108,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226307.2581341,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "wealth",
+      "population": 100000,
+      "steps": 50,
+      "framework": "AMBER_gpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.040690916997846216,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.04003285599173978,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.04000338102923706,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.04057568300049752,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.0404551190440543,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.04024398751789704,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226328.7831278,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "wealth",
+      "population": 1000000,
+      "steps": 50,
+      "framework": "AMBER_vectorized_cpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 4.24707350198878,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 4.231583268032409,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 4.454369596031029,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 4.289530028006993,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 4.3023898570099846,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 4.295959942508489,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226329.0213652,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "wealth",
+      "population": 1000000,
+      "steps": 50,
+      "framework": "AMBER_gpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.05393814604030922,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.047090231033507735,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.045588876004330814,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.04599689302267507,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.04556039301678538,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.04579288451350294,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226329.1157691,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "random_walk",
+      "population": 10000,
+      "steps": 50,
+      "framework": "AMBER_vectorized_cpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.019427431980147958,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.018688761978410184,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.018849259009584785,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.0187011249945499,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.018688750977162272,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.018694943486480042,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226329.2425442,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "random_walk",
+      "population": 10000,
+      "steps": 50,
+      "framework": "AMBER_gpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.029911130957771093,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.02426174096763134,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.02415990101872012,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.024237966048531234,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.02418091002618894,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.024209438037360087,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226329.6917973,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "random_walk",
+      "population": 100000,
+      "steps": 50,
+      "framework": "AMBER_vectorized_cpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.08967527601635084,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.08940567501122132,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.09015383297810331,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.08954838901991025,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.09043234901037067,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.08985111099900678,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226329.8149383,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "random_walk",
+      "population": 100000,
+      "steps": 50,
+      "framework": "AMBER_gpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.02499393798643723,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.02449975098716095,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.024482228967826813,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.024622939992696047,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.024493801000062376,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.024496775993611664,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226335.2811065,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "random_walk",
+      "population": 1000000,
+      "steps": 50,
+      "framework": "AMBER_vectorized_cpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 1.0973963249707595,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 1.0892657940275967,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 1.0984775879769586,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 1.1044230519910343,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 1.076555735024158,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 1.0938716910022777,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226335.444679,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "random_walk",
+      "population": 1000000,
+      "steps": 50,
+      "framework": "AMBER_gpu",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.028489023039583117,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.03238971997052431,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.033738882979378104,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.034367969958111644,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.0345229179947637,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.034053426468744874,
+      "status": "success"
+    },
+    {
+      "timestamp": 1785226335.6425488,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "wealth",
+      "population": 10000,
+      "steps": 50,
+      "framework": "FLAME_GPU_2",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.09011076495517045,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.013271039992105216,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.012483188998885453,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.01236657303525135,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.012353588012047112,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.012424881017068401,
+      "status": "success",
+      "error": ""
+    },
+    {
+      "timestamp": 1785226335.7197893,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "wealth",
+      "population": 100000,
+      "steps": 50,
+      "framework": "FLAME_GPU_2",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.016875316970981658,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.015312128001824021,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.014679763989988714,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.014439479040447623,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.015839424973819405,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.014995945995906368,
+      "status": "success",
+      "error": ""
+    },
+    {
+      "timestamp": 1785226335.885632,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "wealth",
+      "population": 1000000,
+      "steps": 50,
+      "framework": "FLAME_GPU_2",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.036084304039832205,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.032315681979525834,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.03211306699085981,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.03275621001375839,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.03247733204625547,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.03239650701289065,
+      "status": "success",
+      "error": ""
+    },
+    {
+      "timestamp": 1785226335.9118464,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "random_walk",
+      "population": 10000,
+      "steps": 50,
+      "framework": "FLAME_GPU_2",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.007297158008441329,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.004743509984109551,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.004818929999601096,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.004620913008693606,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.004658803052734584,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.004701156518422067,
+      "status": "success",
+      "error": ""
+    },
+    {
+      "timestamp": 1785226335.9455879,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "random_walk",
+      "population": 100000,
+      "steps": 50,
+      "framework": "FLAME_GPU_2",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.006658944010268897,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.006721190002281219,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.006570490018930286,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.006483797973487526,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.007238438993226737,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.0066458400106057525,
+      "status": "success",
+      "error": ""
+    },
+    {
+      "timestamp": 1785226336.0751662,
+      "host": "host_b",
+      "git_note": "AMBER_aamas_exp campaign",
+      "track": "native_idiom",
+      "workload": "random_walk",
+      "population": 1000000,
+      "steps": 50,
+      "framework": "FLAME_GPU_2",
+      "samples": [
+        {
+          "run": 0,
+          "scope": "cold",
+          "total_s": 0.031537978968117386,
+          "status": "success"
+        },
+        {
+          "run": 1,
+          "scope": "warm",
+          "total_s": 0.02376649301731959,
+          "status": "success"
+        },
+        {
+          "run": 2,
+          "scope": "steady",
+          "total_s": 0.023745283018797636,
+          "status": "success"
+        },
+        {
+          "run": 3,
+          "scope": "steady",
+          "total_s": 0.023717431002296507,
+          "status": "success"
+        },
+        {
+          "run": 4,
+          "scope": "steady",
+          "total_s": 0.026719920977484435,
+          "status": "success"
+        }
+      ],
+      "warm_median_s": 0.023755888018058613,
+      "status": "success",
+      "error": ""
+    }
+  ],
+  "speedups_gpu_vs_reference": [
+    {
+      "track": "semantics_matched",
+      "workload": "wealth",
+      "population": 10000,
+      "reference_s": 1.6981547354662325,
+      "private_gpu_style_s": 1.4271717359952163,
+      "speedup": 1.189874135422147
+    },
+    {
+      "track": "semantics_matched",
+      "workload": "wealth",
+      "population": 100000,
+      "reference_s": 16.342310174979502,
+      "private_gpu_style_s": 14.292449672007933,
+      "speedup": 1.1434226147380644
+    },
+    {
+      "track": "semantics_matched",
+      "workload": "random_walk",
+      "population": 5000,
+      "reference_s": 4.464304228982655,
+      "private_gpu_style_s": 2.3992656445188913,
+      "speedup": 1.860696100567827
+    },
+    {
+      "track": "semantics_matched",
+      "workload": "random_walk",
+      "population": 20000,
+      "reference_s": 17.829004710481968,
+      "private_gpu_style_s": 10.03123669247725,
+      "speedup": 1.7773486218157444
+    },
+    {
+      "track": "semantics_matched",
+      "workload": "sir",
+      "population": 5000,
+      "reference_s": 0.39326335850637406,
+      "private_gpu_style_s": 0.3702461209904868,
+      "speedup": 1.062167396796248
+    },
+    {
+      "track": "semantics_matched",
+      "workload": "sir",
+      "population": 10000,
+      "reference_s": 0.7548448515008204,
+      "private_gpu_style_s": 0.8290527839853894,
+      "speedup": 0.9104907022592221
+    },
+    {
+      "track": "semantics_matched",
+      "workload": "schelling",
+      "population": 32,
+      "reference_s": 0.26998695550719276,
+      "private_gpu_style_s": 0.2663741360011045,
+      "speedup": 1.0135629515700177
+    },
+    {
+      "track": "semantics_matched",
+      "workload": "schelling",
+      "population": 48,
+      "reference_s": 0.39396561798639596,
+      "private_gpu_style_s": 0.3927697589970194,
+      "speedup": 1.0030446819338392
+    }
+  ],
+  "amber_vs_flame": [
+    {
+      "workload": "wealth",
+      "population": 10000,
+      "AMBER_gpu_s": 0.03940224097459577,
+      "FLAME_GPU_2_s": 0.012424881017068401,
+      "flame_over_amber": 0.3153343746382148,
+      "amber_over_flame": 3.1712368851233124
+    },
+    {
+      "workload": "wealth",
+      "population": 100000,
+      "AMBER_gpu_s": 0.04024398751789704,
+      "FLAME_GPU_2_s": 0.014995945995906368,
+      "flame_over_amber": 0.3726257491069311,
+      "amber_over_flame": 2.6836578051750086
+    },
+    {
+      "workload": "wealth",
+      "population": 1000000,
+      "AMBER_gpu_s": 0.04579288451350294,
+      "FLAME_GPU_2_s": 0.03239650701289065,
+      "flame_over_amber": 0.7074572252232308,
+      "amber_over_flame": 1.4135130214896883
+    },
+    {
+      "workload": "random_walk",
+      "population": 10000,
+      "AMBER_gpu_s": 0.024209438037360087,
+      "FLAME_GPU_2_s": 0.004701156518422067,
+      "flame_over_amber": 0.19418693284690156,
+      "amber_over_flame": 5.149677093815615
+    },
+    {
+      "workload": "random_walk",
+      "population": 100000,
+      "AMBER_gpu_s": 0.024496775993611664,
+      "FLAME_GPU_2_s": 0.0066458400106057525,
+      "flame_over_amber": 0.2712944761522444,
+      "amber_over_flame": 3.6860315557579666
+    },
+    {
+      "workload": "random_walk",
+      "population": 1000000,
+      "AMBER_gpu_s": 0.034053426468744874,
+      "FLAME_GPU_2_s": 0.023755888018058613,
+      "flame_over_amber": 0.6976063932909186,
+      "amber_over_flame": 1.433473101188991
+    }
+  ],
+  "notes": "Cold = first timed run after process start for that config; warm/steady = subsequent runs. No samples trimmed. FLAME track is native-idiom (framework RNG), not counter-RNG matched."
+}

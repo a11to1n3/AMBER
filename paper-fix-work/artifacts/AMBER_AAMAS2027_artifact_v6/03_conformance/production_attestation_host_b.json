@@ -1,0 +1,102 @@
+{
+  "tag": "host_b",
+  "host_label": "host_a",
+  "platform": "Linux-5.15.0-174-generic-x86_64-with-glibc2.39",
+  "elapsed_s": 23.822487354278564,
+  "workloads": [
+    {
+      "workload": "wealth_transfer",
+      "rng_mode": "counter_tape",
+      "production_kernel_attested": true,
+      "benchmark_model": "AMBERVectorizedWealthTransfer",
+      "benchmark_model_sha256": "87b2f212ccec9566e5e79e84393e3d36c4546eeedfc92af5fbb052b3f58d0fd7",
+      "private_setup_sha256": "27946db217ee7abc1f1ff694755c2b250154f9222b1a0272e8e79ebb0aba666e",
+      "private_step_sha256": "5533a34be674d3e14011b5713b284d98b1535e45b0d139f5b3a7dcc84d0b7cd8",
+      "fused_kernel_sha256": "144506534dbcdcb15044daf7cecd9c4bc000c457008fa0653321b303a40f1574",
+      "model_file_sha256": "d70eeaacfbbf4e4790e4aa0a743d76a43e96d079cd5a740862edc8b5c8f62524",
+      "kernel_file_sha256": "a84b7c8c090d50157a6c8f3effd71d3fe3cce38889fb837b3be5a17e8cc9fbb3",
+      "cases_checked": 310,
+      "steps_checked": 2283,
+      "state_mismatches": 0,
+      "max_abs_error": 0.0,
+      "negative_controls_detected": "2/2",
+      "negative_controls_detail": {
+        "live_donors": "detected",
+        "last_write": "detected"
+      },
+      "first_mismatch": null,
+      "status": "passed"
+    },
+    {
+      "workload": "random_walk",
+      "rng_mode": "counter_tape",
+      "production_kernel_attested": true,
+      "benchmark_model": "AMBERVectorizedRandomWalk",
+      "benchmark_model_sha256": "6219cc71b773aad42c54d81af1d29be04a1855ad0a2d81dce54c06431fc11413",
+      "private_setup_sha256": "0d45e506f027fa1a45e140bc35a7bb2774fa658e36f33556fd49adecafa6b1aa",
+      "private_step_sha256": "fcc54c4ca353e5f3853357b8414fcbbb02fc403ee158f82bfa1181a3bb369df1",
+      "fused_kernel_sha256": "87c609fecfee274f5c2febecde0ef2d48409e098c4e6548adef2f9145be3933e",
+      "model_file_sha256": "d70eeaacfbbf4e4790e4aa0a743d76a43e96d079cd5a740862edc8b5c8f62524",
+      "cases_checked": 310,
+      "steps_checked": 1986,
+      "state_mismatches": 0,
+      "max_abs_error": 3.786821402229634e-05,
+      "negative_controls_detected": "1/1",
+      "first_mismatch": null,
+      "status": "passed"
+    },
+    {
+      "workload": "schelling",
+      "rng_mode": "counter_tape",
+      "production_kernel_attested": true,
+      "benchmark_model": "AMBERVectorizedSchelling",
+      "benchmark_model_sha256": "d4a12ea53ee5fe7714c871dae23e11643e4d4d13aca79a8ae36600809c770c53",
+      "private_setup_sha256": "774ed05641c1433e5b5569f342e9b63061393ec2fa3280f18c3efa964dc2fb36",
+      "private_step_sha256": "68fca02a3f7cb6516a8030e775dced761cc4986b6d881e962e9d098d71ea5f82",
+      "cases_checked": 58,
+      "steps_checked": 402,
+      "state_mismatches": 0,
+      "max_abs_error": 0.0,
+      "negative_controls_detected": "2/2",
+      "first_mismatch": null,
+      "status": "passed"
+    },
+    {
+      "workload": "sir_epidemic",
+      "rng_mode": "counter_tape_pair_keyed",
+      "production_kernel_attested": true,
+      "benchmark_model": "AMBERVectorizedSIRModel",
+      "benchmark_model_sha256": "e4478b46d7858fef6c42412a4800009b0c5af86cfd741dc8dc2d5f4c298df15d",
+      "private_setup_sha256": "680221a12d1e3ddb7e12a20ff80e332583b7e22d0c0643f77577b549ec09a6bd",
+      "private_step_sha256": "1ff188dbfdc9fd5a41c058973ed9e0707f759f981bd301ef65e565c54f890dfc",
+      "sir_kernel_step_sha256": "cb9d0f97ea520e1465dbb04fcf7fd5f1ac78855214a038f56c836b355cbe3caf",
+      "kernel_file_sha256": "ddc8ad6421b315ea0da957fd72b22fc4058aecf65afd7c876fbc4f35dddda5d0",
+      "model_file_sha256": "d70eeaacfbbf4e4790e4aa0a743d76a43e96d079cd5a740862edc8b5c8f62524",
+      "cases_checked": 289,
+      "steps_checked": 2038,
+      "state_mismatches": 0,
+      "max_abs_error": 3.4241705989757065e-05,
+      "negative_controls_detected": "2/2",
+      "first_mismatch": null,
+      "status": "passed",
+      "note": "Infection draws use SplitMix64 counter tape keyed by unordered agent pair; recovery is duration-based (infection_time >= recovery_time)."
+    }
+  ],
+  "dashboard": {
+    "reference_vectorized_gpu_style_parity": "passed (prior campaign)",
+    "production_native_kernel_parity": {
+      "wealth_transfer": "passed",
+      "random_walk": "passed",
+      "schelling": "passed",
+      "sir_epidemic": "passed"
+    },
+    "negative_control_sensitivity": "passed (wealth 2/2; walk structural; schelling 2/2)",
+    "monitor_completeness": "not claimed",
+    "sir_crossing_shared_rng": "pending",
+    "multi_framework_performance": "measured under two documented campaigns"
+  },
+  "submission_gate": {
+    "exact_timed_private_kernels_zero_mismatch": true,
+    "note": "All four workloads use production fused/CUDA kernels with shared counter tape"
+  }
+}

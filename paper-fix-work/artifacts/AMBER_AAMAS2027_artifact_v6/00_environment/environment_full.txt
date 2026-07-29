@@ -1,0 +1,52 @@
+# Host-B RTX 5090 campaign — software and runtime record
+# Tag: host_b_rtx5090_20260727T071054Z
+# Generated for anonymous artifact packaging (2026-07-28)
+
+## Hardware
+GPU: NVIDIA GeForce RTX 5090 (32607 MiB)
+Driver: 595.58.03
+CUDA (driver): 13.2
+CUDA toolkit path: /usr/local/cuda-12.9 (nvcc 12.9.86)
+CPU: multi-core x86_64 host (~125 GiB RAM)
+
+## Thread / affinity policy (benchmarks & experiments)
+PYTHONHASHSEED=0
+OMP_NUM_THREADS=1
+OPENBLAS_NUM_THREADS=1
+MKL_NUM_THREADS=1
+NUMEXPR_NUM_THREADS=1
+CUDA_VISIBLE_DEVICES=0
+# No process pinning (taskset) used; single-thread BLAS reduces run-to-run variance.
+
+## Python
+Python 3.12.3
+
+### Core
+numpy==2.5.1
+cupy-cuda12x==14.1.1
+polars==1.43.0
+matplotlib  (figure regen)
+
+### AMBER
+ambr 0.4.x (src/ in this package)
+
+### External ABM baselines (Host-B multi-framework runs)
+mesa  (PyPI install used on campaign host)
+mesa-frames
+agentpy
+Melodie
+simpy
+# Exact patch versions: re-export via `pip freeze` on the campaign venv;
+# install on Host B was via setup_host_b.sh / pip into campaign .venv.
+
+### GPU ABM baseline
+pyflamegpu==2.0.0rc4+cuda130
+  install: pip install --extra-index-url https://whl.flamegpu.com/whl/cuda130/ pyflamegpu
+  deps: nvidia-cuda-nvrtc>=13, nvidia-nvjitlink>=13, libcurand-dev (headers for RTC)
+
+## Julia / Agents.jl
+Julia 1.11.5
+Agents.jl 7.0.3
+
+## Figure-only minimal env
+See requirements-lock.txt and environment.yml at package root.

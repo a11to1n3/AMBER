@@ -1,0 +1,19 @@
+{
+  "workload": "wealth_transfer",
+  "rng_mode": "counter_tape",
+  "production_kernel_attested": true,
+  "benchmark_model": "AMBERVectorizedWealthTransfer",
+  "benchmark_model_sha256": "87b2f212ccec9566e5e79e84393e3d36c4546eeedfc92af5fbb052b3f58d0fd7",
+  "private_setup_sha256": "27946db217ee7abc1f1ff694755c2b250154f9222b1a0272e8e79ebb0aba666e",
+  "private_step_sha256": "5533a34be674d3e14011b5713b284d98b1535e45b0d139f5b3a7dcc84d0b7cd8",
+  "fused_kernel_sha256": "144506534dbcdcb15044daf7cecd9c4bc000c457008fa0653321b303a40f1574",
+  "model_file_sha256": "d70eeaacfbbf4e4790e4aa0a743d76a43e96d079cd5a740862edc8b5c8f62524",
+  "kernel_file_sha256": "a84b7c8c090d50157a6c8f3effd71d3fe3cce38889fb837b3be5a17e8cc9fbb3",
+  "cases_checked": 310,
+  "steps_checked": 2283,
+  "state_mismatches": 0,
+  "max_abs_error": 0.0,
+  "negative_controls_detected": "1/2",
+  "first_mismatch": null,
+  "status": "passed"
+}

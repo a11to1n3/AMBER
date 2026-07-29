@@ -1,0 +1,4 @@
+=== git ===
+0dd912cc89993de3d9fa5a529fe9686332bb2b31
+?? artifacts/
+?? tools/host_b_rerun/host_b_campaign.env

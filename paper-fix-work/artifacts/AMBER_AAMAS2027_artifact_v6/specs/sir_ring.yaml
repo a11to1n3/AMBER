@@ -1,0 +1,25 @@
+# SIR on a ring with fixed-radius contacts — snapshot semantics
+name: sir_ring
+semantics: snapshot
+description: >
+  Infection status is read from S^{(t)}. Candidate contacts are determined
+  from step-entry positions and status. Infection RVs are keyed by interacting
+  identities u_{t,i,j}=U(seed,t,infection,i,j). Recovery RVs are keyed by
+  r_{t,i}=U(seed,t,recovery,i). Newly infected agents cannot transmit until
+  t+1 under the snapshot specification. Candidate ordering must not change the
+  random values assigned to pairs.
+layout: ring
+radius: 3
+transmission: 0.1
+recovery_prob: 0.1
+initial_infected: 1
+status:
+  S: 0
+  I: 1
+  R: 2
+random:
+  backend: counter_rng
+  infection_event: EVT_INFECTION
+  recovery_event: EVT_RECOVERY
+acceptance:
+  discrete_state_mismatches: 0

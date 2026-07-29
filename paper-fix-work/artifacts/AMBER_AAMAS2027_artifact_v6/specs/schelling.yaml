@@ -1,0 +1,18 @@
+# Schelling — three-stage synchronous conflict resolution
+name: schelling
+semantics: three_stage_synchronous
+description: >
+  (1) Compute happiness from entry occupancy.
+  (2) Every unhappy agent proposes one vacancy using an identity-indexed draw.
+  (3) Resolve multiple claims to the same vacancy with deterministic priority
+      argmin_{i in C(v)} h(seed,t,v,i); commit winning moves simultaneously.
+grid: square
+similarity_threshold: 0.5
+empty_ratio: 0.2
+groups: 2
+random:
+  backend: counter_rng
+  proposal_event: EVT_PROPOSAL
+  priority_event: EVT_PRIORITY
+acceptance:
+  discrete_state_mismatches: 0

@@ -1,0 +1,3 @@
+2.0.0rc4+cuda130
+install: pip install --extra-index-url https://whl.flamegpu.com/whl/cuda130/ pyflamegpu
+deps: nvidia-cuda-nvrtc 13.0.88, nvidia-nvjitlink 13.3.33, libcurand-dev-12-9

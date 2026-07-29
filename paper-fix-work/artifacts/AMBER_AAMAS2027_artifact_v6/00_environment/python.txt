@@ -1,0 +1,85 @@
+=== python ===
+/workspace/AMBER_aamas_exp/.venv/bin/python
+Python 3.12.3
+{
+  "numpy": "2.5.1",
+  "cupy": "14.1.1",
+  "polars": "1.43.0",
+  "pytest": "9.1.1",
+  "numba": "MISSING: Numba needs NumPy 2.4 or less. Got NumPy 2.5.",
+  "pyflamegpu": "MISSING: No module named 'pyflamegpu'",
+  "ambr": "0.4.4"
+}
+cupy_device: NVIDIA GeForce RTX 5090
+cupy_runtime: 12090
+=== pip freeze ===
+agentpy==0.1.5
+ambr==0.4.4
+astunparse==1.6.3
+blinker==1.9.0
+chardet==7.4.3
+click==8.4.2
+cloudpickle==3.1.2
+contourpy==1.3.3
+cuda-pathfinder==1.6.0
+cupy-cuda12x==14.1.1
+cycler==0.12.1
+dill==0.4.1
+et_xmlfile==2.0.0
+Flask==3.1.3
+flask-cors==6.0.5
+flask-sock==0.7.0
+fonttools==4.63.0
+greenlet==3.5.4
+h11==0.16.0
+iniconfig==2.3.0
+itsdangerous==2.2.0
+Jinja2==3.1.6
+joblib==1.5.3
+kiwisolver==1.5.0
+llvmlite==0.48.0
+MarkupSafe==3.0.3
+matplotlib==3.11.1
+Melodie==1.1.1
+Mesa==3.5.1
+mesa_frames==0.1.0a0
+multiprocess==0.70.19
+narwhals==2.24.0
+networkx==3.6.1
+numba==0.66.0
+numpy==2.5.1
+openpyxl==3.1.5
+packaging==26.2
+pandas==3.0.5
+pillow==12.3.0
+pluggy==1.6.0
+plumbum==2.0.2
+polars==1.43.0
+polars-runtime-32==1.43.0
+pprintast==1.2.1
+pyaml==26.7.0
+pyarrow==25.0.0
+Pygments==2.20.0
+pyparsing==3.3.2
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+rpyc==6.0.2
+SALib==1.5.2
+scikit-learn==1.9.0
+scikit-opt==0.6.6
+scikit-optimize==0.10.2
+scipy==1.18.0
+seaborn==0.13.2
+setuptools==83.0.0
+simple-websocket==1.1.0
+simpy==4.1.2
+six==1.17.0
+SQLAlchemy==2.0.51
+SQLAlchemy-Utils==0.42.1
+threadpoolctl==3.6.0
+tqdm==4.69.1
+typing_extensions==4.16.0
+Werkzeug==3.1.8
+wheel==0.47.0
+wsproto==1.3.2

@@ -1,0 +1,20 @@
+# Wealth transfer — frozen semantic specification
+name: wealth_transfer
+semantics: snapshot_delta
+description: >
+  Donor eligibility is evaluated from w^{(t)}. Every eligible donor generates
+  exactly one transfer event. Recipient draws are fixed before writes. All
+  debits and credits accumulate into a delta vector; the update is
+  w^{(t+1)} = w^{(t)} + Δ^{(t)}.
+self_transfer: allowed
+initial_wealth: 1
+dtype: int64
+random:
+  backend: counter_rng
+  recipient_event: EVT_RECIPIENT
+  key: [global_seed, step, EVT_RECIPIENT, donor_id, 0, 0]
+invariants:
+  - total_wealth_conserved
+  - non_negative_wealth
+acceptance:
+  discrete_state_mismatches: 0

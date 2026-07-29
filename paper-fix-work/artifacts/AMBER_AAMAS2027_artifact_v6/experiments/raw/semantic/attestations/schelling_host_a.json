@@ -1,0 +1,16 @@
+{
+  "workload": "schelling",
+  "rng_mode": "counter_tape",
+  "production_kernel_attested": true,
+  "benchmark_model": "AMBERVectorizedSchelling",
+  "benchmark_model_sha256": "d4a12ea53ee5fe7714c871dae23e11643e4d4d13aca79a8ae36600809c770c53",
+  "private_setup_sha256": "774ed05641c1433e5b5569f342e9b63061393ec2fa3280f18c3efa964dc2fb36",
+  "private_step_sha256": "68fca02a3f7cb6516a8030e775dced761cc4986b6d881e962e9d098d71ea5f82",
+  "cases_checked": 58,
+  "steps_checked": 402,
+  "state_mismatches": 0,
+  "max_abs_error": 0.0,
+  "negative_controls_detected": "2/2",
+  "first_mismatch": null,
+  "status": "passed"
+}
