@@ -1,4 +1,11 @@
-# Large-N multi-framework scaling
+# Large-N multi-framework scaling (exploratory / historical)
+
+> **Not the package headline.** For README / Sphinx AMBER-vs-FLAME @ 10M with
+> all 10 samples retained, use
+> [`summary_table_snapshot_correct_10run_10m.md`](summary_table_snapshot_correct_10run_10m.md)
+> and `benchmark_results_snapshot_correct_10run_10m.json`. Absolute times below
+> come from an older multi-framework sweep (trimmed means) and must not be
+> mixed with the snapshot_correct table without a protocol caption.
 
 _NVIDIA RTX 5090, 50 steps, trimmed mean (10 runs; vectorized SIR @ 10M used 3 runs). AMBER native placement; SIR = cell-list (max_per_cell=64). Lower is better._
 

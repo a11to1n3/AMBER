@@ -13,39 +13,38 @@ The full, reproducible suite — correctness checks, raw timings, and per-model
 tables — lives under ``benchmarks/`` (see ``benchmarks/README.md``). Reproduce
 with ``python benchmarks/run_all_frameworks.py``.
 
-Large-N multi-framework scaling (1k→10M)
----------------------------------------
+Headline: AMBER (GPU) vs FLAME GPU 2 at 10M
+--------------------------------------------
 
-**Protocol:** NVIDIA RTX 5090, 50 steps, 10 runs (trimmed mean). Ten
-frameworks: AMBER (GPU / vectorized / loop), mesa-frames, FLAME GPU 2,
-Agents.jl, SimPy, Melodie, AgentPy, Mesa. AMBER (GPU) uses the native
-vectorized models under ``model.gpu().run()`` (with evidence-labeled
-approval where a private fast loop is selected). Full table:
-``benchmarks/results/summary_table.md``.
+**Source of truth** (committed JSON, all 10 samples retained — no outlier
+trim): ``benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json``
+and ``benchmarks/results/summary_table_snapshot_correct_10run_10m.md``.
+
+**Protocol:** NVIDIA RTX 5090; 10M agents; 50 steps; 10 runs; one untimed
+warm-up; timed scope = construct + setup + steps + assemble. Implementation
+comparison under that protocol — not byte-identical dynamics across frameworks.
+
+================  =============  =============  ==============================
+Model             AMBER (GPU)    FLAME GPU 2    Speedup (FLAME / AMBER)
+================  =============  =============  ==============================
+Wealth            94 ms          194 ms         ~2.05×
+Random walk       80 ms          161 ms         ~2.00×
+SIR (cell-list)   2.08 s         3.68 s         ~1.77×
+Schelling         295 ms         18.7 s         ~63× (setup-inclusive; exploratory)
+================  =============  =============  ==============================
+
+- **Wealth / walk / SIR** are the comparable headline class (~1.8–2.1×).
+- **Schelling** includes heavy Python-side setup in the FLAME harness; do not
+  treat ~63× as a pure step-kernel speedup.
+- Multi-framework scale-out charts (Mesa, mesa-frames, Agents.jl, …) under
+  ``benchmarks/results/summary_table.md`` are **exploratory** (trimmed means,
+  older stack in places). Missing cells (OOM / budget) are not zeros.
+- **Reproduce:**
+  ``python benchmarks/run_all_frameworks.py --agents 10000000 --steps 50 --runs 10 --frameworks "AMBER (GPU)" "FLAME GPU 2"``
 
 .. image:: ../benchmarks/results/scaling_chart.png
-   :alt: Multi-framework scaling from 1k to 10M agents on RTX 5090
+   :alt: Multi-framework scaling chart (exploratory full sweep)
    :width: 100%
-
-**At 1M / 10M agents (where each framework still finishes):**
-
-================  =================  =====================  =================  ===========================
-Model             AMBER (GPU)        AMBER (vectorized)     FLAME GPU 2        Next best CPU-scale peer
-================  =================  =====================  =================  ===========================
-Wealth            3.91 s / 193 s     6.44 s / 214 s         28 ms / 226 ms     Agents.jl 8.53 s @ 1M
-Random walk       198 ms / 2.04 s    531 ms / 6.23 s        20 ms / 201 ms     mesa-frames 3.55 s / 20.8 s
-Schelling         428 ms / 5.17 s    2.64 s / 59.8 s        2.06 s / 20.8 s    mesa-frames 4.33 s / 86.9 s
-SIR (cell-list)   882 ms / 9.39 s    31.3 s / 308 s         108 ms / 3.80 s    —
-================  =================  =====================  =================  ===========================
-
-- **Schelling:** AMBER (GPU) is the fastest measured row at 1M and 10M.
-- **Wealth / random walk:** FLAME GPU 2 leads; AMBER (GPU) still leads other
-  Python-hosted stacks that reach those scales.
-- **SIR:** AMBER uses **cell-list** infection. GPU 10M = 9.39 s (~33× vs
-  vectorized 308 s); FLAME still leads at 3.80 s.
-- **Reproduce:**
-  ``python benchmarks/run_all_frameworks.py --agents 1000 10000 100000 1000000 10000000 --steps 50 --runs 10``
-  then ``python benchmarks/plot_scaling_with_gpu_schelling.py``.
 
 Calibration throughput
 ----------------------

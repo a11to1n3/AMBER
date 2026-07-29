@@ -9,6 +9,21 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+Added
+~~~~~
+- Tests locking SplitMix64 counter-tape SIR infection draws
+  (``tests/test_sir_counter_tape.py``).
+- ``CITATION.cff`` software citation metadata.
+- Optional ``ambr[gpu]`` extra (CuPy).
+
+Changed
+~~~~~~~
+- Production GPU SIR scale kernels: pair-keyed SplitMix64 with ``global_seed``.
+- FLAME GPU 2 runtime preload for CUDA 13 NVRTC; longer Agents.jl timeout.
+- README / Sphinx benchmarks: headline locked to
+  ``benchmark_results_snapshot_correct_10run_10m.json``; Schelling labeled
+  setup-inclusive; multi-framework ``summary_table.md`` marked exploratory.
+
 [0.4.4] - 2026-07-18
 --------------------
 
