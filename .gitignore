@@ -73,8 +73,10 @@ benchmarks/results/amber_*.log
 PR_DESCRIPTIONS.md
 *.local.md
 
-# Paper / AAMAS island — local workstation only; never commit to the library package
+# Paper / AAMAS island — lives OUTSIDE this repo (e.g. ~/Documents/AMBER_AAMAS).
+# Never re-introduce paper materials into the library package.
 paper-fix-work/
+AMBER_AAMAS/
 
 # Host campaign raw trees / local scratch
 artifacts/host_b_*/
