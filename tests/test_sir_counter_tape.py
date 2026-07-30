@@ -144,8 +144,21 @@ def test_vectorized_sir_model_wires_global_seed_in_source():
     assert 'self.p.get("seed")' in src or "self.p.get('seed')" in src
 
 
+def _to_numpy(arr):
+    """Host numpy view of CuPy/NumPy scientific state arrays."""
+    import numpy as np
+
+    if hasattr(arr, "get"):
+        return np.asarray(arr.get())
+    return np.asarray(arr)
+
+
 def test_sir_kernel_step_seed_deterministic_on_gpu():
-    """Same seed → identical status after one step (CuPy + GPU only)."""
+    """Same seed → identical declared scientific state (status + infection_time).
+
+    Compares only transition-level fields used in production attestation, not
+    internal cell-list ordering. Requires CuPy + a usable GPU.
+    """
     cupy = pytest.importorskip("cupy")
     try:
         cupy.cuda.Device(0).compute_capability
@@ -167,7 +180,7 @@ def test_sir_kernel_step_seed_deterministic_on_gpu():
     infection_time = np.zeros(n, dtype=np.int32)
 
     def run(seed: int):
-        return sir_kernel_step(
+        out = sir_kernel_step(
             x.copy(),
             y.copy(),
             status.copy(),
@@ -179,10 +192,23 @@ def test_sir_kernel_step_seed_deterministic_on_gpu():
             recovery_time=14,
             global_seed=seed,
         )
+        cupy.cuda.Stream.null.synchronize()
+        # returns (x, y, status, infection_time)
+        return (
+            _to_numpy(out[0]),
+            _to_numpy(out[1]),
+            _to_numpy(out[2]).astype(np.int8),
+            _to_numpy(out[3]).astype(np.int32),
+        )
 
-    out_a = run(123)
-    out_b = run(123)
-    assert np.array_equal(np.asarray(out_a[2]), np.asarray(out_b[2]))
+    a = run(123)
+    b = run(123)
+    np.testing.assert_array_equal(a[0], b[0])
+    np.testing.assert_array_equal(a[1], b[1])
+    np.testing.assert_array_equal(a[2], b[2])  # status
+    np.testing.assert_array_equal(a[3], b[3])  # infection_time
+    c = run(999)
+    assert a[2].shape == c[2].shape
 
 
 def test_flame_runtime_configure_does_not_raise():
