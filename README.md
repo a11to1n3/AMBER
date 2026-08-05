@@ -6,7 +6,11 @@
 [![PyPI version](https://img.shields.io/pypi/v/ambr.svg)](https://pypi.org/project/ambr/)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3_Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
-AMBER is a Python framework for agent-based modeling that uses Polars for efficient data handling and analysis. AMBER provides a clean, robust API for creating parallel, high-performance simulations in Python.
+AMBER is a Python framework for agent-based modeling that uses Polars for
+efficient columnar population state. It provides an AgentPy-shaped OOP lane and
+a high-performance vectorized lane (optional GPU on NVIDIA+CuPy). Multi-run
+parallelism is **opt-in** (`Experiment` / `ParallelRunner` / `GPUEnsembleRunner`),
+not automatic from a single `.run()`.
 
 ## 🚀 Performance
 
