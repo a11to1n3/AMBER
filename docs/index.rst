@@ -72,18 +72,21 @@ Create your first model:
            recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
-   # Fluent placement (default mode is vectorized; run(mode=...) still overrides)
-   model = WealthModel({'steps': 50, 'seed': 42})
-   results = model.cpu(mode="vectorized").run()
-   # Vectorized lane on GPU (NVIDIA + CuPy):  model.gpu().run()
+   # Fluent placement: GPU when NVIDIA+CuPy available, else CPU vectorized
+   model = WealthModel({'steps': 50, 'seed': 42, 'show_progress': False})
+   if am.GPU_AVAILABLE:
+       results = model.gpu().run()
+   else:
+       results = model.cpu(mode="vectorized").run()
+   print(results.info)
    print(results.model)       # also results['model']
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for what is new in **0.4.5** (honest 10M headline
-benchmarks, pair-keyed GPU SIR counter-tape, ``ambr[gpu]``,
-``CITATION.cff``). 0.4.4 added honest lanes, the operational contract, and
-``approve_fast_path``.
+See :doc:`changelog` for what is new in **0.4.6** (doc-fence CI, Host B GPU
+claim script, activation helpers, RunResults I/O, 1.0 freeze prep). 0.4.5
+added honest 10M headline evidence and ``ambr[gpu]``; 0.4.4 added lanes and
+the operational contract.
 
 Table of Contents
 -----------------
@@ -98,6 +101,11 @@ Table of Contents
    going_faster
    environments_schelling
    tutorial
+   reproducibility
+   paper_and_package
+   versioning
+   public_api
+   roadmap_1_0
    benchmarks
    examples/index
 

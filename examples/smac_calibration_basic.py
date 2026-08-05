@@ -19,8 +19,20 @@ Requirements:
 
 import ambr as am
 import numpy as np
-import matplotlib.pyplot as plt
 from typing import Dict, Any
+
+
+def _require_matplotlib():
+    """Lazy import so the model smoke path works without a working Matplotlib."""
+    try:
+        import matplotlib.pyplot as plt
+        return plt
+    except ImportError as exc:
+        raise ImportError(
+            "Plotting requires a NumPy-compatible matplotlib.\n"
+            "  pip install -U 'matplotlib>=3.8'\n"
+            f"Underlying error: {exc!r}"
+        ) from exc
 
 
 class WealthTransferModel(am.Model):
@@ -239,6 +251,7 @@ def analyze_optimization_results(optimizer, results):
     configs = history.drop(['objective', 'trial']).to_dict('records')
 
     # Create visualization
+    plt = _require_matplotlib()
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
 
     # Plot 1: Objective value over time
@@ -364,6 +377,7 @@ def compare_optimization_strategies():
             print(f"  Best objective: {results['best_objective']:.6f}")
 
     # Plot comparison
+    plt = _require_matplotlib()
     plt.figure(figsize=(12, 6))
 
     methods = list(comparison_results.keys())
@@ -431,6 +445,7 @@ def demonstrate_parameter_importance():
         print(f"  {param.replace('_', ' ').title()}: {importance:.3f}")
 
     # Visualize parameter importance
+    plt = _require_matplotlib()
     plt.figure(figsize=(10, 6))
     params, values = zip(*sorted_importance)
 
@@ -454,27 +469,36 @@ if __name__ == "__main__":
     print("SMAC Calibration with AMBER's Built-in Optimization")
     print("=" * 55)
 
-    # Run main SMAC optimization
+    # Smoke: model alone (no SMAC / matplotlib) so the example is runnable without extras.
+    smoke = WealthTransferModel({
+        'n_agents': 60,
+        'base_transfer_rate': 0.1,
+        'wealth_exponent': 1.0,
+        'generosity_factor': 0.1,
+        'steps': 15,
+        'seed': 0,
+        'show_progress': False,
+    })
+    smoke_res = smoke.run()
+    print(
+        "Smoke run OK:",
+        smoke_res['info'],
+        "metrics=",
+        smoke_res['model'].columns,
+    )
+
+    try:
+        import ConfigSpace  # noqa: F401
+        import smac  # noqa: F401
+    except ImportError:
+        print("smac/ConfigSpace not installed — skipping SMAC optimization section")
+        print("Install with: pip install 'ambr[advanced]'  # or: pip install smac ConfigSpace")
+        raise SystemExit(0)
+
     optimizer, results = run_smac_optimization()
-
-    # Analyze results
     analyze_optimization_results(optimizer, results)
-
-    # Compare different strategies
     compare_optimization_strategies()
-
-    # Demonstrate parameter importance
     demonstrate_parameter_importance()
 
     print("\n✅ AMBER SMAC calibration example completed!")
-    print("📁 Results saved as:")
-    print("  - 'amber_smac_calibration_results.png'")
-    print("  - 'smac_strategy_comparison.png'")
-    print("  - 'parameter_importance.png'")
-    print("\n💡 Key Advantages of AMBER's SMACOptimizer:")
-    print("- Seamless integration with AMBER models")
-    print("- Built-in parameter space definition")
-    print("- Automatic objective function handling")
-    print("- Multiple optimization strategies")
-    print("- Comprehensive result analysis")
-    print("- Easy comparison of different approaches")
+    print("📁 PNG outputs written when matplotlib is available and ABI-compatible with NumPy.")

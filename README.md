@@ -17,12 +17,40 @@ columnar operations. Models can provide `step_vectorized()` and `step_oop()`
 for explicit native lanes; legacy models with only `step()` keep the fallback.
 The vectorized lane runs on GPU via `model.gpu().run()`.
 
+### GPU requirements (read this first)
+
+| Claim | Requires |
+|-------|----------|
+| CPU vectorized (default fast path) | `pip install ambr` (+ `ambr[perf]` / Numba recommended) |
+| Headline **AMBER (GPU) vs FLAME** table below | **NVIDIA GPU + CuPy** (`pip install 'ambr[gpu]'` or a CUDA-matched wheel) |
+| Apple Metal / MPS | **Not supported** — AMBER does not use Mac GPU |
+
+Check the machine before quoting GPU numbers:
+
+```python
+import ambr as am
+am.print_status()          # must show GPU: yes for FLAME-class claims
+print(am.recommend(1_000_000))
+```
+
+Default GitHub CI has **no CUDA**. Re-verify GPU claim paths on a CUDA host with:
+
+```bash
+python scripts/run_host_b_gpu_claims.py          # full (incl. large-N)
+python scripts/run_host_b_gpu_claims.py --quick  # fast smoke
+```
+
 ### Headline comparison (committed evidence)
 
-**Source of truth for the README table:**  
+**Single source of truth for the README table (do not mix other tables):**  
 [`benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json`](benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json)  
 (summary:
 [`summary_table_snapshot_correct_10run_10m.md`](benchmarks/results/summary_table_snapshot_correct_10run_10m.md)).
+
+Other files under [`benchmarks/results/`](benchmarks/results/) (including
+`summary_table.md`) are **exploratory / historical** and may use different
+protocols — never combine them with the headline table without an explicit
+caption.
 
 **Protocol:** NVIDIA RTX 5090; 10M agents; 50 steps; **10 runs** retained
 (no outlier deletion); one untimed warm-up per cell; timed scope =
@@ -59,6 +87,10 @@ optimized GPU loops require an explicit
 `approve_fast_path(evidence)` label (caller-attested provenance; AMBER
 checks presence of the label, not the evidence content) and
 `contract="off"` — see [`docs/going_faster.rst`](docs/going_faster.rst).
+
+Default CI has no CUDA. Optional **GPU claims** workflow
+(`.github/workflows/gpu-nightly.yml`) soft-skips without a GPU and runs
+`scripts/run_host_b_gpu_claims.py --quick` on self-hosted CUDA runners.
 
 ## 🚀 Quick Start
 
@@ -104,21 +136,18 @@ class WealthModel(am.Model):
         self.add_agents(100, wealth=self.rng.integers(1, 10, size=100))
 
     def step_vectorized(self):
-        xp = self.xp
-        wealth = self.agents.array("wealth")
-        donors = xp.nonzero(wealth > 0)[0]
-        if int(donors.size) == 0:
-            return
-        wealth[donors] -= 1
-        recipients = self.rng.choice(
-            self.agents.array("id"), size=int(donors.size)
-        )
+        # View API: where / column assign / scatter_add (not agents.array mutate).
+        # agents.array(...) returns a read-only snapshot on the CPU Polars path.
+        donors = self.agents.where(self.agents.wealth > 0)
+        donors.wealth -= 1
+        recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
         self.agents.at[recipients].scatter_add(wealth=1)
 
 # Fluent placement (0.4.4): device + optional mode; run(mode=...) still overrides.
-results = WealthModel({'steps': 100, 'seed': 42}).cpu(mode="vectorized").run()
-# Vectorized lane on GPU (device-resident columns; needs NVIDIA + CuPy):
-# results = WealthModel({'steps': 100, 'seed': 42}).gpu().run()
+# GPU when NVIDIA+CuPy available; otherwise CPU vectorized.
+_m = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
+results = _m.gpu().run() if am.GPU_AVAILABLE else _m.cpu(mode="vectorized").run()
+print(results.info)
 print(results.model.tail(5))
 print(results.agents.head(10))
 ```
@@ -133,9 +162,25 @@ import ambr as am
 am.print_status()                 # GPU? which lane?
 print(am.recommend(1_000_000))  # one-line suggestion
 
-# Native path: step_vectorized + .gpu() (or .cpu(mode="vectorized"))
-model = WealthModel({"n": 100_000, "steps": 50, "seed": 0})
-results = model.gpu().run()                    # or .cpu(mode="vectorized").run()
+# Same view-API model shape as the vectorized quickstart above
+class WealthModel(am.Model):
+    def setup(self):
+        n = int(self.p.get("n", 100_000))
+        self.add_agents(n, wealth=1)
+    def step_vectorized(self):
+        donors = self.agents.where(self.agents.wealth > 0)
+        donors.wealth -= 1
+        self.agents.at[
+            self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
+        ].scatter_add(wealth=1)
+
+# Native path: step_vectorized + .gpu() when NVIDIA+CuPy are available
+model = WealthModel({"n": 100_000, "steps": 50, "seed": 0, "show_progress": False})
+if am.GPU_AVAILABLE:
+    results = model.gpu().run()
+else:
+    results = model.cpu(mode="vectorized").run()  # Mac / no-CUDA fallback
+print(results.info)
 
 # Array-kernel lane (CuPy if available, else NumPy) for pure array state:
 class Drift(am.ArrayKernelModel):
@@ -147,7 +192,7 @@ class Drift(am.ArrayKernelModel):
     def metrics(self, xp, state):
         return {"mean_x": float(am.to_host(state["x"].mean()))}
 
-print(Drift({"n": 100_000, "steps": 20}).run().info)
+print(Drift({"n": 100_000, "steps": 20, "show_progress": False}).run().info)
 ```
 
 `self.rng` is the canonical seeded RNG (a NumPy `Generator`); `self.random` is
@@ -226,14 +271,31 @@ declarative metrics, and set `record_initial = True` to capture a `t=0` row.
 
 ## 🔒 Snapshot-view contract
 
-Whether a vectorized refactor preserves an intended update schedule is a
-semantic question. AMBER's runtime monitor reports selected operational hazards
-at instrumented API seams; it does not prove schedule equivalence for arbitrary
-NumPy, CuPy, or user-kernel code. Run with a contract mode and inspect the
+**What this is:** an **operational runtime monitor** at instrumented read/write
+seams (OOP buffer vs view/lane, mutable borrows, cross-path writes).
+
+**What this is not:** a proof that a vectorized or GPU rewrite preserves an
+intended activation schedule, confluence, or bit-identical trajectories vs an
+OOP loop. `cert.clean` means *no monitored hazard was observed*, not that every
+possible ordering is equivalent.
+
+Whether a vectorized refactor preserves an intended update schedule remains a
+semantic question for the modeller. Run with a contract mode and inspect the
 per-step records:
 
 ```python
-results = model.run(steps=100, contract="check")   # "off" | "check" | "warn" | "raise"
+import ambr as am
+
+class WealthModel(am.Model):
+    def setup(self):
+        self.add_agents(50, wealth=1)
+    def step_vectorized(self):
+        donors = self.agents.where(self.agents.wealth > 0)
+        donors.wealth -= 1
+        self.agents.at[self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))].scatter_add(wealth=1)
+
+model = WealthModel({"steps": 20, "seed": 0, "show_progress": False})
+results = model.run(steps=20, contract="check")   # "off" | "check" | "warn" | "raise"
 for cert in results["contract"]:
     if not cert.ok:
         print(cert.step, cert.violations)
@@ -267,9 +329,23 @@ caller-supplied provenance label, not something AMBER verifies. Without it,
 monitor. OOP agents use `cpu(mode="oop")` — not GPU.
 
 ```python
-# Same WealthModel as the vectorized quickstart
-results = WealthModel({"n": 1_000_000, "steps": 50, "seed": 0}).gpu().run()
-# Switch back: model.cpu(mode="vectorized").run(...)
+import ambr as am
+
+class WealthModel(am.Model):
+    def setup(self):
+        n = int(self.p.get("n", 1_000_000))
+        self.add_agents(n, wealth=1)
+    def step_vectorized(self):
+        donors = self.agents.where(self.agents.wealth > 0)
+        donors.wealth -= 1
+        self.agents.at[
+            self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
+        ].scatter_add(wealth=1)
+
+# Requires NVIDIA + CuPy. On CPU-only machines use .cpu(mode="vectorized").
+model = WealthModel({"n": 1_000_000, "steps": 50, "seed": 0, "show_progress": False})
+results = model.gpu().run() if am.GPU_AVAILABLE else model.cpu(mode="vectorized").run()
+print(results.info)
 # Private fast loop (only if the model defines one; evidence is not verified):
 # model.approve_fast_path("my-bench-label").gpu().run(contract="off")
 ```
@@ -279,16 +355,26 @@ agents) batches into one device pass — the natural fit when you evaluate
 thousands of small replicate runs:
 
 ```python
-from ambr.gpu_ensemble import GPUEnsembleRunner, BatchedWellMixedSIR, smac_batch_calibrate
+import numpy as np
+import ambr as am
+from ambr.gpu_ensemble import GPUEnsembleRunner, BatchedWellMixedSIR
 
-# Evaluate B parameter sets in one (B, N) GPU pass
+# Needs NVIDIA + CuPy. B parameter sets in one (B, N) GPU pass.
+B = 4
+betas = np.full(B, 0.3)
+gammas = np.full(B, 0.1)
+i0 = np.full(B, 0.01)
 runner = GPUEnsembleRunner(BatchedWellMixedSIR())
-traj = runner.run(n_agents=100_000, steps=60,
-                  params={"beta": betas, "gamma": gammas, "i0_frac": i0})  # -> {metric: (B, steps)}
-
-# SMAC ask -> one batched GPU evaluation -> tell
-best, history = smac_batch_calibrate(BatchedWellMixedSIR(), bounds, loss_fn,
-                                     n_agents=100_000, steps=60)
+if am.GPU_AVAILABLE:
+    traj = runner.run(
+        n_agents=10_000, steps=30,
+        params={"beta": betas, "gamma": gammas, "i0_frac": i0},
+    )  # -> {metric: (B, steps)}
+    print({k: v.shape for k, v in traj.items()})
+else:
+    print("GPU ensemble requires NVIDIA + CuPy; skip on this host")
+# Optional SMAC loop: smac_batch_calibrate(BatchedWellMixedSIR(), bounds, loss_fn, ...)
+# (needs pip install 'ambr[advanced]')
 ```
 
 `ambr.gpu` provides the array-module abstraction (`get_array_module`, `to_device`,
@@ -300,18 +386,32 @@ GPU + CuPy** (not Apple Metal/MPS).
 AMBER includes powerful optimization capabilities for parameter tuning:
 
 ```python
+import ambr as am
 from ambr.optimization import ParameterSpace, grid_search
 
-# Define parameter space
-parameter_space = ParameterSpace({
-    'agents': [10, 50, 100],
-    'initial_value': [1, 5, 10],
-    'steps': 100
-})
+class MyModel(am.Model):
+    def setup(self):
+        n = int(self.p.get("agents", 50))
+        self.add_agents(n, wealth=int(self.p.get("initial_value", 1)))
+    def step_vectorized(self):
+        donors = self.agents.where(self.agents.wealth > 0)
+        donors.wealth -= 1
+        self.agents.at[
+            self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
+        ].scatter_add(wealth=1)
+    def update(self):
+        self.record_model("total_wealth", int(self.agents.wealth.sum()))
 
-# Run optimization
-results = grid_search(MyModel, parameter_space, 'some_metric')
-best_params = results[0]['parameters']
+parameter_space = ParameterSpace({
+    "agents": [20, 40],
+    "initial_value": [1, 5],
+    "steps": 10,
+    "seed": 0,
+    "show_progress": False,
+})
+results = grid_search(MyModel, parameter_space, metric="total_wealth", minimize=False)
+best_params = results[0]["parameters"]
+print(best_params, results[0]["objective"])
 ```
 
 Beyond `grid_search`, AMBER ships `random_search`, `bayesian_optimization`
@@ -330,7 +430,7 @@ pip install 'ambr[advanced]'   # SMAC optimization
 
 ```python
 import ambr as am
-print(am.__version__)   # 0.4.4+
+print(am.__version__)   # 0.4.6+
 am.print_status()
 ```
 
@@ -348,6 +448,8 @@ am.print_status()
 - **Optimization**: grid / random / Bayesian (SMAC) search, plus GPU-batched calibration
 - **Declarative reporting**: `model_reporters` / `agent_reporters` and a typed `params` schema
 - **Environments**: Support for grid, network, and continuous space environments
+- **OOP activation**: optional `activate_agents("random"|"sequential"|"simultaneous")` (not a schedule proof)
+- **Plot helpers**: `plot_timeseries` / `plot_grid` from RunResults (`ambr[viz]` alias)
 - **Experiments**: Run multiple simulations with parameter sampling
 - **Random Number Generation**: Reproducible simulations with controlled randomness
 - **RunResults**: `results.agents` and `results['agents']` both work
@@ -362,16 +464,19 @@ Working examples are available in the `examples/` directory:
 - **Flocking** — Boids + optional tensor-lane variant
 - **Forest Fire** — cellular automata fire spread
 - **GPU quickstart** — `model.gpu().run()` on a view-API model, or `ArrayKernelModel`
+- **Ensemble / SMAC smoke** — `examples/smac_batch_sir_smoke.py` (SMAC needs `ambr[advanced]`)
 - **SMAC calibration** — basic / advanced Schelling multi-objective
 
 ## 📖 Documentation
 
 - **Docs**: https://ambr.readthedocs.io/
-- **Paper**: https://arxiv.org/abs/2601.16292
+- **Paper**: https://arxiv.org/abs/2601.16292 — package vs paper claims: [docs/paper_and_package.rst](docs/paper_and_package.rst)
 - **Going faster** (lanes / Numba / GPU): [docs/going_faster.rst](docs/going_faster.rst)
 - **Environments & Schelling**: [docs/environments_schelling.rst](docs/environments_schelling.rst)
 - **From AgentPy**: [docs/from_agentpy.rst](docs/from_agentpy.rst)
 - **Deprecations (→ 1.0)**: [docs/deprecations.rst](docs/deprecations.rst)
+- **Versioning / 1.0 roadmap**: [docs/versioning.rst](docs/versioning.rst), [docs/roadmap_1_0.rst](docs/roadmap_1_0.rst)
+- **Public API surface**: [docs/public_api.rst](docs/public_api.rst)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
 ## 📝 How to cite?

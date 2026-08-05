@@ -64,6 +64,7 @@ Parameter Optimization & Calibration
 **Simple SMAC Calibration**
    Introduction to SMAC optimization with AMBER - the easiest way to get started with automated parameter tuning.
 
+   - Script: ``examples/smac_batch_sir_smoke.py`` (ensemble always; SMAC optional)
    - Script: ``examples/smac_calibration_simple.py``
 
 **Comprehensive SMAC Calibration**

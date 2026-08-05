@@ -74,6 +74,27 @@ AMBER (same idea)::
    print(results.model)    # attribute access (also results['model'])
    print(results.agents)
 
+Results: AgentPy ``DataDict`` vs AMBER ``RunResults``
+----------------------------------------------------
+
+===============================  ==============================================
+AgentPy                          AMBER
+===============================  ==============================================
+``results.variables.Model``      ``results.model`` (Polars DataFrame)
+``results.agents`` / variables   ``results.agents`` end-of-run table; history via
+                                 ``agent_reporters`` → long ``agent_vars``
+``results.info``                 ``results.info`` dict (also device/mode)
+save/load                        ``results.save(path)`` / ``RunResults.load``
+arrange / Sobol helpers          Polars + external SALib / your notebook
+===============================  ==============================================
+
+::
+
+   results = model.run()
+   print(results.keys_overview())
+   results.save("out/run0")
+   restored = am.RunResults.load("out/run0")
+
 Notes on the mapping
 --------------------
 

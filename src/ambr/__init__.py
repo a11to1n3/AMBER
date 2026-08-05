@@ -76,11 +76,22 @@ from .gpu_ensemble import (
 )
 from .results import RunResults
 from .lanes import ArrayKernelModel, status, print_status, recommend
+from .scheduling import (
+    ACTIVATION_MODES,
+    Activation,
+    RandomActivation,
+    SequentialActivation,
+    SimultaneousActivation,
+    activate,
+    normalize_activation,
+    shuffled_ids,
+)
+from .viz import HAS_MATPLOTLIB, plot_grid, plot_timeseries
 
 try:
     __version__ = _metadata_version('ambr')
 except _PackageNotFoundError:
-    __version__ = '0.4.5'
+    __version__ = '0.4.6'
 
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'
@@ -146,4 +157,17 @@ __all__ = [
     'status',
     'print_status',
     'recommend',
+    # OOP activation (optional Mesa-inspired helpers)
+    'ACTIVATION_MODES',
+    'Activation',
+    'SequentialActivation',
+    'RandomActivation',
+    'SimultaneousActivation',
+    'activate',
+    'normalize_activation',
+    'shuffled_ids',
+    # Lightweight plotting helpers
+    'HAS_MATPLOTLIB',
+    'plot_timeseries',
+    'plot_grid',
 ]

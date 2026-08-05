@@ -30,20 +30,22 @@ Native placement
            self.add_agents(n, wealth=self.rng.integers(1, 10, size=n))
 
        def step_vectorized(self):
-           xp = self.xp
-           wealth = self.agents.array("wealth")
-           donors = xp.nonzero(wealth > 0)[0]
-           if int(donors.size) == 0:
-               return
-           wealth[donors] -= 1
+           # View API writes (safe on CPU Polars and device-resident GPU columns).
+           # agents.array(...) is a read-only snapshot — do not mutate it in place.
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
            recipients = self.rng.choice(
-               self.agents.array("id"), size=int(donors.size)
+               self.agents.ids.to_numpy(), size=len(donors)
            )
            self.agents.at[recipients].scatter_add(wealth=1)
 
-   # Vectorized lane on CPU or GPU
-   results = WealthModel({"n": 100_000, "steps": 50, "seed": 0}).gpu().run()
-   # results = WealthModel(...).cpu(mode="vectorized").run()
+   # GPU path needs NVIDIA + CuPy. Falls back to CPU vectorized without CUDA.
+   model = WealthModel({"n": 100_000, "steps": 50, "seed": 0, "show_progress": False})
+   if am.GPU_AVAILABLE:
+       results = model.gpu().run()
+   else:
+       results = model.cpu(mode="vectorized").run()
+   print(results.info)
 
 For Python Agent objects, implement ``step_oop()`` and run with
 ``model.cpu(mode="oop")``. GPU execution does not support the OOP lane.

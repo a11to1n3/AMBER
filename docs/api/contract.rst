@@ -1,15 +1,30 @@
 Snapshot-view contract
 =======================
 
-The snapshot-view contract is an operational runtime monitor. It reports
-selected hazards at AMBER's instrumented read/write seams, such as a borrow
-after a same-step commit. It does **not** prove that arbitrary NumPy/CuPy code or
-a private GPU kernel preserves every intended activation schedule. Run with a
+**Operational monitor, not schedule proof.** The snapshot-view contract reports
+selected hazards at AMBER's instrumented read/write seams (for example a borrow
+after a same-step commit). ``cert.clean`` means no monitored hazard was observed;
+it is **not** a proof that a vectorized/GPU rewrite preserves an intended
+activation schedule, confluence, or bit-identical trajectories vs an OOP loop.
+Private GPU fast paths under ``approve_fast_path`` are unmonitored. Run with a
 contract mode and inspect the per-step records:
 
 .. code-block:: python
 
-   results = model.run(steps=100, contract="check")   # "off" | "check" | "warn" | "raise"
+   import ambr as am
+
+   class WealthModel(am.Model):
+       def setup(self):
+           self.add_agents(50, wealth=1)
+
+       def step_vectorized(self):
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
+           rec = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
+           self.agents.at[rec].scatter_add(wealth=1)
+
+   model = WealthModel({"steps": 20, "seed": 0, "show_progress": False})
+   results = model.run(steps=20, contract="check")   # "off" | "check" | "warn" | "raise"
    for cert in results["contract"]:
        if not cert.ok:
            print(cert.step, cert.violations)

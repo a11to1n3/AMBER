@@ -1,0 +1,73 @@
+# GPU claim verification — runs when CUDA is available on the runner.
+#
+# Default GitHub-hosted runners have no NVIDIA GPU: the job soft-skips
+# (exit 0) so the workflow stays green. Wire a self-hosted runner with
+# labels [self-hosted, gpu] (or set repository variable GPU_RUNNER) for
+# real nightly checks. Locally / Host B:
+#   python scripts/run_host_b_gpu_claims.py --quick
+
+name: GPU claims (nightly / manual)
+
+on:
+  schedule:
+    # 06:00 UTC daily
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/ambr/gpu*.py"
+      - "src/ambr/device_columns.py"
+      - "scripts/run_host_b_gpu_claims.py"
+      - ".github/workflows/gpu-nightly.yml"
+      - "tests/test_gpu_backend.py"
+      - "tests/test_gpu_ensemble.py"
+
+jobs:
+  gpu-claims:
+    name: Host GPU claim smoke
+    # Prefer a self-hosted GPU runner when the repo defines GPU_RUNNER
+    # (e.g. "self-hosted"); otherwise use ubuntu-latest and soft-skip.
+    runs-on: ${{ vars.GPU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Detect CUDA
+        id: cuda
+        shell: bash
+        run: |
+          if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+            echo "has_cuda=true" >> "$GITHUB_OUTPUT"
+            nvidia-smi -L
+          else
+            echo "has_cuda=false" >> "$GITHUB_OUTPUT"
+            echo "No NVIDIA GPU on this runner — soft-skip (see scripts/run_host_b_gpu_claims.py)."
+          fi
+
+      - name: Install package + CuPy
+        if: steps.cuda.outputs.has_cuda == 'true'
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,perf]"
+          # Prefer a widely available wheel; adjust on the self-hosted image if needed.
+          pip install "cupy-cuda12x" || pip install "cupy-cuda11x" || pip install "cupy"
+
+      - name: Run GPU claim script (quick)
+        if: steps.cuda.outputs.has_cuda == 'true'
+        shell: bash
+        run: |
+          python -c "import ambr as am; assert am.GPU_AVAILABLE, 'CuPy installed but GPU_AVAILABLE is False'"
+          python scripts/run_host_b_gpu_claims.py --quick
+
+      - name: Soft-skip notice
+        if: steps.cuda.outputs.has_cuda != 'true'
+        run: |
+          echo "GPU CI soft-skipped (no CUDA). Configure a self-hosted GPU runner or Host B cron."
+          echo "Manual: python scripts/run_host_b_gpu_claims.py"

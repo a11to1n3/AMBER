@@ -14,6 +14,8 @@ Core Components
    population
    environments
    sequences
+   scheduling
+   viz
 
 Utilities
 ---------

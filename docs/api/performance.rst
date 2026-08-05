@@ -35,4 +35,20 @@ Spatial & parallel
 .. autoclass:: ambr.performance.ParallelRunner
    :members:
 
+**Parallelism is opt-in.** ``model.run()`` always executes **one** simulation
+on the calling process. Use:
+
+* :class:`~ambr.performance.ParallelRunner` — many independent CPU processes
+* :class:`~ambr.experiment.Experiment` — sequential parameter sweep (one process)
+* :class:`~ambr.gpu_ensemble.GPUEnsembleRunner` — many short runs as one ``(B, N)`` GPU/CPU batch
+
+Example::
+
+   from ambr import ParallelRunner
+
+   runner = ParallelRunner(MyModel, n_workers=4)
+   outs = runner.run([
+       {"steps": 20, "seed": s, "show_progress": False} for s in range(8)
+   ])
+
 .. autofunction:: ambr.performance.check_performance_deps

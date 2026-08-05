@@ -98,6 +98,13 @@ class Model(BaseModel):
         ).lower()
         self._execution_mode: str = (parameters.get("mode") or "vectorized").lower()
         self._execution = None
+        # Optional OOP activation policy (see :mod:`ambr.scheduling`). ``None``
+        # means "caller manages order" — default :meth:`step_oop` still falls
+        # back to :meth:`step` and does not auto-activate agents.
+        raw_act = parameters.get("activation")
+        self._activation: Optional[str] = (
+            None if raw_act in (None, "") else str(raw_act).lower().strip()
+        )
         # Private model-specific GPU loops are opt-in per model instance.
         # This is an explicit deployment declaration, not a claim that AMBER
         # has independently verified the supplied evidence label.
@@ -393,8 +400,41 @@ class Model(BaseModel):
         Models with tracked :class:`~ambr.agent.Agent` objects can override
         this hook. The default preserves backwards compatibility for models
         that have only a single ``step()`` implementation.
+
+        If ``parameters['activation']`` is set and this method is **not**
+        overridden, the default still calls :meth:`step` (not auto-activate),
+        so existing models keep working. Call :meth:`activate_agents` explicitly
+        inside ``step`` / ``step_oop`` to use activation helpers.
         """
         return self.step()
+
+    def activate_agents(
+        self,
+        mode: Optional[str] = None,
+        method: str = "step",
+    ) -> None:
+        """Run OOP agents under a thin activation policy (Mesa-inspired).
+
+        Args:
+            mode: ``'sequential'``, ``'random'``, or ``'simultaneous'``.
+                Defaults to ``parameters['activation']`` or ``'sequential'``.
+            method: Per-agent method name (default ``'step'``).
+
+        Notes:
+            * Vectorized models should encode order inside
+              :meth:`step_vectorized` (see :func:`~ambr.scheduling.shuffled_ids`).
+            * Does not prove schedule equivalence; the contract monitor is
+              separate and operational only.
+        """
+        from .scheduling import activate, normalize_activation
+
+        chosen = mode if mode is not None else self._activation
+        activate(
+            self.agents,
+            mode=normalize_activation(chosen),
+            method=method,
+            rng=self.rng,
+        )
 
     def update(self):
         """Per-step hook, called after :meth:`step` with ``t`` already advanced.

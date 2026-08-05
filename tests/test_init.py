@@ -163,6 +163,11 @@ class TestPackageInitialization:
             'require_gpu', 'synchronize', 'scatter_add', 'numba_jit',
             # Execution placement (0.4.3 / 0.4.4)
             'EXECUTION_DEVICES', 'EXECUTION_MODES', 'ExecutionConfig',
+            # OOP activation + viz helpers
+            'ACTIVATION_MODES', 'Activation', 'SequentialActivation',
+            'RandomActivation', 'SimultaneousActivation', 'activate',
+            'normalize_activation', 'shuffled_ids',
+            'HAS_MATPLOTLIB', 'plot_timeseries', 'plot_grid',
         }
 
         # Check that we don't have unexpected exports

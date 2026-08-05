@@ -13,7 +13,7 @@ view API, use ``model.gpu().run()`` instead (:doc:`gpu`, :doc:`../going_faster`)
    import ambr as am
    import numpy as np
 
-   # Evaluate B parameter sets in one (B, N) pass (NumPy or CuPy).
+   # Evaluate B parameter sets in one (B, N) pass (CuPy on NVIDIA, else NumPy).
    B = 8
    runner = am.GPUEnsembleRunner(am.BatchedWellMixedSIR())
    traj = runner.run(
@@ -27,6 +27,8 @@ view API, use ``model.gpu().run()`` instead (:doc:`gpu`, :doc:`../going_faster`)
        seed=0,
    )
    # traj["I_frac"] has shape (B, steps)
+   print({k: getattr(v, "shape", type(v)) for k, v in traj.items()})
+   print("GPU_AVAILABLE=", am.GPU_AVAILABLE)
 
 .. automodule:: ambr.gpu_ensemble
    :members:

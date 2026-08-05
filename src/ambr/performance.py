@@ -416,12 +416,26 @@ def _run_single_simulation(params: Dict[str, Any], model_class: Type) -> Dict[st
 
 
 class ParallelRunner:
-    """
-    Run multiple simulations in parallel across CPU cores.
+    """Run multiple independent simulations in **CPU process pools**.
 
-    Usage:
-        runner = ParallelRunner(MyModel, n_workers=8)
-        results = runner.run(param_list)
+    Important
+    ---------
+    * **Not automatic:** ``model.run()`` is always a **single** simulation.
+      Use this class (or :class:`~ambr.experiment.Experiment` for sequential
+      sweeps, or :class:`~ambr.gpu_ensemble.GPUEnsembleRunner` for GPU batches)
+      when you want many runs.
+    * Uses ``multiprocessing`` with the ``spawn`` context — models and params
+      must be picklable.
+    * Does **not** use the GPU. For many short GPU replicates, prefer
+      :class:`~ambr.gpu_ensemble.GPUEnsembleRunner`.
+
+    Usage::
+
+        runner = ParallelRunner(MyModel, n_workers=4)
+        results = runner.run([
+            {"n": 100, "steps": 20, "seed": 0, "show_progress": False},
+            {"n": 100, "steps": 20, "seed": 1, "show_progress": False},
+        ])
     """
 
     def __init__(self, model_class: Type, n_workers: int = None):
