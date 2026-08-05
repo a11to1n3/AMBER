@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AMBER variant benchmark on CUDA host (RTX 5090).
+# AMBER variant benchmark on a CUDA machine (large-N GPU path).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 export CUDA_PATH="${CUDA_PATH:-/usr/local/cuda-12.9}"
@@ -14,4 +14,4 @@ python3 run_all_frameworks.py \
   --steps 50 \
   --runs 10 \
   --budget 120 \
-  --tag amber_rerun5090
+  --tag amber_rerun_cuda

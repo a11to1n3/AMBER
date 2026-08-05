@@ -495,7 +495,7 @@ def _configure_flamegpu_runtime() -> None:
     nvJitLink. On hosts using pip-installed NVIDIA libraries, those shared
     libraries are not necessarily on the dynamic linker's default path. The
     old benchmark default also pointed at ``~/cuda-12.0``, which is not a
-    valid toolkit path on the benchmark host. Resolve an installed toolkit
+    valid toolkit path on the machine. Resolve an installed toolkit
     and add the packaged CUDA runtime libraries before importing pyflamegpu.
 
     Note: glibc only reads ``LD_LIBRARY_PATH`` at process start, so updating

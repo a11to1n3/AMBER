@@ -57,5 +57,5 @@ Outputs (in `benchmarks/results/`): `summary_table_calibration.md`,
 - **Validation.** Out-of-sample losses track training losses with small
   overfit gaps, so the recovered parameters generalise to unseen seeds.
 
-Numbers are reproducible (seeded) on the benchmark GPU host; absolute
+Numbers are reproducible (seeded) on a fixed CUDA machine; absolute
 wall-clock varies with hardware.

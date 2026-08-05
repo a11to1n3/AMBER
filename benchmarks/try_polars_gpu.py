@@ -183,7 +183,7 @@ def bulk_groupby_polars(n: int, engine) -> None:
 
 def main():
     _reexec_with_rapids_library_path()
-    print("=== Polars GPU tryout (RTX 5090) ===")
+    print("=== Polars GPU tryout ===")
     import cudf_polars  # noqa: F401
 
     print("cudf_polars imported OK")

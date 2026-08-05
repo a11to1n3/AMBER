@@ -4,8 +4,8 @@
 
 ### Changed
 
-- Renamed ``scripts/run_host_b_gpu_claims.py`` → ``scripts/run_gpu_claims.py``
-  and removed paper-campaign labels ("Host A/B") from user-facing docs.
+- Renamed the optional GPU verification entrypoint to
+  ``scripts/run_gpu_claims.py`` (generic CUDA-host wording in docs).
 
 ## v0.4.6 - 2026-08-05
 
@@ -21,8 +21,8 @@ deprecated APIs yet (still scheduled for 1.0).
   allowlisted.
 - **GPU claim verification script** (`scripts/run_gpu_claims.py`): re-verify
   `.gpu().run()`, ArrayKernelModel (CuPy), ensemble, and GPU pytest modules on
-  an NVIDIA host (default CI has no CUDA).
-- **README GPU requirements banner** and pointer to the CUDA host script.
+  NVIDIA + CuPy (default CI has no CUDA).
+- **README GPU requirements banner** and pointer to that script.
 - **`tests/test_readme_examples.py`**: durable smokes for README OOP +
   vectorized wealth (view API) and `record_model` in `update()`.
 - **OOP activation helpers** (`ambr.scheduling`): `activate`,

@@ -78,8 +78,9 @@ PR_DESCRIPTIONS.md
 paper-fix-work/
 AMBER_AAMAS/
 
-# Local campaign / machine scratch (not package surface)
-artifacts/host_*/
+# Local machine scratch / private rerun trees (not package surface)
+artifacts/
+!artifacts/.gitkeep
 artifacts/**/cupy_cache/
 tmp/
 tools/**/*.log

@@ -36,7 +36,7 @@ AMBER (columnar CPU), AMBER GPU ensemble, AMBER native SMAC+GPU, mesa-frames,
 Mesa, agentpy, **Agents.jl** (Julia 1.9 / Agents 5.17, run as a self-contained
 subprocess with JIT warmup), **FLAME GPU 2** (pyflamegpu RTC, one GPU simulation
 per candidate). *Melodie* is in the suite but could not be imported on the
-benchmark host (a runtime error at import), so it is omitted here.
+CUDA environment (a runtime error at import), so it is omitted here.
 
 ## Run
 
@@ -77,7 +77,7 @@ Outputs (in `benchmarks/results/`): `summary_table_calibration_frameworks.md`,
   dominates when each evaluation is cheap.
 - Validation losses track training losses, so recovered parameters generalise.
 
-Numbers are seeded/reproducible on the benchmark GPU host; absolute wall-clock
+Numbers are seeded/reproducible on a fixed CUDA machine; absolute wall-clock
 varies with hardware. FLAME GPU 2's figure includes per-simulation setup; a
 reuse-optimised FLAME GPU calibration would be faster but remains sequential
 (no batching).
