@@ -37,7 +37,7 @@ Recommended practice
 4. For multi-run studies, use ``Experiment``, ``ParallelRunner``, or
    ``GPUEnsembleRunner`` explicitly — never assume ``.run()`` is parallel.
 5. For GPU claims, re-verify on NVIDIA + CuPy with
-   ``python scripts/run_host_b_gpu_claims.py``.
+   ``python scripts/run_gpu_claims.py``.
 
 Seed semantics (summary)
 ------------------------

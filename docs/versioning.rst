@@ -10,7 +10,7 @@ Before 1.0 (current: 0.x)
 * ``0.MAJOR.PATCH`` in practice: **breaking changes may land in minor bumps**
   (e.g. ``0.4 → 0.5``) when required for honesty or API cleanup.
 * Deprecated names keep working with :class:`DeprecationWarning` until **1.0**.
-* Public claim surfaces (README fences, Host B GPU script, doc-fence tests)
+* Public claim surfaces (README fences, GPU claim verification script, doc-fence tests)
   must stay green on each release.
 
 After 1.0
@@ -27,7 +27,7 @@ What is "public API"?
 * Names exported in ``ambr.__all__`` (see :doc:`public_api`).
 * Documented behaviour in the Sphinx **User Guide** and **API Reference**.
 * Stable CLI/scripts that are part of the package story
-  (``scripts/run_host_b_gpu_claims.py`` behaviour for GPU verification).
+  (``scripts/run_gpu_claims.py`` behaviour for GPU verification).
 
 Internal modules (``ambr._*``, private ``Model._*`` helpers, benchmark-only
 kernels under ``benchmarks/models/``) are **not** SemVer-guaranteed.
@@ -46,6 +46,6 @@ Release checklist (maintainers)
 2. ``pytest`` green (incl. doc fences + deprecation inventory).
 3. Version in ``pyproject.toml`` / package metadata.
 4. Tag + Trusted Publishing release workflow.
-5. If GPU claims changed: run ``scripts/run_host_b_gpu_claims.py`` on Host B.
+5. If GPU claims changed: run ``scripts/run_gpu_claims.py`` on a CUDA-capable NVIDIA host.
 
 See also :doc:`contributing`, :doc:`roadmap_1_0`.

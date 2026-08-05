@@ -8,7 +8,7 @@ plan** (dry-run). Nothing listed under “Remove in 1.0” is deleted until the
 Goals for 1.0
 -------------
 
-1. **Honest claims** — README/docs fences and Host B GPU script stay green.
+1. **Honest claims** — README/docs fences and GPU claim verification script stay green.
 2. **Stable public surface** — :doc:`public_api` + :doc:`versioning`.
 3. **Legacy purge** — remove every entry in
    :mod:`ambr.deprecation_inventory`.
@@ -58,7 +58,7 @@ Checklist before tagging 1.0.0
 * [ ] ``tests/test_deprecation_inventory.py`` green
 * [ ] No remaining ``warn_deprecated`` call sites (inventory empty after purge)
 * [ ] Doc fences + README smokes green
-* [ ] Host B ``run_host_b_gpu_claims.py`` green on CUDA hardware
+* [ ] ``scripts/run_gpu_claims.py`` green on CUDA hardware
 * [ ] :doc:`paper_and_package` reviewed
 * [ ] CHANGELOG ``v1.0.0`` with migration notes
 

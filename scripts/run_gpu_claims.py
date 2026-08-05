@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Verify GPU claim paths on an NVIDIA + CuPy host (Host B / RTX-class).
+"""Verify GPU claim paths on an NVIDIA machine with CuPy.
 
 Default CI has **no CUDA**. This script is the source of truth for
-"GPU claims run for real" — run it on the benchmark GPU host after
-``pip install -e '.[perf,gpu]'`` (or cupy-cuda* matching the driver).
+"GPU claims run for real" — run it where ``nvidia-smi`` and CuPy work after
+``pip install -e '.[perf,gpu]'`` (or a CUDA-matched cupy wheel).
 
-Usage (on the GPU host, from the repo root)::
+Usage (from the repo root on a CUDA machine)::
 
-    python scripts/run_host_b_gpu_claims.py
-    python scripts/run_host_b_gpu_claims.py --pytest-only
-    python scripts/run_host_b_gpu_claims.py --quick   # smaller N
+    python scripts/run_gpu_claims.py
+    python scripts/run_gpu_claims.py --pytest-only
+    python scripts/run_gpu_claims.py --quick   # smaller N
 
 Exit code 0 only if every selected case passes with ``device=gpu`` /
 ``array_module=cupy`` where applicable.
@@ -61,7 +61,7 @@ def main() -> int:
     parser.add_argument(
         "--json-out",
         type=Path,
-        default=ROOT / "tmp" / "gpu_claim_runs" / "host_b_gpu_claims.json",
+        default=ROOT / "tmp" / "gpu_claim_runs" / "gpu_claims.json",
         help="Write machine-readable results JSON",
     )
     args = parser.parse_args()
@@ -103,7 +103,7 @@ def main() -> int:
             cases.append({"id": cid, "status": "FAIL", "evidence": tb})
         log()
 
-    log("# Host B GPU claims")
+    log("# GPU claim verification")
     log(f"- when: {datetime.now(timezone.utc).isoformat()}")
     log(f"- host: {platform.node()}")
     log(f"- ambr: {am.__version__}")

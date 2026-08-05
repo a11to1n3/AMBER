@@ -41,7 +41,7 @@ Modern Macs have **no CUDA** and AMBER does **not** use Apple Metal/MPS.
 The GPU lane requires **NVIDIA + CuPy** (``pip install 'ambr[gpu]'`` or a
 CUDA-matched wheel). Re-check GPU claim samples on a CUDA host with::
 
-   python scripts/run_host_b_gpu_claims.py --quick
+   python scripts/run_gpu_claims.py --quick
 
 For CPU speed on Mac / no-CUDA machines, install Numba (optional ``perf`` extra)::
 
@@ -127,7 +127,7 @@ Then either:
    # label and requires it (plus ``contract="off"``) before private loops run.
    # It does **not** verify equivalence to a reference trajectory.
    # Re-check GPU claims on NVIDIA hardware:
-   #   python scripts/run_host_b_gpu_claims.py --quick
+   #   python scripts/run_gpu_claims.py --quick
 
 **B. Array-kernel model —** :class:`~ambr.lanes.ArrayKernelModel`::
 

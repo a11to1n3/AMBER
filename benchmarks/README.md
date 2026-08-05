@@ -48,11 +48,11 @@ setup-inclusive for the FLAME harness — exploratory, not pure kernel speedup.
 
 ### GPU claim verification (CUDA host)
 
-Default CI has no GPU. On an NVIDIA + CuPy host (e.g. Host B):
+Default CI has no GPU. On a machine with NVIDIA + CuPy:
 
 ```bash
 pip install -e '.[perf,gpu]'   # or cupy-cuda12x / cuda13x matching the driver
-python scripts/run_host_b_gpu_claims.py --quick
+python scripts/run_gpu_claims.py --quick
 ```
 
 ## Quick Start

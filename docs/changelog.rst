@@ -12,14 +12,14 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [0.4.6] - 2026-08-05
 --------------------
 
-Claim honesty, doc/CI smokes, Host B GPU verification, activation/viz helpers,
+Claim honesty, doc/CI smokes, GPU claim verification, activation/viz helpers,
 RunResults I/O, calibration docs, and 1.0 freeze prep.
 
 Added
 ~~~~~
 - Doc-fence CI smoke (``tests/test_doc_fences.py``) and README example smokes
   (``tests/test_readme_examples.py``).
-- Host B GPU claim runner (``scripts/run_host_b_gpu_claims.py``) and optional
+- GPU claim verification script (``scripts/run_gpu_claims.py``) and optional
   GPU nightly workflow (soft-skip without CUDA).
 - OOP activation helpers (``ambr.scheduling``) and viz helpers (``ambr.viz``).
 - RunResults ``save`` / ``load`` / ``keys_overview``.

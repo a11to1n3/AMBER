@@ -2,7 +2,7 @@
 
 Intentional API fragments (method bodies, incomplete context) are allowlisted.
 Large-N samples are scaled down in CI so the matrix stays fast; full-scale GPU
-claims are verified with ``scripts/run_host_b_gpu_claims.py`` on a CUDA host.
+claims are verified with ``scripts/run_gpu_claims.py`` on a CUDA host.
 """
 
 from __future__ import annotations

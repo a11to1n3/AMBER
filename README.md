@@ -40,8 +40,8 @@ print(am.recommend(1_000_000))
 Default GitHub CI has **no CUDA**. Re-verify GPU claim paths on a CUDA host with:
 
 ```bash
-python scripts/run_host_b_gpu_claims.py          # full (incl. large-N)
-python scripts/run_host_b_gpu_claims.py --quick  # fast smoke
+python scripts/run_gpu_claims.py          # full (incl. large-N)
+python scripts/run_gpu_claims.py --quick  # fast smoke
 ```
 
 ### Headline comparison (committed evidence)
@@ -94,7 +94,7 @@ checks presence of the label, not the evidence content) and
 
 Default CI has no CUDA. Optional **GPU claims** workflow
 (`.github/workflows/gpu-nightly.yml`) soft-skips without a GPU and runs
-`scripts/run_host_b_gpu_claims.py --quick` on self-hosted CUDA runners.
+`scripts/run_gpu_claims.py --quick` on self-hosted CUDA runners.
 
 ## 🚀 Quick Start
 
@@ -205,7 +205,7 @@ off by default (`show_progress=True` to re-enable).
 
 > **New in 0.4.6:** claim-honest public samples (view API + `GPU_AVAILABLE`
 > branching), [doc-fence / README smokes](tests/test_doc_fences.py),
-> [Host B GPU claim script](scripts/run_host_b_gpu_claims.py), OOP
+> [GPU claim verification script](scripts/run_gpu_claims.py), OOP
 > [activation helpers](docs/api/scheduling.rst), [viz helpers](docs/api/viz.rst),
 > [RunResults save/load](docs/api/results.rst), [reproducibility policy](docs/reproducibility.rst),
 > and [1.0 freeze prep](docs/roadmap_1_0.rst). See the [changelog](CHANGELOG.md).

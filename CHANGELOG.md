@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- Renamed ``scripts/run_host_b_gpu_claims.py`` → ``scripts/run_gpu_claims.py``
+  and removed paper-campaign labels ("Host A/B") from user-facing docs.
+
 ## v0.4.6 - 2026-08-05
 
-Claim honesty, doc/CI smokes, Host B GPU verification, activation/viz helpers,
+Claim honesty, doc/CI smokes, GPU claim verification, activation/viz helpers,
 RunResults I/O, calibration docs, and 1.0 freeze prep — without removing
 deprecated APIs yet (still scheduled for 1.0).
 
@@ -14,10 +19,10 @@ deprecated APIs yet (still scheduled for 1.0).
   Python in README and key docs; executes self-contained samples (large-N
   scaled down unless `AMBER_DOC_FENCE_FULL=1`). Intentional fragments are
   allowlisted.
-- **Host B GPU claim runner** (`scripts/run_host_b_gpu_claims.py`): re-verify
+- **GPU claim verification script** (`scripts/run_gpu_claims.py`): re-verify
   `.gpu().run()`, ArrayKernelModel (CuPy), ensemble, and GPU pytest modules on
   an NVIDIA host (default CI has no CUDA).
-- **README GPU requirements banner** and pointer to the Host B script.
+- **README GPU requirements banner** and pointer to the CUDA host script.
 - **`tests/test_readme_examples.py`**: durable smokes for README OOP +
   vectorized wealth (view API) and `record_model` in `update()`.
 - **OOP activation helpers** (`ambr.scheduling`): `activate`,
@@ -26,7 +31,7 @@ deprecated APIs yet (still scheduled for 1.0).
 - **Viz helpers** (`ambr.viz`): `plot_timeseries`, `plot_grid`; optional
   extra `ambr[viz]` (matplotlib is already a core dependency).
 - **GPU nightly / manual workflow** (`.github/workflows/gpu-nightly.yml`):
-  soft-skips without CUDA; runs Host B quick claims when `nvidia-smi` works
+  soft-skips without CUDA; runs GPU quick claims when `nvidia-smi` works
   (self-hosted GPU runner via `vars.GPU_RUNNER`).
 - **RunResults I/O**: `results.save(path)` / `RunResults.load(path)`
   (parquet + info.json); `keys_overview()` helper.

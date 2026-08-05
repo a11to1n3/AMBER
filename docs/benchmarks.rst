@@ -12,7 +12,7 @@ separate (:doc:`api/gpu_ensemble`).
 
 The full suite lives under ``benchmarks/`` (see ``benchmarks/README.md``).
 Default CI has no CUDA; re-check GPU claim samples on a GPU host with
-``python scripts/run_host_b_gpu_claims.py``. Large multi-framework runs use
+``python scripts/run_gpu_claims.py``. Large multi-framework runs use
 ``python benchmarks/run_all_frameworks.py``.
 
 Headline: AMBER (GPU) vs FLAME GPU 2 at 10M

@@ -15,7 +15,7 @@ Package (source of truth for software claims)
 
   (AMBER GPU vs FLAME GPU 2, 10M agents, RTX 5090 protocol).
 * GPU claims require **NVIDIA + CuPy**; verified with
-  ``scripts/run_host_b_gpu_claims.py``.
+  ``scripts/run_gpu_claims.py``.
 * API and lanes: dual OOP + vectorized, ``model.gpu()``, ensemble calibration,
   contract monitor — as documented in this tree.
 

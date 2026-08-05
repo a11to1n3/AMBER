@@ -3,8 +3,8 @@
 # Default GitHub-hosted runners have no NVIDIA GPU: the job soft-skips
 # (exit 0) so the workflow stays green. Wire a self-hosted runner with
 # labels [self-hosted, gpu] (or set repository variable GPU_RUNNER) for
-# real nightly checks. Locally / Host B:
-#   python scripts/run_host_b_gpu_claims.py --quick
+# real nightly checks. Locally on a CUDA host:
+#   python scripts/run_gpu_claims.py --quick
 
 name: GPU claims (nightly / manual)
 
@@ -17,14 +17,14 @@ on:
     paths:
       - "src/ambr/gpu*.py"
       - "src/ambr/device_columns.py"
-      - "scripts/run_host_b_gpu_claims.py"
+      - "scripts/run_gpu_claims.py"
       - ".github/workflows/gpu-nightly.yml"
       - "tests/test_gpu_backend.py"
       - "tests/test_gpu_ensemble.py"
 
 jobs:
   gpu-claims:
-    name: Host GPU claim smoke
+    name: GPU claim smoke
     # Prefer a self-hosted GPU runner when the repo defines GPU_RUNNER
     # (e.g. "self-hosted"); otherwise use ubuntu-latest and soft-skip.
     runs-on: ${{ vars.GPU_RUNNER || 'ubuntu-latest' }}
@@ -47,7 +47,7 @@ jobs:
             nvidia-smi -L
           else
             echo "has_cuda=false" >> "$GITHUB_OUTPUT"
-            echo "No NVIDIA GPU on this runner — soft-skip (see scripts/run_host_b_gpu_claims.py)."
+            echo "No NVIDIA GPU on this runner — soft-skip (see scripts/run_gpu_claims.py)."
           fi
 
       - name: Install package + CuPy
@@ -64,10 +64,10 @@ jobs:
         shell: bash
         run: |
           python -c "import ambr as am; assert am.GPU_AVAILABLE, 'CuPy installed but GPU_AVAILABLE is False'"
-          python scripts/run_host_b_gpu_claims.py --quick
+          python scripts/run_gpu_claims.py --quick
 
       - name: Soft-skip notice
         if: steps.cuda.outputs.has_cuda != 'true'
         run: |
-          echo "GPU CI soft-skipped (no CUDA). Configure a self-hosted GPU runner or Host B cron."
-          echo "Manual: python scripts/run_host_b_gpu_claims.py"
+          echo "GPU CI soft-skipped (no CUDA). Configure a self-hosted GPU runner or a self-hosted CUDA schedule."
+          echo "Manual: python scripts/run_gpu_claims.py"

@@ -102,7 +102,7 @@ Verify lanes after install::
    am.print_status()                 # GPU? Numba?
    print(am.recommend(10_000))
    # GPU claim samples (on an NVIDIA host with CuPy):
-   #   python scripts/run_host_b_gpu_claims.py --quick
+   #   python scripts/run_gpu_claims.py --quick
 
 See :doc:`going_faster` for lanes, :doc:`reproducibility` for seed/device
 policy, and :doc:`paper_and_package` for paper vs package numbers.

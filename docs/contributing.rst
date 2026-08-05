@@ -166,7 +166,7 @@ Before tagging a release:
 1. Make sure ``dev`` is up to date with ``origin/dev`` and merged or fast
    forwarded into ``main`` for release.
 2. Run ``pytest`` (include doc fences + deprecation inventory).
-3. If GPU claims changed, run ``scripts/run_host_b_gpu_claims.py`` on a CUDA host.
+3. If GPU claims changed, run ``scripts/run_gpu_claims.py`` on a CUDA host.
 4. Update ``CHANGELOG.md`` and version metadata.
 2. Bump the package version in ``pyproject.toml`` and update
    ``CHANGELOG.md`` plus ``docs/changelog.rst`` (also keep

@@ -23,7 +23,7 @@ Getting Started Examples
    ``ArrayKernelModel``. See :doc:`../going_faster`.
 
    - Script: ``examples/gpu_quickstart.py``
-   - Host verification: ``python scripts/run_host_b_gpu_claims.py --quick``
+   - Host verification: ``python scripts/run_gpu_claims.py --quick``
 
 **Segregation Model**
    Schelling-style segregation with optional plotting.
