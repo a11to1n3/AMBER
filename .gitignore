@@ -78,8 +78,8 @@ PR_DESCRIPTIONS.md
 paper-fix-work/
 AMBER_AAMAS/
 
-# Host campaign raw trees / local scratch
-artifacts/host_b_*/
+# Local campaign / machine scratch (not package surface)
+artifacts/host_*/
 artifacts/**/cupy_cache/
 tmp/
 tools/**/*.log
