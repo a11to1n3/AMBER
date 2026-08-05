@@ -21,20 +21,25 @@ Basic Usage
    import ambr as am
 
    class MyAgent(am.Agent):
-       def __init__(self, model, agent_id):
-           super().__init__(model, agent_id)
+       def setup(self):
            self.wealth = 10
            self.age = 0
 
        def step(self):
            # Define agent behavior
            self.age += 1
-           # ... other behaviors
 
-   # In your model's setup() — bulk-create tracked Python agents in one call.
-   # add_agents(..., agent_class=...) instantiates and tracks the objects, so
-   # you can iterate ``self.agents`` or reach one with ``self.agents.by_id(i)``.
-   self.add_agents(100, agent_class=MyAgent)
+   class MyModel(am.Model):
+       def setup(self):
+           # bulk-create tracked Python agents in one call
+           self.add_agents(100, agent_class=MyAgent)
+
+       def step(self):
+           for agent in self.agents:
+               agent.step()
+
+   results = MyModel({"steps": 5, "seed": 0, "show_progress": False}).run()
+   print(results.agents.head())
 
 Custom Agent Classes
 --------------------

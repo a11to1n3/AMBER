@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+## v0.4.6 - 2026-08-05
+
+Claim honesty, doc/CI smokes, Host B GPU verification, activation/viz helpers,
+RunResults I/O, calibration docs, and 1.0 freeze prep — without removing
+deprecated APIs yet (still scheduled for 1.0).
+
+### Added
+
+- **Doc-fence CI smoke** (`tests/test_doc_fences.py`): syntax-checks fenced
+  Python in README and key docs; executes self-contained samples (large-N
+  scaled down unless `AMBER_DOC_FENCE_FULL=1`). Intentional fragments are
+  allowlisted.
+- **Host B GPU claim runner** (`scripts/run_host_b_gpu_claims.py`): re-verify
+  `.gpu().run()`, ArrayKernelModel (CuPy), ensemble, and GPU pytest modules on
+  an NVIDIA host (default CI has no CUDA).
+- **README GPU requirements banner** and pointer to the Host B script.
+- **`tests/test_readme_examples.py`**: durable smokes for README OOP +
+  vectorized wealth (view API) and `record_model` in `update()`.
+- **OOP activation helpers** (`ambr.scheduling`): `activate`,
+  `Activation` / Sequential|Random|Simultaneous aliases, `shuffled_ids`, and
+  `Model.activate_agents(mode=...)` for tracked agents (not a schedule proof).
+- **Viz helpers** (`ambr.viz`): `plot_timeseries`, `plot_grid`; optional
+  extra `ambr[viz]` (matplotlib is already a core dependency).
+- **GPU nightly / manual workflow** (`.github/workflows/gpu-nightly.yml`):
+  soft-skips without CUDA; runs Host B quick claims when `nvidia-smi` works
+  (self-hosted GPU runner via `vars.GPU_RUNNER`).
+- **RunResults I/O**: `results.save(path)` / `RunResults.load(path)`
+  (parquet + info.json); `keys_overview()` helper.
+- **Docs**: `docs/reproducibility.rst` (CPU≠GPU bit-identical policy, seeds,
+  contract/fast-path limits); RunResults cookbook; Experiment/ParallelRunner
+  opt-in parallelism wording.
+- **Example**: `examples/smac_batch_sir_smoke.py` (ensemble always; SMAC
+  skipped honestly without `ambr[advanced]`).
+- **1.0 freeze prep**: `ambr.deprecation_inventory` +
+  `tests/test_deprecation_inventory.py`; docs
+  `versioning`, `public_api`, `paper_and_package`, `roadmap_1_0`.
+
+### Changed
+
+- Public wealth / GPU samples use the **view API** (`where` / assign /
+  `scatter_add`) and honest `GPU_AVAILABLE` branching (no read-only
+  `agents.array` mutate; no commented-only `.gpu()` as the primary path).
+- Tutorial / API docs: `Sample(n=...)`, `Experiment(model_type=..., sample=...)`,
+  experiment results as Polars dict frames; contract wording stresses
+  **operational monitor, not schedule proof**.
+- Benchmarks README: single source of truth for headline numbers
+  (`snapshot_correct_10run_10m` only; `summary_table.md` exploratory).
+- **Experiment**: canonical `model_type=` / `sample=`; legacy
+  `model_class=` / `parameters=` emit `DeprecationWarning` (remove in 1.0).
+- **ParallelRunner** / **GPUEnsembleRunner** docs: single-run `.run()` is never
+  parallel; ensemble “× vs loop” wording de-hyped as exploratory.
+
 ## v0.4.5 - 2026-07-29
 
 Research-grade package hygiene: honest 10M headline evidence, pair-keyed GPU

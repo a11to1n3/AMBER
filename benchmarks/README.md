@@ -32,14 +32,28 @@ Large-N multi-framework runs may **OOM** (e.g. mesa-frames SIR ≥100k) or hit
 per-run **budgets**. Do not impute missing cells as 0 s. Prefer JSON rows that
 record a status, or document skips in the campaign notes.
 
-## Headline README numbers
+## Headline README numbers (single source of truth)
 
-The package README cites
-`results/benchmark_results_snapshot_correct_10run_10m.json`
-(AMBER GPU vs FLAME at 10M, 10 runs, all samples retained). Schelling ratios
-are setup-inclusive for the FLAME harness — exploratory, not pure kernel
-speedup. Other charts under `results/` may use different protocols (trimmed
-means, older stacks); check each file’s provenance.
+**Only these files** back the package README / Sphinx headline table:
+
+| File | Role |
+|------|------|
+| `results/benchmark_results_snapshot_correct_10run_10m.json` | **Source of truth** (10 runs, 10M, AMBER GPU vs FLAME) |
+| `results/summary_table_snapshot_correct_10run_10m.md` | Human-readable summary of that JSON |
+
+**Do not** mix in `results/summary_table.md` or other campaign JSONs when quoting
+headline speedups — those are **exploratory / historical** (different protocols,
+peers, or incomplete cells). Schelling ratios in the snapshot are
+setup-inclusive for the FLAME harness — exploratory, not pure kernel speedup.
+
+### GPU claim verification (CUDA host)
+
+Default CI has no GPU. On an NVIDIA + CuPy host (e.g. Host B):
+
+```bash
+pip install -e '.[perf,gpu]'   # or cupy-cuda12x / cuda13x matching the driver
+python scripts/run_host_b_gpu_claims.py --quick
+```
 
 ## Quick Start
 

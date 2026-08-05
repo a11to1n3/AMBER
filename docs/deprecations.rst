@@ -41,6 +41,18 @@ Canonical → legacy table
    * - ``model.cpu(mode=...).run()`` / ``model.gpu().run()``
      or ``run(device=...)``
      - ``run(backend=...)`` (alias of device placement)
+   * - ``Experiment(model_type=..., sample=...)``
+     - ``Experiment(model_class=..., parameters=...)``
+
+Machine-readable inventory
+--------------------------
+
+Python source of truth (kept in sync by tests)::
+
+   from ambr.deprecation_inventory import DEPRECATIONS_TO_REMOVE_IN_1_0
+
+Also: :mod:`ambr.population.Population.create_batch_context` emits a plain
+``DeprecationWarning`` (prefer view ``set`` / ``scatter_add``).
 
 Rules of thumb
 --------------
@@ -67,5 +79,8 @@ How warnings look
 Tracking
 --------
 
-Source of truth for emit sites: ``ambr._deprecation.warn_deprecated`` call
-sites under ``src/ambr/``. Tests: ``tests/test_deprecations.py``.
+* Emit helper: ``ambr._deprecation.warn_deprecated``
+* Inventory: ``ambr.deprecation_inventory`` + this page
+* Behaviour tests: ``tests/test_deprecations.py``
+* Sync test: ``tests/test_deprecation_inventory.py``
+* Roadmap: :doc:`roadmap_1_0`

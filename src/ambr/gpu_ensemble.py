@@ -5,8 +5,9 @@ as a single ``(B, N)`` tensor batch. This is the natural GPU upgrade for
 calibration / sensitivity analysis / parameter sweeps (``Experiment``,
 ``SMACOptimizer``, ``ParallelRunner``), where you evaluate thousands of small
 replicate runs: batching collapses ``B*steps`` kernel launches into ``steps``,
-saturates the device, and runs ~100-600x faster than looping (the speedup is
-largest when each individual run is small -- exactly the calibration regime).
+saturates the device. Throughput gains vs serial looping are largest when each
+individual run is small (the calibration regime); treat large "× vs loop"
+figures as **exploratory / hardware-dependent**, not a guaranteed product claim.
 
 A *batched model* implements three methods over ``(B, N)`` arrays from the
 active array module (CuPy on GPU, else NumPy):

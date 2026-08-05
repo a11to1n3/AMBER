@@ -1,6 +1,7 @@
-from typing import Type, Dict, Any, List
+from typing import Type, Dict, Any, List, Optional
 import polars as pl
 from .model import Model
+from ._deprecation import warn_deprecated
 
 class IntRange:
     """Range of integer values for parameter sampling.
@@ -84,18 +85,64 @@ class Sample:
         return combinations
 
 class Experiment:
-    """Container for running multiple model simulations."""
+    """Run many parameter combinations of one model class.
 
-    def __init__(self, model_type: Type[Model], sample: Sample,
-                 iterations: int = 1, record: bool = True):
+    Canonical constructor::
+
+        Experiment(model_type=MyModel, sample=Sample({...}, n=10), iterations=1)
+
+    Legacy aliases (deprecated → 1.0)::
+
+        Experiment(model_class=MyModel, parameters=sample, iterations=1)
+
+    Returns a dict of Polars frames (``info``, ``parameters``, ``agents``,
+    ``model``) — **not** a pandas object and **not** automatic multi-process
+    parallelism. For CPU process pools use :class:`~ambr.performance.ParallelRunner`;
+    for many short GPU replicates use :class:`~ambr.gpu_ensemble.GPUEnsembleRunner`.
+    """
+
+    def __init__(
+        self,
+        model_type: Optional[Type[Model]] = None,
+        sample: Optional[Sample] = None,
+        iterations: int = 1,
+        record: bool = True,
+        *,
+        model_class: Optional[Type[Model]] = None,
+        parameters: Optional[Sample] = None,
+    ):
         """Initialize a new experiment.
 
         Args:
-            model_type: Class of model to run
-            sample: Parameter sample to use
-            iterations: Number of iterations per parameter combination
-            record: Whether to record variables during simulation
+            model_type: Class of model to run (canonical).
+            sample: :class:`Sample` of parameter combinations (canonical).
+            iterations: Number of iterations per parameter combination.
+            record: Reserved for future use (results always include frames).
+            model_class: Deprecated alias for ``model_type``.
+            parameters: Deprecated alias for ``sample``.
         """
+        if model_class is not None:
+            warn_deprecated(
+                "Experiment(model_class=...)",
+                "Experiment(model_type=...)",
+            )
+            if model_type is None:
+                model_type = model_class
+        if parameters is not None:
+            warn_deprecated(
+                "Experiment(parameters=...)",
+                "Experiment(sample=...)",
+            )
+            if sample is None:
+                sample = parameters
+        if model_type is None:
+            raise TypeError("Experiment requires model_type= (model class)")
+        if sample is None:
+            raise TypeError("Experiment requires sample= (a Sample instance)")
+        if not isinstance(sample, Sample):
+            raise TypeError(
+                f"sample must be a Sample instance, got {type(sample).__name__}"
+            )
         self.model_type = model_type
         self.sample = sample
         self.iterations = iterations
@@ -105,7 +152,8 @@ class Experiment:
         """Run the experiment.
 
         Returns:
-            Dictionary containing results from all runs
+            Dictionary with ``info``, ``parameters``, ``agents``, ``model``
+            (Polars DataFrames for the table keys).
         """
         all_results = []
         all_agents_data = []

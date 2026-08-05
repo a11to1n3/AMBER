@@ -6,76 +6,68 @@ Experiment
    :undoc-members:
    :show-inheritance:
 
-The experiment module provides tools for running multiple model configurations and parameter sweeps.
+Tools for sequential parameter sweeps. **Parallelism is not automatic** —
+see :class:`~ambr.performance.ParallelRunner` (CPU processes) and
+:class:`~ambr.gpu_ensemble.GPUEnsembleRunner` (GPU batches).
 
-Experiment Class
+Experiment class
 ----------------
 
 .. autoclass:: ambr.Experiment
    :members:
    :undoc-members:
 
-Run multiple model configurations:
+Canonical usage::
 
-.. code-block:: python
-
+   import ambr as am
    from ambr import Experiment, Sample, IntRange
 
-   # Define parameter variations
-   params = Sample({
-       'n_agents': IntRange(50, 200),
-       'steps': 100,
-       'seed': [1, 2, 3, 4, 5]  # Multiple seeds for robustness
-   })
+   class MyModel(am.Model):
+       model_reporters = {"n": lambda m: len(m.agents)}
+       def setup(self):
+           self.add_agents(int(self.p.get("n_agents", 50)), wealth=1)
+       def step_vectorized(self):
+           pass
 
-   # Create and run experiment
-   experiment = Experiment(
-       model_class=MyModel,
-       parameters=params,
-       iterations=20  # Number of parameter combinations
+   sample = Sample(
+       {
+           "n_agents": IntRange(20, 60),  # start inclusive, end exclusive
+           "steps": 10,
+           "seed": [0, 1, 2],
+           "show_progress": False,
+       },
+       n=6,  # number of combinations to draw
    )
-
+   experiment = Experiment(
+       model_type=MyModel,
+       sample=sample,
+       iterations=1,
+   )
    results = experiment.run()
+   # dict: info, parameters, agents, model (Polars frames)
+   print(results["info"])
+   print(results["model"].head())
 
-Sample Class
+Legacy kwargs ``model_class=`` / ``parameters=`` still work with a
+``DeprecationWarning`` (removed in **1.0**).
+
+Sample class
 ------------
 
 .. autoclass:: ambr.Sample
    :members:
    :undoc-members:
 
-Parameter sampling for experiments:
+``Sample(parameters, n)`` requires **both** the parameter map and ``n``
+(number of combinations). Combinations are available as
+``sample.combinations`` (list of dicts).
 
-.. code-block:: python
-
-   # Sample with ranges and fixed values
-   sample = Sample({
-       'population': IntRange(100, 1000),
-       'mutation_rate': [0.01, 0.05, 0.1],
-       'selection_pressure': 0.8,  # Fixed value
-   })
-
-   # Generate parameter combinations
-   for params in sample.generate(n=50):
-       model = MyModel(params)
-       results = model.run()
-
-IntRange Class
+IntRange class
 --------------
 
 .. autoclass:: ambr.IntRange
    :members:
    :undoc-members:
 
-Integer range specification:
-
-.. code-block:: python
-
-   # Define integer ranges
-   population_range = IntRange(50, 500)  # 50 to 500 inclusive
-
-   # Use in parameter definitions
-   params = {
-       'n_agents': population_range,
-       'max_steps': IntRange(100, 1000)
-   }
+Python ``range`` semantics: ``start`` inclusive, ``end`` exclusive
+(``IntRange(1, 10)`` → values ``1..9``).

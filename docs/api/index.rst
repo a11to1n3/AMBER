@@ -14,6 +14,8 @@ Core Components
    population
    environments
    sequences
+   scheduling
+   viz
 
 Utilities
 ---------
@@ -27,8 +29,8 @@ Utilities
    results
    performance
 
-Advanced (0.4 / 0.4.1 / 0.4.3 / 0.4.4)
-------------------------------------
+Advanced
+--------
 
 .. toctree::
    :maxdepth: 2
@@ -38,6 +40,8 @@ Advanced (0.4 / 0.4.1 / 0.4.3 / 0.4.4)
    lanes
    gpu
    gpu_ensemble
+   scheduling
+   viz
 
 Quick Reference
 ---------------
@@ -73,35 +77,42 @@ Quick Reference
 * :class:`ambr.Sample` - Parameter sampling for experiments
 * :class:`ambr.IntRange` - Integer range specification for parameters
 
-**Snapshot-view contract (0.4 / 0.4.4):**
+**Snapshot-view contract:**
 
-* :class:`ambr.contract.ContractCertificate` - Per-step operational monitor
+* :class:`ambr.contract.ContractCertificate` - Per-step **operational** monitor
   record from ``model.run(contract=...)`` (not a schedule proof)
 
-**Tensor lane (0.4):**
+**Tensor lane:**
 
 * :func:`ambr.tensor_lane.borrow_numeric` - Zero-copy borrow of a numeric column
 * :func:`ambr.tensor_lane.commit_columns` - Atomic write-back of derived columns
 
-**Speed lanes (0.4.1):**
+**Speed lanes:**
 
 * :func:`ambr.print_status` / :func:`ambr.recommend` - machine/lane status and hints
 * :class:`ambr.ArrayKernelModel` - single-run CuPy/NumPy array model
 * Optional ``pip install 'ambr[perf]'`` (Numba) for CPU scatter JIT
 
-**Device placement & lanes (0.4.3 / 0.4.4):**
+**Device placement & lanes:**
 
 * :meth:`ambr.Model.cpu` / :meth:`ambr.Model.gpu` - Keras-style placement;
-  ``step_vectorized`` / ``step_oop`` dispatch (GPU is vectorized-only;
+  ``step_vectorized`` / ``step_oop`` (GPU is vectorized-only, NVIDIA+CuPy;
   see :doc:`gpu`, :doc:`../going_faster`)
 * :meth:`ambr.Model.approve_fast_path` / :meth:`ambr.Model.revoke_fast_path_approval`
-  - opt-in private GPU loop with caller-supplied evidence label
-* ``ambr.EXECUTION_DEVICES`` / ``EXECUTION_MODES`` / ``ExecutionConfig`` -
-  placement constants (package exports)
+  - opt-in private GPU loop; **caller-attested** label only
+* ``ambr.EXECUTION_DEVICES`` / ``EXECUTION_MODES`` / ``ExecutionConfig``
 
-**GPU & calibration (0.4):**
+**GPU & calibration:**
 
-* :func:`ambr.gpu.get_array_module` - Resolve the CuPy/NumPy array module
-* :class:`ambr.GPUEnsembleRunner` - Batched (B × N) ensemble runner (NumPy fallback in CI)
+* :func:`ambr.gpu.get_array_module` - CuPy/NumPy array module
+* :class:`ambr.GPUEnsembleRunner` - Batched (B × N) ensemble (NumPy fallback)
 * :class:`ambr.BatchedWellMixedSIR` - Reference well-mixed SIR batched model
-* :func:`ambr.smac_batch_calibrate` - SMAC calibration over a batched ensemble
+* :func:`ambr.smac_batch_calibrate` - SMAC over a batched ensemble
+  (``ambr[advanced]``)
+
+**Activation & viz (0.4.6):**
+
+* :func:`ambr.activate` / :meth:`ambr.Model.activate_agents` - OOP activation
+  helpers (not a schedule proof); see :doc:`scheduling`
+* :func:`ambr.plot_timeseries` / :func:`ambr.plot_grid` - matplotlib helpers;
+  see :doc:`viz`

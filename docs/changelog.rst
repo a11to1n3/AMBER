@@ -9,6 +9,29 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
+[0.4.6] - 2026-08-05
+--------------------
+
+Claim honesty, doc/CI smokes, Host B GPU verification, activation/viz helpers,
+RunResults I/O, calibration docs, and 1.0 freeze prep.
+
+Added
+~~~~~
+- Doc-fence CI smoke (``tests/test_doc_fences.py``) and README example smokes
+  (``tests/test_readme_examples.py``).
+- Host B GPU claim runner (``scripts/run_host_b_gpu_claims.py``) and optional
+  GPU nightly workflow (soft-skip without CUDA).
+- OOP activation helpers (``ambr.scheduling``) and viz helpers (``ambr.viz``).
+- RunResults ``save`` / ``load`` / ``keys_overview``.
+- Docs: reproducibility, versioning, public API, paper vs package, roadmap 1.0.
+- Deprecation inventory + sync tests; ``examples/smac_batch_sir_smoke.py``.
+
+Changed
+~~~~~~~
+- Public samples use view API + honest ``GPU_AVAILABLE`` branching.
+- Experiment canonical ``model_type`` / ``sample``; legacy kwargs deprecated.
+- Parallelism documented as opt-in (not automatic from ``.run()``).
+
 [0.4.5] - 2026-07-29
 --------------------
 

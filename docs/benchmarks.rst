@@ -2,16 +2,18 @@ Benchmarks & Performance
 ========================
 
 AMBER stores the whole population as a columnar Polars DataFrame and compiles
-each step into a handful of vectorized expressions. From **0.4.4**, the
-vectorized lane (``step_vectorized`` / legacy ``step``) runs on GPU via
-``model.gpu().run()`` (:doc:`api/gpu`) with device-resident columns. Published
-AMBER (GPU) rows may use an explicit ``approve_fast_path(evidence)`` label
-before placement; the label is caller provenance, not a runtime certificate.
-Batched calibration is separate (:doc:`api/gpu_ensemble`).
+each step into a handful of vectorized expressions. The vectorized lane
+(``step_vectorized`` / legacy ``step``) runs on GPU via ``model.gpu().run()``
+(:doc:`api/gpu`) with device-resident columns when **NVIDIA + CuPy** are
+available (not Apple Metal/MPS). Published AMBER (GPU) rows may use an
+explicit ``approve_fast_path(evidence)`` label before placement; the label is
+**caller provenance**, not a runtime certificate. Batched calibration is
+separate (:doc:`api/gpu_ensemble`).
 
-The full, reproducible suite — correctness checks, raw timings, and per-model
-tables — lives under ``benchmarks/`` (see ``benchmarks/README.md``). Reproduce
-with ``python benchmarks/run_all_frameworks.py``.
+The full suite lives under ``benchmarks/`` (see ``benchmarks/README.md``).
+Default CI has no CUDA; re-check GPU claim samples on a GPU host with
+``python scripts/run_host_b_gpu_claims.py``. Large multi-framework runs use
+``python benchmarks/run_all_frameworks.py``.
 
 Headline: AMBER (GPU) vs FLAME GPU 2 at 10M
 --------------------------------------------

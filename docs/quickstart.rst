@@ -18,13 +18,14 @@ Want speed / GPU without guessing? See :doc:`going_faster` and run::
    am.print_status()
    print(am.recommend(100_000))
 
-Place a run with Keras-style chaining (0.4.4; mode defaults to
-``vectorized``). Prefer ``step_vectorized()`` for the columnar lane and
-``step_oop()`` for tracked Agent objects; legacy ``step()`` is the fallback.
-GPU runs use the vectorized lane only::
+Place a run with Keras-style chaining (mode defaults to ``vectorized``).
+Prefer ``step_vectorized()`` for the columnar lane and ``step_oop()`` for
+tracked Agent objects; legacy ``step()`` is the fallback. GPU runs use the
+vectorized lane only and require **NVIDIA + CuPy** (not Apple Metal/MPS)::
 
    results = model.cpu(mode="vectorized").run()
-   results = model.gpu().run()          # vectorized lane; needs NVIDIA + CuPy
+   if am.GPU_AVAILABLE:
+       results = model.gpu().run()
    results = model.cpu(mode="oop").run()  # Agent objects; not available on GPU
 
 For a CPU boost on Mac (no CUDA), install Numba::
@@ -143,14 +144,18 @@ vectorized way:
            recipients = self.rng.choice(ids, size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
-           # Track aggregate state at the model level.
+       def update(self):
+           # record_model must run in update() (or via model_reporters);
+           # values recorded only inside step() are reset before the row is saved.
            self.record_model('total_wealth', int(self.agents.wealth.sum()))
 
-   # Run on CPU (vectorized is the default mode)
+   # Prefer GPU when available (NVIDIA + CuPy); else CPU vectorized.
    model = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
-   results = model.cpu(mode="vectorized").run()
-   # Vectorized lane on GPU (device-resident columns):
-   # results = model.gpu().run()
+   if am.GPU_AVAILABLE:
+       results = model.gpu().run()
+   else:
+       results = model.cpu(mode="vectorized").run()
+   print(results.info)
 
    # Inspect the results
    print("Final wealth distribution (first 10 agents):")
@@ -159,7 +164,8 @@ vectorized way:
 That's the whole idiom. No per-agent loops, no ``update_agent_data`` calls,
 and no ``.item()`` ceremonies. ``step_vectorized()`` is a handful of view-API
 calls regardless of whether you have 100 agents or 100 000 — and the
-vectorized lane runs under ``.gpu()`` with device-resident columns (0.4.4).
+vectorized lane runs under ``.gpu()`` with device-resident columns when
+NVIDIA + CuPy are available.
 
 Understanding the results
 -------------------------
@@ -203,6 +209,8 @@ Let's enhance the model with a 20×20 grid:
 
 .. code-block:: python
 
+   import ambr as am
+
    class SpatialWealthModel(am.Model):
        def setup(self):
            self.grid = am.GridEnvironment(self, size=(20, 20))
@@ -232,12 +240,14 @@ Let's enhance the model with a 20×20 grid:
 Model-level analytics
 ---------------------
 
-Aggregate metrics go through ``self.record_model`` (or, declaratively, a
-class-level ``model_reporters`` dict), which takes any scalar you can compute
-from the current DataFrame:
+Aggregate metrics go through ``self.record_model`` inside ``update()`` (or,
+declaratively, a class-level ``model_reporters`` dict). Values written only
+inside ``step()`` / ``step_vectorized()`` are discarded when the step row is
+built — ``update()`` is the imperative recording hook:
 
 .. code-block:: python
 
+   import ambr as am
    import numpy as np
 
    class AnalyticalWealthModel(am.Model):
@@ -251,7 +261,10 @@ from the current DataFrame:
            recipients = self.rng.choice(ids, size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
-           # Polars Series expose the usual aggregate methods.
+       def update(self):
+           # Imperative metrics belong in update() (after step); step-body
+           # record_model calls are wiped when the step row is finalized.
+           # Prefer model_reporters for simple declarative aggregates.
            wealth = self.agents.wealth
            self.record_model('mean_wealth', float(wealth.mean()))
            self.record_model('wealth_std', float(wealth.std() or 0.0))
@@ -266,6 +279,11 @@ from the current DataFrame:
            cum = np.cumsum(sorted_vals)
            return (n + 1 - 2 * cum.sum() / cum[-1]) / n
 
+   results = AnalyticalWealthModel(
+       {'steps': 50, 'seed': 42, 'show_progress': False}
+   ).run()
+   print(results.model.tail())
+
 When per-agent loops are OK
 ---------------------------
 
@@ -275,6 +293,8 @@ scheduling). Assigning ``agent.col = value`` writes through the same batched
 flush path, so you won't pay a per-call DataFrame clone:
 
 .. code-block:: python
+
+   import ambr as am
 
    class Walker(am.Agent):
        def step(self):

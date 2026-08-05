@@ -218,8 +218,17 @@ def _summary_from_samples(samples: List[float], notes: Optional[str] = None) -> 
     }
 
 
-def _time(callable_: Callable[[], None], runs: int) -> TimingSummary:
-    """Run ``callable_`` ``runs`` times and retain every raw timing."""
+def _time(
+    callable_: Callable[[], None],
+    runs: int,
+    warmups: int = 0,
+) -> TimingSummary:
+    """Run ``callable_`` with optional untimed warmups, then ``runs`` timed samples.
+
+    Every timed sample is retained (no outlier deletion). Warmups are discarded.
+    """
+    for _ in range(max(0, int(warmups))):
+        callable_()
     samples: List[float] = []
     for _ in range(runs):
         t0 = time.perf_counter()

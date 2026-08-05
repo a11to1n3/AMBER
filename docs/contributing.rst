@@ -147,16 +147,27 @@ Pull Request Guidelines
 Release Process
 ---------------
 
-AMBER follows semantic versioning:
+AMBER follows semantic versioning with an explicit **pre-1.0** policy.
+Full details: :doc:`versioning` and :doc:`roadmap_1_0`.
 
-- **Major** (x.0.0): Breaking changes
-- **Minor** (0.x.0): New features, backward compatible
-- **Patch** (0.0.x): Bug fixes, backward compatible
+**Before 1.0 (0.x):**
+
+- Breaking changes may appear in minor bumps when required for honesty/API cleanup.
+- Deprecated names keep working until **1.0** (see :doc:`deprecations`).
+
+**After 1.0:**
+
+- **Major** (x.0.0): Breaking public API (``ambr.__all__`` / documented behaviour)
+- **Minor** (x.y.0): Backward-compatible features
+- **Patch** (x.y.z): Backward-compatible fixes
 
 Before tagging a release:
 
 1. Make sure ``dev`` is up to date with ``origin/dev`` and merged or fast
    forwarded into ``main`` for release.
+2. Run ``pytest`` (include doc fences + deprecation inventory).
+3. If GPU claims changed, run ``scripts/run_host_b_gpu_claims.py`` on a CUDA host.
+4. Update ``CHANGELOG.md`` and version metadata.
 2. Bump the package version in ``pyproject.toml`` and update
    ``CHANGELOG.md`` plus ``docs/changelog.rst`` (also keep
    ``src/ambr/__init__.py`` and ``docs/conf.py`` fallbacks in sync).

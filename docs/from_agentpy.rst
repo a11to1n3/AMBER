@@ -68,11 +68,35 @@ AMBER (same idea)::
        def step(self):
            self.agents.transfer()   # method broadcast
        def update(self):
-           self.record('total', int(self.agents.wealth.sum()))
+           # prefer record_model (record is a deprecated alias)
+           self.record_model('total', int(self.agents.wealth.sum()))
 
-   results = WealthModel({'agents': 50, 'steps': 20, 'seed': 1}).run()
+   results = WealthModel(
+       {'agents': 50, 'steps': 20, 'seed': 1, 'show_progress': False}
+   ).run()
    print(results.model)    # attribute access (also results['model'])
    print(results.agents)
+
+Results: AgentPy ``DataDict`` vs AMBER ``RunResults``
+----------------------------------------------------
+
+===============================  ==============================================
+AgentPy                          AMBER
+===============================  ==============================================
+``results.variables.Model``      ``results.model`` (Polars DataFrame)
+``results.agents`` / variables   ``results.agents`` end-of-run table; history via
+                                 ``agent_reporters`` → long ``agent_vars``
+``results.info``                 ``results.info`` dict (also device/mode)
+save/load                        ``results.save(path)`` / ``RunResults.load``
+arrange / Sobol helpers          Polars + external SALib / your notebook
+===============================  ==============================================
+
+::
+
+   results = model.run()
+   print(results.keys_overview())
+   results.save("out/run0")
+   restored = am.RunResults.load("out/run0")
 
 Notes on the mapping
 --------------------
@@ -102,11 +126,15 @@ Move to the view API when loops dominate runtime::
 See :doc:`quickstart` for the full canonical-verb table, and
 :doc:`api/contract` if you enable ``contract='check'``.
 
-Vectorized lane on GPU (0.4.4; implement ``step_vectorized`` or legacy
-``step``)::
+Vectorized lane on GPU (implement ``step_vectorized`` or legacy ``step``;
+requires **NVIDIA + CuPy**, not Apple Metal/MPS)::
 
-   results = MyVectorizedModel(...).gpu().run()
-   # CPU: MyVectorizedModel(...).cpu(mode="vectorized").run()
+   model = MyVectorizedModel({"n": 10_000, "steps": 20, "seed": 0, "show_progress": False})
+   if am.GPU_AVAILABLE:
+       results = model.gpu().run()
+   else:
+       results = model.cpu(mode="vectorized").run()
    # OOP agents: MyOOPModel(...).cpu(mode="oop").run()  # not on GPU
 
-See :doc:`going_faster` for placement, Numba, and ensemble calibration.
+See :doc:`going_faster` for placement, Numba, and ensemble calibration;
+:doc:`reproducibility` for CPU≠GPU bit-identical policy.

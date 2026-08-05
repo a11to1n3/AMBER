@@ -13,8 +13,8 @@ authors:
 repository-code: "https://github.com/a11to1n3/AMBER"
 url: "https://github.com/a11to1n3/AMBER"
 license: BSD-3-Clause
-version: "0.4.5"
-date-released: "2026-07-29"
+version: "0.4.6"
+date-released: "2026-08-05"
 keywords:
   - agent-based modeling
   - multi-agent systems

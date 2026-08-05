@@ -18,7 +18,19 @@ Requirements:
 
 import ambr as am
 import numpy as np
-import matplotlib.pyplot as plt
+
+
+def _require_matplotlib():
+    """Lazy import so the model smoke path works without a working Matplotlib."""
+    try:
+        import matplotlib.pyplot as plt
+        return plt
+    except ImportError as exc:
+        raise ImportError(
+            "Plotting requires a NumPy-compatible matplotlib.\n"
+            "  pip install -U 'matplotlib>=3.8'\n"
+            f"Underlying error: {exc!r}"
+        ) from exc
 
 
 class SimpleWealthModel(am.Model):
@@ -170,7 +182,8 @@ def analyze_simple_results(optimizer, results):
     final_gini = model_results['model']['gini_coefficient'].tail(1).item()
     print(f"Final Gini coefficient: {final_gini:.4f} (target: 0.4)")
 
-    # Simple visualization
+    # Simple visualization (optional dependency)
+    plt = _require_matplotlib()
     plt.figure(figsize=(12, 4))
 
     # Plot 1: Optimization progress
@@ -254,6 +267,7 @@ def compare_with_random_search():
         print("Random search performed similarly (this can happen with simple problems)")
 
     # Visualize comparison
+    plt = _require_matplotlib()
     plt.figure(figsize=(10, 4))
 
     # Plot optimization curves
@@ -297,29 +311,36 @@ def compare_with_random_search():
 if __name__ == "__main__":
     print("Simple SMAC Calibration with AMBER")
     print("=" * 35)
-    print("This example shows the easiest way to get started with")
-    print("SMAC optimization in AMBER. We'll optimize a simple")
-    print("wealth transfer model to achieve moderate inequality.")
-    print()
 
-    # Run the optimization
+    # Smoke: model alone (no SMAC / matplotlib) so the example is runnable without extras.
+    smoke = SimpleWealthModel({
+        'n_agents': 80,
+        'transfer_rate': 0.2,
+        'transfer_fraction': 0.1,
+        'steps': 15,
+        'seed': 0,
+        'show_progress': False,
+    })
+    smoke_res = smoke.run()
+    print(
+        "Smoke run OK:",
+        smoke_res['info'],
+        "metrics=",
+        smoke_res['model'].columns,
+    )
+
+    try:
+        import ConfigSpace  # noqa: F401
+        import smac  # noqa: F401
+    except ImportError:
+        print("smac/ConfigSpace not installed — skipping SMAC optimization section")
+        print("Install with: pip install 'ambr[advanced]'  # or: pip install smac ConfigSpace")
+        raise SystemExit(0)
+
+    print("This example optimizes a simple wealth transfer model for moderate inequality.")
     optimizer, results = run_simple_optimization()
-
-    # Analyze results
     analyze_simple_results(optimizer, results)
-
-    # Compare with random search
     compare_with_random_search()
 
     print("\n✅ Simple SMAC example completed!")
-    print("📁 Results saved as:")
-    print("  - 'simple_smac_results.png'")
-    print("  - 'smac_vs_random.png'")
-    print("\n💡 Key Takeaways:")
-    print("- SMAC optimization is easy to set up with AMBER")
-    print("- Just define parameters, objective, and run optimize()")
-    print("- SMAC often outperforms random search")
-    print("- Great for finding good model parameters automatically")
-    print("\n🎓 Next Steps:")
-    print("- Try smac_calibration_basic.py for more features")
-    print("- Try smac_calibration_advanced.py for multi-objective optimization")
+    print("📁 Results saved as 'simple_smac_results.png' and 'smac_vs_random.png' when matplotlib works.")

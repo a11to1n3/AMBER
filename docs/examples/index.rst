@@ -6,73 +6,74 @@ This section describes the comprehensive examples demonstrating various features
 Getting Started Examples
 -------------------------
 
-**Wealth Transfer Model**
-   A classic agent-based model demonstrating wealth redistribution dynamics. Agents randomly exchange money, leading to emergent wealth inequality patterns.
-
-   - Script: ``examples/wealth_transfer.py``
+**Wealth transfer (quickstart / README)**
+   Canonical dual-lane wealth model lives in the package README and
+   :doc:`../quickstart` (OOP + vectorized view API). Copy those samples
+   rather than a separate ``wealth_transfer.py`` script.
 
 **Schelling (vectorized grid)**
-   Canonical occupancy helpers + view-API Schelling (see :doc:`../environments_schelling`).
+   Canonical occupancy helpers + view-API Schelling (see
+   :doc:`../environments_schelling`).
 
    - Script: ``examples/schelling_vectorized.py``
 
 **GPU quickstart**
-   Native placement (``model.gpu().run()`` on a vectorized view-API model
-   with ``step_vectorized``) and the optional ``ArrayKernelModel`` array
-   lane. CuPy when available, else NumPy. See :doc:`../going_faster`.
+   Native placement (``model.gpu().run()`` when NVIDIA+CuPy is available)
+   on a vectorized view-API model with ``step_vectorized``, plus
+   ``ArrayKernelModel``. See :doc:`../going_faster`.
 
    - Script: ``examples/gpu_quickstart.py``
+   - Host verification: ``python scripts/run_host_b_gpu_claims.py --quick``
 
 **Segregation Model**
-   Implementation of Schelling's segregation model showing how individual preferences can lead to population-level segregation patterns.
+   Schelling-style segregation with optional plotting.
 
    - Script: ``examples/segregation_model.py``
+
 Advanced Examples
 -----------------
 
 **Virus Spread Simulation**
-   Epidemiological model simulating disease spread through a population with different intervention strategies.
+   Epidemiological model simulating disease spread through a population.
 
    - Script: ``examples/virus_spread_simulation.py``
 
 **Forest Fire Model**
-   Cellular automaton model of wildfire spread with environmental factors and firefighting interventions.
+   Cellular automaton model of wildfire spread.
 
    - Script: ``examples/forest_fire_simulation.py``
 
 **Flocking Simulation**
-   Boids-style flocking behavior demonstrating emergent collective motion from simple local rules.
+   Boids-style flocking (see also ``examples/flocking_tensor.py``).
 
    - Script: ``examples/flocking_simulation.py``
 
 **Button Network Simulation**
-   Network-based model exploring information diffusion and social influence in connected populations.
+   Network-based information diffusion.
 
    - Script: ``examples/button_network_simulation.py``
-
-Interactive Examples
---------------------
-
-**Interactive Wealth Transfer**
-   Enhanced version of the wealth transfer model with interactive controls and real-time visualization.
-
-   - Script: ``examples/interactive_wealth_transfer.py``
 
 Parameter Optimization & Calibration
 -------------------------------------
 
+**Ensemble / SMAC smoke**
+   GPU/CPU ensemble always; SMAC path skipped honestly without
+   ``ambr[advanced]``.
+
+   - Script: ``examples/smac_batch_sir_smoke.py``
+
 **Simple SMAC Calibration**
-   Introduction to SMAC optimization with AMBER - the easiest way to get started with automated parameter tuning.
+   Introduction to SMAC optimization with AMBER.
 
    - Script: ``examples/smac_calibration_simple.py``
 
 **Comprehensive SMAC Calibration**
-   Advanced single-objective optimization using AMBER's built-in SMACOptimizer with multiple strategies and analysis tools.
+   Single-objective SMACOptimizer workflows.
 
    - Script: ``examples/smac_calibration_basic.py``
 
 **Multi-Objective SMAC Optimization**
-   Sophisticated multi-objective optimization using AMBER's MultiObjectiveSMAC for finding Pareto-optimal solutions.
+   MultiObjectiveSMAC / Pareto-style examples.
 
    - Script: ``examples/smac_calibration_advanced.py``
 
@@ -81,12 +82,14 @@ Running the Examples
 
 **Python Scripts**
 
-All examples are available as standalone Python scripts in the ``examples/`` directory:
+All listed scripts live under ``examples/``:
 
 .. code-block:: bash
 
    cd examples
-   python wealth_transfer.py
+   python gpu_quickstart.py
+   python schelling_vectorized.py
+   python smac_batch_sir_smoke.py
 
 **Requirements**
 
@@ -94,6 +97,9 @@ Some examples may require additional dependencies:
 
 .. code-block:: bash
 
+   pip install 'ambr[perf]'          # Numba CPU path
+   pip install 'ambr[gpu]'           # NVIDIA + CuPy only (not Metal/MPS)
+   pip install 'ambr[advanced]'      # SMAC examples
    pip install matplotlib seaborn plotly jupyter
 
    # For optimization examples

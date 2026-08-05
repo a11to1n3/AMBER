@@ -6,11 +6,44 @@
     results.agents         # attribute-style (AgentPy / notebook friendly)
 
 Both forms return the same objects.
+
+Persistence
+-----------
+::
+
+    results.save("out/run_001")
+    restored = RunResults.load("out/run_001")
+
+Writes ``info.json`` plus Polars parquet for ``model`` / ``agents`` frames
+when present. Extra keys with Polars DataFrames are also written as
+``{key}.parquet``; other JSON-serializable values go into ``extra.json``.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from pathlib import Path
+from typing import Any, Dict, Union
+
+PathLike = Union[str, Path]
+
+
+def _write_frame(df: Any, path_stem: Path) -> None:
+    """Write a Polars frame without requiring pyarrow when possible.
+
+    Prefer parquet; fall back to Arrow IPC, then CSV.
+    """
+    try:
+        df.write_parquet(path_stem.with_suffix(".parquet"))
+        return
+    except Exception:
+        pass
+    try:
+        df.write_ipc(path_stem.with_suffix(".arrow"))
+        return
+    except Exception:
+        pass
+    df.write_csv(path_stem.with_suffix(".csv"))
 
 
 class RunResults(dict):
@@ -43,3 +76,113 @@ class RunResults(dict):
     def __repr__(self) -> str:
         keys = ", ".join(sorted(self))
         return f"<RunResults keys=[{keys}]>"
+
+    # --- AgentPy DataDict-ish helpers ---------------------------------------
+
+    def keys_overview(self) -> Dict[str, str]:
+        """Return a short map of key → type summary (notebook / debugging)."""
+        out: Dict[str, str] = {}
+        for k, v in self.items():
+            if hasattr(v, "shape") and hasattr(v, "columns"):
+                out[k] = f"DataFrame shape={getattr(v, 'shape', '?')} cols={list(v.columns)}"
+            elif isinstance(v, dict):
+                out[k] = f"dict keys={sorted(v)}"
+            elif isinstance(v, list):
+                out[k] = f"list len={len(v)}"
+            else:
+                out[k] = type(v).__name__
+        return out
+
+    def model_frame(self):
+        """Return the model-level Polars frame (``results['model']``)."""
+        return self["model"]
+
+    def agents_frame(self):
+        """Return the end-of-run agents Polars frame (``results['agents']``)."""
+        return self["agents"]
+
+    def save(self, path: PathLike) -> Path:
+        """Persist this run to a directory.
+
+        Layout::
+
+            path/
+              info.json          # if present
+              model.parquet|.arrow|.csv
+              agents.parquet|.arrow|.csv
+              extra.json         # remaining JSON-serializable values
+
+        Frames prefer parquet; fall back to Arrow IPC then CSV when parquet
+        is unavailable (e.g. no pyarrow engine).
+
+        Returns the directory path.
+        """
+        import polars as pl
+
+        root = Path(path)
+        root.mkdir(parents=True, exist_ok=True)
+        extra: Dict[str, Any] = {}
+        for key, value in self.items():
+            if key == "info" and isinstance(value, dict):
+                (root / "info.json").write_text(
+                    json.dumps(value, default=str, indent=2) + "\n"
+                )
+                continue
+            if isinstance(value, pl.DataFrame):
+                _write_frame(value, root / key)
+                continue
+            if key == "contract" and isinstance(value, list):
+                # Certificates: store a lightweight summary only
+                summary = []
+                for cert in value:
+                    summary.append(
+                        {
+                            "step": getattr(cert, "step", None),
+                            "ok": getattr(cert, "ok", None),
+                            "clean": getattr(cert, "clean", None),
+                            "n_violations": len(getattr(cert, "violations", []) or []),
+                        }
+                    )
+                (root / "contract_summary.json").write_text(
+                    json.dumps(summary, indent=2) + "\n"
+                )
+                continue
+            try:
+                json.dumps(value, default=str)
+                extra[key] = value
+            except TypeError:
+                extra[key] = repr(value)
+        if extra:
+            (root / "extra.json").write_text(
+                json.dumps(extra, default=str, indent=2) + "\n"
+            )
+        return root
+
+    @classmethod
+    def load(cls, path: PathLike) -> "RunResults":
+        """Load a directory written by :meth:`save`."""
+        import polars as pl
+
+        root = Path(path)
+        if not root.is_dir():
+            raise FileNotFoundError(f"RunResults directory not found: {root}")
+        data: Dict[str, Any] = {}
+        info_path = root / "info.json"
+        if info_path.is_file():
+            data["info"] = json.loads(info_path.read_text())
+        for pq in sorted(root.glob("*.parquet")):
+            data[pq.stem] = pl.read_parquet(pq)
+        for ipc in sorted(root.glob("*.arrow")):
+            data.setdefault(ipc.stem, pl.read_ipc(ipc))
+        for csv in sorted(root.glob("*.csv")):
+            data.setdefault(csv.stem, pl.read_csv(csv))
+        extra_path = root / "extra.json"
+        if extra_path.is_file():
+            extra = json.loads(extra_path.read_text())
+            if isinstance(extra, dict):
+                for k, v in extra.items():
+                    data.setdefault(k, v)
+        contract_path = root / "contract_summary.json"
+        if contract_path.is_file() and "contract" not in data:
+            data["contract_summary"] = json.loads(contract_path.read_text())
+        return cls(data)

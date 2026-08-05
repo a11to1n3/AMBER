@@ -341,24 +341,49 @@ class AMBERVectorizedWealthTransfer(am.Model):
         """Run the same transfer rule through tracked Python Agent objects."""
         _wealth_snapshot_step(self)
 
+    def _gpu_fast_transition(self, ex, state, step_i: int, *, rng):
+        """One timed GPU wealth step (shared by timing and production attestation)."""
+        from ambr.gpu import to_host
+
+        wealth, ids = state
+        donor_positions = ex.xp.nonzero(wealth > 0)[0]
+        donor_count = int(donor_positions.size)
+        if hasattr(rng, "begin_step"):
+            try:
+                from rng.counter_rng import EVT_RECIPIENT
+            except ImportError:
+                EVT_RECIPIENT = 1
+            rng.begin_step(step_i, EVT_RECIPIENT)
+        if donor_count:
+            if hasattr(rng, "set_agent_keys"):
+                try:
+                    from rng.counter_rng import EVT_RECIPIENT
+                except ImportError:
+                    EVT_RECIPIENT = 1
+                donor_ids = to_host(ids[donor_positions]).astype(np.int64)
+                rng.set_agent_keys(donor_ids, EVT_RECIPIENT)
+            recipients = rng.choice(ids, size=donor_count)
+            fused_wealth_transfer(wealth, donor_positions, recipients)
+        return wealth, ids
+
     def _run_gpu_fast(self, max_steps):
         """Private tight GPU loop selected by ``Model.run()``."""
         from ambr.execution import active_execution
 
         ex = active_execution(self)
-        wealth = ex.device_columns['wealth']
-        ids = ex.device_columns['id']
-        for _ in range(max_steps):
-            donor_positions = ex.xp.nonzero(wealth > 0)[0]
-            donor_count = int(donor_positions.size)
-            if donor_count:
-                recipients = self.rng.choice(ids, size=donor_count)
-                fused_wealth_transfer(wealth, donor_positions, recipients)
+        state = (
+            ex.device_columns['wealth'],
+            ex.device_columns['id'],
+        )
+        for step_i in range(max_steps):
+            state = self._gpu_fast_transition(ex, state, step_i, rng=self.rng)
+            wealth, _ = state
             ex.dirty_columns.add('wealth')
             self._append_fast_step(
                 total_wealth=int(ex.xp.sum(wealth)),
                 gini=self._gini(wealth, ex.xp),
             )
+        wealth, _ = state
         ex.device_columns['wealth'] = wealth
 
     def update(self):
@@ -659,42 +684,54 @@ class AMBERVectorizedSIRModel(am.Model):
         for agent in self.agent_objects_list:
             agent.update_health()
 
-    def _run_gpu_fast(self, max_steps):
-        """Private tight GPU loop using the fused spatial self-join."""
-        from ambr.execution import active_execution
+    def _gpu_fast_transition(self, ex, state, step_i: int, *, rng):
+        """One timed GPU SIR step (shared by timing and production attestation)."""
         from amber_gpu_scale_models import sir_kernel_step
 
-        ex = active_execution(self)
-        xp = ex.xp
-        x = ex.device_columns['x']
-        y = ex.device_columns['y']
-        status = ex.device_columns['status']
-        infection_time = ex.device_columns['infection_time']
+        x, y, status, infection_time = state
         n = int(x.size)
-        speed = self.p.get('movement_speed', 2.0)
-        world_size = self.p.get('world_size', 100)
+        speed = float(self.p.get('movement_speed', 2.0))
+        world_size = float(self.p.get('world_size', 100))
         radius = float(self.p.get('infection_radius', 5.0))
         transmission = float(self.p.get('transmission_rate', 0.1))
         recovery_time = int(self.p.get('recovery_time', 14))
         global_seed = int(self.p.get('seed') or 0)
+        if hasattr(rng, "begin_step"):
+            rng.begin_step(step_i, 0)
+        dx = rng.uniform(-speed, speed, n)
+        dy = rng.uniform(-speed, speed, n)
+        x, y = fused_random_walk(x, y, dx, dy, 0.0, world_size)
+        return sir_kernel_step(
+            x, y, status, infection_time,
+            step=step_i,
+            world_size=world_size,
+            radius=radius,
+            transmission=transmission,
+            recovery_time=recovery_time,
+            global_seed=global_seed,
+        )
+
+    def _run_gpu_fast(self, max_steps):
+        """Private tight GPU loop using the fused spatial self-join."""
+        from ambr.execution import active_execution
+
+        ex = active_execution(self)
+        xp = ex.xp
+        state = (
+            ex.device_columns['x'],
+            ex.device_columns['y'],
+            ex.device_columns['status'],
+            ex.device_columns['infection_time'],
+        )
         for step_i in range(max_steps):
-            dx = self.rng.uniform(-speed, speed, n)
-            dy = self.rng.uniform(-speed, speed, n)
-            x, y = fused_random_walk(x, y, dx, dy, 0.0, world_size)
-            x, y, status, infection_time = sir_kernel_step(
-                x, y, status, infection_time,
-                step=step_i,
-                world_size=world_size,
-                radius=radius,
-                transmission=transmission,
-                recovery_time=recovery_time,
-                global_seed=global_seed,
-            )
+            state = self._gpu_fast_transition(ex, state, step_i, rng=self.rng)
+            x, y, status, infection_time = state
             self._append_fast_step(
                 susceptible=int(xp.count_nonzero(status == self.STATUS_S)),
                 infected=int(xp.count_nonzero(status == self.STATUS_I)),
                 recovered=int(xp.count_nonzero(status == self.STATUS_R)),
             )
+        x, y, status, infection_time = state
         ex.device_columns.update(
             x=x, y=y, status=status, infection_time=infection_time
         )
@@ -768,25 +805,34 @@ class AMBERVectorizedRandomWalk(am.Model):
         for agent in self.agent_objects_list:
             agent.step()
 
+    def _gpu_fast_transition(self, ex, state, step_i: int, *, rng):
+        """One timed GPU walk step (shared by timing and production attestation)."""
+        x, y = state
+        n = int(x.size)
+        speed = float(self.p.get('speed', 1.0))
+        world_size = float(self.p.get('world_size', 100.0))
+        if hasattr(rng, "begin_step"):
+            rng.begin_step(step_i, 0)
+        dx = rng.uniform(-speed, speed, n)
+        dy = rng.uniform(-speed, speed, n)
+        x, y = fused_random_walk(x, y, dx, dy, 0.0, world_size)
+        return x, y
+
     def _run_gpu_fast(self, max_steps):
         """Private tight GPU loop selected without changing ``gpu().run()``."""
         from ambr.execution import active_execution
 
         ex = active_execution(self)
         xp = ex.xp
-        x = ex.device_columns['x']
-        y = ex.device_columns['y']
-        n = int(x.size)
-        speed = self.p.get('speed', 1.0)
-        world_size = self.p.get('world_size', 100)
-        for _ in range(max_steps):
-            dx = self.rng.uniform(-speed, speed, n)
-            dy = self.rng.uniform(-speed, speed, n)
-            x, y = fused_random_walk(x, y, dx, dy, 0.0, world_size)
+        state = (ex.device_columns['x'], ex.device_columns['y'])
+        for step_i in range(max_steps):
+            state = self._gpu_fast_transition(ex, state, step_i, rng=self.rng)
+            x, y = state
             self._append_fast_step(
                 avg_x=float(xp.mean(x)),
                 avg_y=float(xp.mean(y)),
             )
+        x, y = state
         ex.device_columns.update(x=x, y=y)
         ex.dirty_columns.update({'x', 'y'})
 
@@ -922,20 +968,26 @@ class AMBERVectorizedSchelling(am.Model):
     def step_oop(self):
         AMBERSchelling.step(self)
 
+    def _gpu_fast_transition(self, ex, state, step_i: int, *, rng):
+        """One timed GPU Schelling step (shared by timing and production attestation)."""
+        x, y = state
+        types = ex.xp.asarray(self._types)
+        if hasattr(rng, "begin_step"):
+            rng.begin_step(step_i, 0)
+        return schelling_step(
+            x, y, types, self.G, self.tolerance, rng, ex.xp,
+        )
+
     def _run_gpu_fast(self, max_steps):
         """Private tight GPU loop over resident columns and the grid kernel."""
         from ambr.execution import active_execution
 
         ex = active_execution(self)
-        xp = ex.xp
-        x = ex.device_columns['x']
-        y = ex.device_columns['y']
-        t = xp.asarray(self._types)
-        for _ in range(max_steps):
-            x, y = schelling_step(
-                x, y, t, self.G, self.tolerance, self.rng, xp
-            )
+        state = (ex.device_columns['x'], ex.device_columns['y'])
+        for step_i in range(max_steps):
+            state = self._gpu_fast_transition(ex, state, step_i, rng=self.rng)
             self._append_fast_step()
+        x, y = state
         ex.device_columns.update(x=x, y=y)
         ex.dirty_columns.update({'x', 'y'})
 

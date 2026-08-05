@@ -276,14 +276,9 @@ class Population:
             flushes through the same hash-join path but is discoverable
             via attribute access rather than a context manager.
         """
-        import warnings
-
-        warnings.warn(
-            "Population.create_batch_context() is deprecated; use "
-            "model.agents.at[ids].col = values (or scatter_add) instead. "
-            "See the AMBER quickstart for examples.",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            "Population.create_batch_context()",
+            "agents.set(**cols) / column assign",
         )
         return BatchUpdateContext(self)
 

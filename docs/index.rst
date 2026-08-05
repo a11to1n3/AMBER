@@ -24,23 +24,23 @@ Features
 
 * **AgentPy-shaped OOP + vectorized lanes** on the same model (see
   :doc:`from_agentpy` and :doc:`going_faster`)
-* **Vectorized view API**: update the whole population in a handful of Polars
-  expressions — no per-agent loops, regardless of population size
-* **Snapshot-view contract**: opt-in operational monitor at instrumented
-  write/borrow seams (not a schedule proof; zero-overhead default is off)
-* **CPU acceleration**: optional Numba (``pip install 'ambr[perf]'``) for
-  ``scatter_add`` / subset writes — recommended on Mac without CUDA
-* **Device placement (0.4.4)**: Keras-style ``model.cpu(mode=...).run()`` /
-  ``model.gpu().run()`` with ``step_vectorized`` / ``step_oop`` hooks
-  (GPU is vectorized-only; device-resident columns); see :doc:`going_faster`
-* **GPU ensemble**: CuPy array helpers with NumPy fallback, plus a batched
-  ensemble that runs ``B`` simulations in one device pass for calibration
-* **Flexible environments**: grid, continuous space, and network topologies
-* **Optimization**: grid / random / Bayesian (SMAC) search and GPU-batched calibration
-* **Declarative reporting & typed params**: ``model_reporters`` / ``agent_reporters``
-  and a class-level ``params`` schema
-* **Reproducible**: one canonical seeded RNG (``self.rng``); deterministic runs
-* **RunResults**: ``results.agents`` and ``results['agents']`` both work
+* **Vectorized view API**: ``where`` / ``at`` / ``set`` / ``scatter_add`` —
+  do not mutate ``agents.array(...)`` in place on CPU
+* **Snapshot-view contract**: opt-in **operational** monitor (not a schedule
+  proof; default ``off``)
+* **CPU acceleration**: optional Numba (``pip install 'ambr[perf]'``) —
+  recommended on Mac / no-CUDA
+* **Device placement**: Keras-style ``model.cpu(mode=...).run()`` /
+  ``model.gpu().run()`` (GPU is **vectorized-only**, **NVIDIA + CuPy** only —
+  not Apple Metal/MPS); see :doc:`going_faster`
+* **GPU ensemble**: ``GPUEnsembleRunner`` for many short runs; parallelism is
+  **never** automatic from a single ``.run()``
+* **OOP activation helpers**: ``activate_agents("random"|"sequential"|"simultaneous")``
+* **Viz helpers**: ``plot_timeseries`` / ``plot_grid`` (``ambr[viz]``)
+* **Environments**: grid, continuous space, and network topologies
+* **Optimization**: grid / random / Bayesian (SMAC) and GPU-batched calibration
+* **RunResults**: attribute or dict access; ``save`` / ``load``
+* **Reproducible**: seeded ``self.rng``; see :doc:`reproducibility`
 
 Quick Start
 -----------
@@ -72,18 +72,21 @@ Create your first model:
            recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
-   # Fluent placement (default mode is vectorized; run(mode=...) still overrides)
-   model = WealthModel({'steps': 50, 'seed': 42})
-   results = model.cpu(mode="vectorized").run()
-   # Vectorized lane on GPU (NVIDIA + CuPy):  model.gpu().run()
+   # Fluent placement: GPU when NVIDIA+CuPy available, else CPU vectorized
+   model = WealthModel({'steps': 50, 'seed': 42, 'show_progress': False})
+   if am.GPU_AVAILABLE:
+       results = model.gpu().run()
+   else:
+       results = model.cpu(mode="vectorized").run()
+   print(results.info)
    print(results.model)       # also results['model']
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for what is new in **0.4.5** (honest 10M headline
-benchmarks, pair-keyed GPU SIR counter-tape, ``ambr[gpu]``,
-``CITATION.cff``). 0.4.4 added honest lanes, the operational contract, and
-``approve_fast_path``.
+See :doc:`changelog` for what is new in **0.4.6** (doc-fence CI, Host B GPU
+claim script, activation helpers, RunResults I/O, 1.0 freeze prep). 0.4.5
+added honest 10M headline evidence and ``ambr[gpu]``; 0.4.4 added lanes and
+the operational contract.
 
 Table of Contents
 -----------------
@@ -98,6 +101,11 @@ Table of Contents
    going_faster
    environments_schelling
    tutorial
+   reproducibility
+   paper_and_package
+   versioning
+   public_api
+   roadmap_1_0
    benchmarks
    examples/index
 

@@ -21,11 +21,29 @@ Check this machine
    print(am.recommend(100_000))          # single large run
    print(am.recommend(1_000, ensemble=True))  # many short runs / calibration
 
+OOP activation (optional)
+-------------------------
+
+For tracked Python agents, use thin Mesa-inspired activation helpers
+(:mod:`ambr.scheduling`) — they do **not** change vectorized semantics::
+
+   def step_oop(self):
+       self.activate_agents(mode="random")   # sequential | random | simultaneous
+
+Vectorized models should keep order inside ``step_vectorized`` (or use
+:func:`~ambr.scheduling.shuffled_ids`). Activation helpers are **not** a
+schedule-proof; see :doc:`api/contract`.
+
 CPU acceleration with Numba (great on Mac)
 ------------------------------------------
 
-Modern Macs have **no CUDA**, so AMBER cannot use the GPU lane there. For
-CPU speed, install Numba (optional ``perf`` extra)::
+Modern Macs have **no CUDA** and AMBER does **not** use Apple Metal/MPS.
+The GPU lane requires **NVIDIA + CuPy** (``pip install 'ambr[gpu]'`` or a
+CUDA-matched wheel). Re-check GPU claim samples on a CUDA host with::
+
+   python scripts/run_host_b_gpu_claims.py --quick
+
+For CPU speed on Mac / no-CUDA machines, install Numba (optional ``perf`` extra)::
 
    pip install 'ambr[perf]'
    # or: pip install numba
@@ -54,14 +72,14 @@ Always available. Best for small N or sequential logic. See :doc:`from_agentpy`.
 Lane 2 — Vectorized (default fast path)
 ---------------------------------------
 
-**There is no flag.** Use ``step_vectorized()`` for the vectorized lane::
+**There is no flag.** Use ``step_vectorized()`` for the vectorized lane with the
+view API (``where`` / column assign / ``scatter_add``). Do **not** mutate
+``agents.array(...)`` in place — that returns a read-only snapshot on the CPU
+Polars path::
 
-   xp = self.xp
-   wealth = self.agents.array("wealth")
-   donors = xp.nonzero(wealth > 0)[0]
-   wealth[donors] -= 1
-
-   recipients = self.rng.choice(self.agents.array("id"), size=int(donors.size))
+   donors = self.agents.where(self.agents.wealth > 0)
+   donors.wealth -= 1
+   recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
    self.agents.at[recipients].scatter_add(wealth=1)
 
 For object-oriented models, implement ``step_oop()`` and run with
@@ -92,19 +110,24 @@ Requires an **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install the GPU extra
 
 Then either:
 
-**A. Single large run — vectorized view-API model (0.4.4, preferred)::
+**A. Single large run — vectorized view-API model (preferred)**::
 
-   results = MyVectorizedModel({"n": 1_000_000, "steps": 50, "seed": 0}).gpu().run()
-   # CPU counterpart:
-   # results = MyVectorizedModel(...).cpu(mode="vectorized").run()
+   import ambr as am
+   model = MyVectorizedModel(
+       {"n": 1_000_000, "steps": 50, "seed": 0, "show_progress": False}
+   )
+   if am.GPU_AVAILABLE:
+       results = model.gpu().run()
+   else:
+       results = model.cpu(mode="vectorized").run()
    # Optional private GPU loop (only if the model defines one; not monitored):
    # model.approve_fast_path("my-label").gpu().run(contract="off")
    #
    # ``approve_fast_path(evidence)`` is **caller-attested**: AMBER records the
    # label and requires it (plus ``contract="off"``) before private loops run.
-   # It does **not** verify that the evidence proves equivalence to a reference
-   # trajectory. Prefer the instrumented vectorized path unless you own that
-   # attestation outside the library.
+   # It does **not** verify equivalence to a reference trajectory.
+   # Re-check GPU claims on NVIDIA hardware:
+   #   python scripts/run_host_b_gpu_claims.py --quick
 
 **B. Array-kernel model —** :class:`~ambr.lanes.ArrayKernelModel`::
 

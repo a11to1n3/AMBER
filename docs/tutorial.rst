@@ -66,6 +66,8 @@ Now let's enhance our model with a grid environment where agents can only intera
 
 .. code-block:: python
 
+   import ambr as am
+
    class SpatialWealthModel(am.Model):
        def setup(self):
            # Create grid environment
@@ -92,38 +94,42 @@ Now let's enhance our model with a grid environment where agents can only intera
            recipients = self.rng.choice(ids, size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
-**Step 2: Visualize Results**
+**Step 2: Run and inspect (plot optional)**
 
 .. code-block:: python
 
-   import matplotlib.pyplot as plt
+   import ambr as am
 
-   # Run spatial model
+   # Continues Part 2: SpatialWealthModel must be defined in the previous block
+   # (or paste both blocks into one file).
    spatial_model = SpatialWealthModel({
        'n_agents': 200,
        'steps': 50,
-       'seed': 42
+       'seed': 42,
+       'show_progress': False,
    })
    results = spatial_model.run()
 
-   # Plot wealth distribution on grid
-   final_data = results['agents'].filter(
-       results['agents']['step'] == results['agents']['step'].max()
-   )
+   # End-of-run agent table (step column present when agent history is kept)
+   agents = results['agents']
+   if 'step' in agents.columns:
+       final_data = agents.filter(agents['step'] == agents['step'].max())
+   else:
+       final_data = agents
+   print(final_data.select(['id', 'x', 'y', 'wealth']).head())
 
-   plt.figure(figsize=(10, 8))
-   scatter = plt.scatter(
-       final_data['x'],
-       final_data['y'],
-       c=final_data['wealth'],
-       cmap='viridis',
-       s=50
-   )
-   plt.colorbar(scatter, label='Wealth')
-   plt.title('Final Wealth Distribution on Grid')
-   plt.xlabel('X Position')
-   plt.ylabel('Y Position')
-   plt.show()
+   # Optional plot — requires a NumPy-compatible matplotlib:
+   #   pip install -U 'matplotlib>=3.8'
+   # import matplotlib.pyplot as plt
+   # plt.figure(figsize=(10, 8))
+   # scatter = plt.scatter(
+   #     final_data['x'], final_data['y'], c=final_data['wealth'],
+   #     cmap='viridis', s=50,
+   # )
+   # plt.colorbar(scatter, label='Wealth')
+   # plt.title('Final Wealth Distribution on Grid')
+   # plt.xlabel('X Position'); plt.ylabel('Y Position')
+   # plt.show()
 
 Part 3: Data Collection and Analysis
 -------------------------------------
@@ -134,6 +140,7 @@ Let's add comprehensive data collection to track model-level metrics.
 
 .. code-block:: python
 
+   import ambr as am
    import numpy as np
 
    class AnalyticalWealthModel(am.Model):
@@ -148,7 +155,9 @@ Let's add comprehensive data collection to track model-level metrics.
            recipients = self.rng.choice(ids, size=len(donors))
            self.agents.at[recipients].scatter_add(wealth=1)
 
-           # Polars Series aggregates are the idiomatic way to record metrics.
+       def update(self):
+           # record_model is collected after step(); recording only inside
+           # step() is discarded when the step row is built.
            wealth = self.agents.wealth
            self.record_model('total_wealth', int(wealth.sum()))
            self.record_model('mean_wealth', float(wealth.mean()))
@@ -219,77 +228,79 @@ Let's use AMBER's optimization tools to find the best parameters for our model.
 
 .. code-block:: python
 
-   from ambr import ParameterSpace, IntRange, grid_search
+   import ambr as am
+   import numpy as np
+   from ambr import ParameterSpace, grid_search
 
-   # Define parameter space to explore
-   param_space = ParameterSpace({
-       'n_agents': IntRange(50, 200),
-       'steps': [50, 100, 150],
-       'seed': IntRange(1, 10)
+   # Self-contained: same model as Part 3 (required metric recorded in update()).
+   class AnalyticalWealthModel(am.Model):
+       def setup(self):
+           n = int(self.p.get('n_agents', 50))
+           self.add_agents(n, wealth=self.rng.integers(1, 10, size=n))
+
+       def step(self):
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
+           ids = self.agents.ids.to_numpy()
+           recipients = self.rng.choice(ids, size=len(donors))
+           self.agents.at[recipients].scatter_add(wealth=1)
+
+       def update(self):
+           wealth = self.agents.wealth
+           self.record_model('gini_coefficient', self.calculate_gini(wealth.to_numpy()))
+
+       @staticmethod
+       def calculate_gini(values):
+           if values.size == 0 or values.sum() == 0:
+               return 0.0
+           sorted_vals = np.sort(values)
+           n = len(sorted_vals)
+           cumsum = np.cumsum(sorted_vals)
+           return (n + 1 - 2 * cumsum.sum() / cumsum[-1]) / n
+
+   parameter_space = ParameterSpace({
+       'n_agents': [50, 100],
+       'steps': [20, 40],
+       'seed': 1,
+       'show_progress': False,
    })
 
-   # Run grid search to minimize final Gini coefficient
-   best_params, best_score = grid_search(
-       model_class=AnalyticalWealthModel,
-       param_space=param_space,
-       metric='gini_coefficient',  # Minimize inequality
+   # grid_search returns a list of dicts sorted best-first:
+   #   [{'parameters': {...}, 'objective': float}, ...]
+   results = grid_search(
+       AnalyticalWealthModel,
+       parameter_space,
+       metric='gini_coefficient',  # last recorded value of this model metric
+       iterations=1,               # average this many runs per combo
        minimize=True,
-       n_runs=3  # Average over multiple runs
    )
-
-   print(f"Best parameters: {best_params}")
-   print(f"Best Gini coefficient: {best_score}")
+   best = results[0]
+   print(f"Best parameters: {best['parameters']}")
+   print(f"Best Gini coefficient: {best['objective']}")
 
 **Step 2: Compare Optimization Methods**
 
 .. code-block:: python
 
-   from ambr import random_search, bayesian_optimization
+   from ambr import random_search
 
-   # Compare different optimization approaches
-   methods = {
-       'grid_search': grid_search,
-       'random_search': random_search,
-       'bayesian_optimization': bayesian_optimization
-   }
-
-   results = {}
-   for name, method in methods.items():
-       if name == 'random_search':
-           best_params, best_score = method(
-               model_class=AnalyticalWealthModel,
-               param_space=param_space,
-               metric='gini_coefficient',
-               minimize=True,
-               n_samples=20,
-               n_runs=3
-           )
-       elif name == 'bayesian_optimization':
-           best_params, best_score = method(
-               model_class=AnalyticalWealthModel,
-               param_space=param_space,
-               metric='gini_coefficient',
-               minimize=True,
-               n_calls=20,
-               n_runs=3
-           )
-       else:  # grid_search
-           best_params, best_score = method(
-               model_class=AnalyticalWealthModel,
-               param_space=param_space,
-               metric='gini_coefficient',
-               minimize=True,
-               n_runs=3
-           )
-
-       results[name] = {
-           'params': best_params,
-           'score': best_score
-       }
-
-   # Compare results
-   for method, result in results.items():
-       print(f"{method}: Gini = {result['score']:.4f}, Params = {result['params']}")
+   # Continues the previous block (AnalyticalWealthModel + parameter_space).
+   # random_search uses the same return shape as grid_search (list of dicts).
+   # bayesian_optimization requires SMAC (pip install 'ambr[advanced]').
+   random_results = random_search(
+       AnalyticalWealthModel,
+       parameter_space,
+       metric='gini_coefficient',
+       n_samples=8,
+       iterations=1,
+       minimize=True,
+       seed=0,
+   )
+   print(
+       "random_search best:",
+       random_results[0]['parameters'],
+       random_results[0]['objective'],
+   )
 
 Part 5: Running Experiments
 ----------------------------
@@ -300,49 +311,80 @@ Finally, let's use the experiment framework to run systematic parameter sweeps.
 
 .. code-block:: python
 
+   import ambr as am
+   import numpy as np
    from ambr import Experiment, Sample, IntRange
 
-   # Define parameter variations
-   experiment_params = Sample({
-       'n_agents': IntRange(50, 300),
-       'steps': 100,
-       'seed': [1, 2, 3, 4, 5]  # Multiple seeds for robustness
-   })
+   # Sample(parameters, n) — n is required (number of combinations to draw).
+   # Experiment(model_type, sample, iterations=...) matches the live API.
+   class AnalyticalWealthModel(am.Model):
+       def setup(self):
+           n = int(self.p.get('n_agents', 50))
+           self.add_agents(n, wealth=self.rng.integers(1, 10, size=n))
 
-   # Create experiment
-   experiment = Experiment(
-       model_class=AnalyticalWealthModel,
-       parameters=experiment_params,
-       iterations=50  # Number of parameter combinations to try
+       def step(self):
+           donors = self.agents.where(self.agents.wealth > 0)
+           donors.wealth -= 1
+           ids = self.agents.ids.to_numpy()
+           recipients = self.rng.choice(ids, size=len(donors))
+           self.agents.at[recipients].scatter_add(wealth=1)
+
+       def update(self):
+           wealth = self.agents.wealth
+           vals = wealth.to_numpy()
+           if vals.size == 0 or vals.sum() == 0:
+               g = 0.0
+           else:
+               s = np.sort(vals.astype(float))
+               n = len(s)
+               # cumsum[-1] is total wealth (not s[-1], which is only the max)
+               g = (n + 1 - 2 * np.cumsum(s).sum() / s.sum()) / n
+           self.record_model('gini_coefficient', float(g))
+
+   experiment_params = Sample(
+       {
+           'n_agents': IntRange(50, 150),  # inclusive start, exclusive end
+           'steps': 20,
+           'seed': [1, 2, 3],
+           'show_progress': False,
+       },
+       n=6,  # draw 6 parameter combinations
    )
 
-   # Run experiment
+   experiment = Experiment(
+       model_type=AnalyticalWealthModel,
+       sample=experiment_params,
+       iterations=1,  # repeats per combination
+   )
    experiment_results = experiment.run()
+   # run() returns a dict of Polars frames: info, parameters, agents, model
+   print(experiment_results['info'])
+   print(experiment_results['model'].head())
 
 **Step 2: Analyze Experiment Results**
 
 .. code-block:: python
 
-   # Analyze relationship between population size and inequality
-   import pandas as pd
+   # Continues Step 1 — experiment_results is a dict of Polars frames, not pandas.
+   import polars as pl
 
-   # Convert to pandas for easier analysis
-   df = experiment_results.to_pandas()
+   model_df = experiment_results['model']
+   final = model_df.group_by(['n_agents', 'seed']).agg(
+       pl.col('gini_coefficient').last()
+   )
+   gini_by_population = (
+       final.group_by('n_agents')
+       .agg(pl.col('gini_coefficient').mean())
+       .sort('n_agents')
+   )
+   print(gini_by_population)
 
-   # Group by number of agents and calculate mean Gini coefficient
-   gini_by_population = df.groupby('n_agents')['gini_coefficient'].mean()
+   # Optional plot (matplotlib):
+   # import matplotlib.pyplot as plt
+   # plt.plot(gini_by_population['n_agents'], gini_by_population['gini_coefficient'], 'o-')
+   # plt.xlabel('Number of Agents'); plt.ylabel('Mean Gini Coefficient')
+   # plt.title('Wealth Inequality vs Population Size'); plt.grid(True, alpha=0.3); plt.show()
 
-   plt.figure(figsize=(10, 6))
-   plt.plot(gini_by_population.index, gini_by_population.values, 'o-')
-   plt.xlabel('Number of Agents')
-   plt.ylabel('Mean Gini Coefficient')
-   plt.title('Wealth Inequality vs Population Size')
-   plt.grid(True, alpha=0.3)
-   plt.show()
-
-   # Statistical analysis
-   correlation = df['n_agents'].corr(df['gini_coefficient'])
-   print(f"Correlation between population size and inequality: {correlation:.3f}")
 
 Next Steps
 ----------
