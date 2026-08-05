@@ -143,7 +143,7 @@ class WealthModel(am.Model):
         recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
         self.agents.at[recipients].scatter_add(wealth=1)
 
-# Fluent placement (0.4.4): device + optional mode; run(mode=...) still overrides.
+# Fluent placement: device + optional mode; run(mode=...) still overrides.
 # GPU when NVIDIA+CuPy available; otherwise CPU vectorized.
 _m = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
 results = _m.gpu().run() if am.GPU_AVAILABLE else _m.cpu(mode="vectorized").run()
@@ -199,29 +199,26 @@ print(Drift({"n": 100_000, "steps": 20, "show_progress": False}).run().info)
 the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).
 
-> **New in 0.4.4:** honest [execution lanes](docs/going_faster.rst)
+> **New in 0.4.6:** claim-honest public samples (view API + `GPU_AVAILABLE`
+> branching), [doc-fence / README smokes](tests/test_doc_fences.py),
+> [Host B GPU claim script](scripts/run_host_b_gpu_claims.py), OOP
+> [activation helpers](docs/api/scheduling.rst), [viz helpers](docs/api/viz.rst),
+> [RunResults save/load](docs/api/results.rst), [reproducibility policy](docs/reproducibility.rst),
+> and [1.0 freeze prep](docs/roadmap_1_0.rst). See the [changelog](CHANGELOG.md).
+>
+> **0.4.5:** honest 10M headline snapshot, `ambr[gpu]`, `CITATION.cff`.
+>
+> **0.4.4:** honest [execution lanes](docs/going_faster.rst)
 > (`step_vectorized` / `step_oop`; GPU is vectorized-only), operational
 > [contract](#-snapshot-view-contract) wording (monitor, not schedule proof),
-> and opt-in `approve_fast_path(evidence)` for private GPU loops. See the
-> [changelog](CHANGELOG.md).
+> and opt-in `approve_fast_path(evidence)` for private GPU loops.
 >
 > **0.4.3:** Keras-style **`model.cpu(mode=...)` / `model.gpu()`** placement
 > with device-resident columns for the vectorized view API.
 >
-> **0.4.1:** [AgentPy-shaped UX](docs/from_agentpy.rst) (`RunResults`,
-> `agents.random()`), [progressive speed lanes](docs/going_faster.rst)
-> (`am.print_status()`, `am.recommend(n)`, `ArrayKernelModel`), optional
-> **Numba** CPU path (`pip install 'ambr[perf]'` — great on Mac), contract /
-> write-path hardening, SMAC install pin, and Schelling grid helpers.
->
-> **0.4:** runtime [snapshot-view contract](#-snapshot-view-contract),
-> [GPU backend + batched calibration](#-gpu-backend--batched-calibration),
-> one [canonical verb per task](#-canonical-api-04) (legacy spellings still work),
-> declarative `model_reporters`, and a typed `params` schema.
->
-> **0.3.0:** Setting ``agent.wealth = 5`` on a Python Agent
-> automatically syncs to the DataFrame. You can freely mix OOP-style
-> and vectorized access without desync.
+> **0.4.1–0.4:** AgentPy-shaped UX, progressive speed lanes, Numba
+> (`ambr[perf]`), snapshot-view contract, GPU ensemble calibration, canonical
+> verbs (legacy spellings still work until 1.0).
 
 ## ⚡ Vectorized View API
 
@@ -318,8 +315,9 @@ ordinary commit). Prefer those APIs over assigning `population.data` directly.
 
 ## 🎮 GPU backend & batched calibration
 
-**Single-run (native, 0.4.4):** place a vectorized model on device with
-`model.gpu().run()`. Prefer `step_vectorized()` (legacy `step()` still works).
+**Single-run (native):** place a vectorized model on device with
+`model.gpu().run()` when NVIDIA+CuPy are available. Prefer `step_vectorized()`
+(legacy `step()` still works).
 Numeric columns stay device-resident for the run. Contract modes use the
 instrumented general path; private model-specific fast loops run only with
 `contract="off"` **and** an explicit per-instance

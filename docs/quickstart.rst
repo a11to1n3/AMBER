@@ -18,13 +18,14 @@ Want speed / GPU without guessing? See :doc:`going_faster` and run::
    am.print_status()
    print(am.recommend(100_000))
 
-Place a run with Keras-style chaining (0.4.4; mode defaults to
-``vectorized``). Prefer ``step_vectorized()`` for the columnar lane and
-``step_oop()`` for tracked Agent objects; legacy ``step()`` is the fallback.
-GPU runs use the vectorized lane only::
+Place a run with Keras-style chaining (mode defaults to ``vectorized``).
+Prefer ``step_vectorized()`` for the columnar lane and ``step_oop()`` for
+tracked Agent objects; legacy ``step()`` is the fallback. GPU runs use the
+vectorized lane only and require **NVIDIA + CuPy** (not Apple Metal/MPS)::
 
    results = model.cpu(mode="vectorized").run()
-   results = model.gpu().run()          # vectorized lane; needs NVIDIA + CuPy
+   if am.GPU_AVAILABLE:
+       results = model.gpu().run()
    results = model.cpu(mode="oop").run()  # Agent objects; not available on GPU
 
 For a CPU boost on Mac (no CUDA), install Numba::
@@ -163,7 +164,8 @@ vectorized way:
 That's the whole idiom. No per-agent loops, no ``update_agent_data`` calls,
 and no ``.item()`` ceremonies. ``step_vectorized()`` is a handful of view-API
 calls regardless of whether you have 100 agents or 100 000 — and the
-vectorized lane runs under ``.gpu()`` with device-resident columns (0.4.4).
+vectorized lane runs under ``.gpu()`` with device-resident columns when
+NVIDIA + CuPy are available.
 
 Understanding the results
 -------------------------

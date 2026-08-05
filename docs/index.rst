@@ -24,23 +24,23 @@ Features
 
 * **AgentPy-shaped OOP + vectorized lanes** on the same model (see
   :doc:`from_agentpy` and :doc:`going_faster`)
-* **Vectorized view API**: update the whole population in a handful of Polars
-  expressions — no per-agent loops, regardless of population size
-* **Snapshot-view contract**: opt-in operational monitor at instrumented
-  write/borrow seams (not a schedule proof; zero-overhead default is off)
-* **CPU acceleration**: optional Numba (``pip install 'ambr[perf]'``) for
-  ``scatter_add`` / subset writes — recommended on Mac without CUDA
-* **Device placement (0.4.4)**: Keras-style ``model.cpu(mode=...).run()`` /
-  ``model.gpu().run()`` with ``step_vectorized`` / ``step_oop`` hooks
-  (GPU is vectorized-only; device-resident columns); see :doc:`going_faster`
-* **GPU ensemble**: CuPy array helpers with NumPy fallback, plus a batched
-  ensemble that runs ``B`` simulations in one device pass for calibration
-* **Flexible environments**: grid, continuous space, and network topologies
-* **Optimization**: grid / random / Bayesian (SMAC) search and GPU-batched calibration
-* **Declarative reporting & typed params**: ``model_reporters`` / ``agent_reporters``
-  and a class-level ``params`` schema
-* **Reproducible**: one canonical seeded RNG (``self.rng``); deterministic runs
-* **RunResults**: ``results.agents`` and ``results['agents']`` both work
+* **Vectorized view API**: ``where`` / ``at`` / ``set`` / ``scatter_add`` —
+  do not mutate ``agents.array(...)`` in place on CPU
+* **Snapshot-view contract**: opt-in **operational** monitor (not a schedule
+  proof; default ``off``)
+* **CPU acceleration**: optional Numba (``pip install 'ambr[perf]'``) —
+  recommended on Mac / no-CUDA
+* **Device placement**: Keras-style ``model.cpu(mode=...).run()`` /
+  ``model.gpu().run()`` (GPU is **vectorized-only**, **NVIDIA + CuPy** only —
+  not Apple Metal/MPS); see :doc:`going_faster`
+* **GPU ensemble**: ``GPUEnsembleRunner`` for many short runs; parallelism is
+  **never** automatic from a single ``.run()``
+* **OOP activation helpers**: ``activate_agents("random"|"sequential"|"simultaneous")``
+* **Viz helpers**: ``plot_timeseries`` / ``plot_grid`` (``ambr[viz]``)
+* **Environments**: grid, continuous space, and network topologies
+* **Optimization**: grid / random / Bayesian (SMAC) and GPU-batched calibration
+* **RunResults**: attribute or dict access; ``save`` / ``load``
+* **Reproducible**: seeded ``self.rng``; see :doc:`reproducibility`
 
 Quick Start
 -----------

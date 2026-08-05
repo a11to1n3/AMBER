@@ -71,10 +71,14 @@ AMBER extras (install what you need):
 
    # NVIDIA GPU lane (CuPy). Prefer a CUDA-matched wheel if the default fails,
    # e.g. ``pip install cupy-cuda12x`` instead of the generic ``cupy`` pin.
+   # Apple Metal/MPS is **not** used.
    pip install 'ambr[gpu]'
 
    # SMAC Bayesian / multi-objective optimization (pins scikit-learn for SMAC 2.4)
    pip install 'ambr[advanced]'
+
+   # Plot helpers alias (matplotlib is already a core dependency)
+   pip install 'ambr[viz]'
 
    # Interactive example notebooks
    pip install 'ambr[examples]'
@@ -94,10 +98,14 @@ Other useful packages:
 Verify lanes after install::
 
    import ambr as am
-   am.print_status()
+   print(am.__version__)
+   am.print_status()                 # GPU? Numba?
    print(am.recommend(10_000))
-   # Native GPU path (when CuPy + NVIDIA are present):
-   # results = MyVectorizedModel(...).gpu().run()
+   # GPU claim samples (on an NVIDIA host with CuPy):
+   #   python scripts/run_host_b_gpu_claims.py --quick
+
+See :doc:`going_faster` for lanes, :doc:`reproducibility` for seed/device
+policy, and :doc:`paper_and_package` for paper vs package numbers.
 
 Troubleshooting
 ---------------

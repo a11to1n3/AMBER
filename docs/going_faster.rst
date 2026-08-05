@@ -110,19 +110,24 @@ Requires an **NVIDIA GPU + CuPy** (not Apple Metal/MPS). Install the GPU extra
 
 Then either:
 
-**A. Single large run — vectorized view-API model (0.4.4, preferred)::
+**A. Single large run — vectorized view-API model (preferred)**::
 
-   results = MyVectorizedModel({"n": 1_000_000, "steps": 50, "seed": 0}).gpu().run()
-   # CPU counterpart:
-   # results = MyVectorizedModel(...).cpu(mode="vectorized").run()
+   import ambr as am
+   model = MyVectorizedModel(
+       {"n": 1_000_000, "steps": 50, "seed": 0, "show_progress": False}
+   )
+   if am.GPU_AVAILABLE:
+       results = model.gpu().run()
+   else:
+       results = model.cpu(mode="vectorized").run()
    # Optional private GPU loop (only if the model defines one; not monitored):
    # model.approve_fast_path("my-label").gpu().run(contract="off")
    #
    # ``approve_fast_path(evidence)`` is **caller-attested**: AMBER records the
    # label and requires it (plus ``contract="off"``) before private loops run.
-   # It does **not** verify that the evidence proves equivalence to a reference
-   # trajectory. Prefer the instrumented vectorized path unless you own that
-   # attestation outside the library.
+   # It does **not** verify equivalence to a reference trajectory.
+   # Re-check GPU claims on NVIDIA hardware:
+   #   python scripts/run_host_b_gpu_claims.py --quick
 
 **B. Array-kernel model —** :class:`~ambr.lanes.ArrayKernelModel`::
 

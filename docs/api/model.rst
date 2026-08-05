@@ -33,10 +33,10 @@ Basic Usage
            # Optional tracked-Agent implementation
            pass
 
-   # Run the model (fluent placement, 0.4.4)
-   model = MyModel({'steps': 100, 'seed': 42})
+   # Run the model (fluent placement)
+   model = MyModel({'steps': 100, 'seed': 42, 'show_progress': False})
    results = model.cpu(mode="vectorized").run()
-   # results = model.gpu().run()   # vectorized lane on GPU
+   # results = model.gpu().run()   # vectorized lane; needs NVIDIA + CuPy
 
 Key Methods
 -----------
