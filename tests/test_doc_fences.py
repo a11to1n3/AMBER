@@ -137,21 +137,29 @@ def _scale_for_ci(code: str) -> str:
 
 
 def _run_code(code: str, timeout: float = 90.0) -> None:
+    # Windows CI uses a legacy console code page; force UTF-8 for source + I/O
+    # so doc fences with en-dashes / box-drawing prints do not crash.
     env = {
         **os.environ,
         "PYTHONPATH": str(ROOT / "src") + os.pathsep + os.environ.get("PYTHONPATH", ""),
         "AMBER_SUPPRESS_DEPRECATIONS": "1",
-        # Prefer non-interactive backend if matplotlib is imported by a sample.
         "MPLBACKEND": "Agg",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
     }
-    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
-        f.write(code)
-        path = f.name
+    # Write as real UTF-8 bytes (NamedTemporaryFile text mode uses locale encoding
+    # on Windows and can mangle non-ASCII into cp1252, then SyntaxError on \x97).
+    body = "# -*- coding: utf-8 -*-\n" + code
+    fd, path = tempfile.mkstemp(suffix=".py")
     try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(body.encode("utf-8"))
         proc = subprocess.run(
-            [sys.executable, path],
+            [sys.executable, "-X", "utf8", path],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             env=env,
             cwd=str(ROOT),
