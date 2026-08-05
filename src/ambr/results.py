@@ -23,9 +23,27 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Union
 
 PathLike = Union[str, Path]
+
+
+def _write_frame(df: Any, path_stem: Path) -> None:
+    """Write a Polars frame without requiring pyarrow when possible.
+
+    Prefer parquet; fall back to Arrow IPC, then CSV.
+    """
+    try:
+        df.write_parquet(path_stem.with_suffix(".parquet"))
+        return
+    except Exception:
+        pass
+    try:
+        df.write_ipc(path_stem.with_suffix(".arrow"))
+        return
+    except Exception:
+        pass
+    df.write_csv(path_stem.with_suffix(".csv"))
 
 
 class RunResults(dict):
@@ -90,10 +108,12 @@ class RunResults(dict):
 
             path/
               info.json          # if present
-              model.parquet      # if present
-              agents.parquet     # if present
-              {key}.parquet      # other Polars DataFrames
+              model.parquet|.arrow|.csv
+              agents.parquet|.arrow|.csv
               extra.json         # remaining JSON-serializable values
+
+        Frames prefer parquet; fall back to Arrow IPC then CSV when parquet
+        is unavailable (e.g. no pyarrow engine).
 
         Returns the directory path.
         """
@@ -109,7 +129,7 @@ class RunResults(dict):
                 )
                 continue
             if isinstance(value, pl.DataFrame):
-                value.write_parquet(root / f"{key}.parquet")
+                _write_frame(value, root / key)
                 continue
             if key == "contract" and isinstance(value, list):
                 # Certificates: store a lightweight summary only
@@ -152,6 +172,10 @@ class RunResults(dict):
             data["info"] = json.loads(info_path.read_text())
         for pq in sorted(root.glob("*.parquet")):
             data[pq.stem] = pl.read_parquet(pq)
+        for ipc in sorted(root.glob("*.arrow")):
+            data.setdefault(ipc.stem, pl.read_ipc(ipc))
+        for csv in sorted(root.glob("*.csv")):
+            data.setdefault(csv.stem, pl.read_csv(csv))
         extra_path = root / "extra.json"
         if extra_path.is_file():
             extra = json.loads(extra_path.read_text())

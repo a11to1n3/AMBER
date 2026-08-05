@@ -30,9 +30,14 @@ def test_runresults_save_load(tmp_path):
 
     dest = tmp_path / "run0"
     r.save(dest)
-    assert (dest / "model.parquet").is_file()
-    assert (dest / "agents.parquet").is_file()
     assert (dest / "info.json").is_file()
+    # parquet preferred; arrow/csv fallbacks when parquet engine missing
+    assert any(
+        (dest / f"model{ext}").is_file() for ext in (".parquet", ".arrow", ".csv")
+    )
+    assert any(
+        (dest / f"agents{ext}").is_file() for ext in (".parquet", ".arrow", ".csv")
+    )
 
     loaded = am.RunResults.load(dest)
     assert loaded.model.height == r.model.height

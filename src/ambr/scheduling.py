@@ -20,7 +20,7 @@ contract remains an operational monitor only.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Union
+from typing import Any, Iterable, List, Optional
 
 import numpy as np
 

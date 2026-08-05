@@ -10,7 +10,7 @@ do not need boilerplate.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, List, Optional, Sequence, Union
+from typing import Any, List, Optional, Sequence
 
 __all__ = ["plot_timeseries", "plot_grid", "HAS_MATPLOTLIB"]
 
@@ -76,41 +76,35 @@ def plot_timeseries(
         except Exception:
             frame = getattr(results, "model", results)
 
-    # Polars → columns via to_pandas when available for simple plotting
-    if hasattr(frame, "to_pandas"):
-        df = frame.to_pandas()
-    elif hasattr(frame, "columns") and hasattr(frame, "__getitem__"):
-        # already pandas-like
-        df = frame
-    else:
+    if not hasattr(frame, "columns"):
         raise TypeError(
             "plot_timeseries expects RunResults or a Polars/pandas model frame"
         )
 
+    col_names = list(frame.columns)
     if columns is None:
-        columns = [
-            c
-            for c in df.columns
-            if c != x and getattr(df[c], "dtype", None) is not None
-        ]
-        # prefer numeric
         num_cols: List[str] = []
-        for c in columns:
+        for c in col_names:
+            if c == x:
+                continue
             try:
-                if str(df[c].dtype).startswith(("float", "int", "UInt", "Int", "Float")):
-                    num_cols.append(c)
-                elif hasattr(df[c], "dtype") and "float" in str(df[c].dtype).lower():
+                series = frame[c]
+                dtype = str(getattr(series, "dtype", ""))
+                if any(t in dtype for t in ("float", "int", "UInt", "Int", "Float")):
                     num_cols.append(c)
             except Exception:
                 continue
-        columns = num_cols or [c for c in df.columns if c != x]
+        columns = num_cols or [c for c in col_names if c != x]
 
     if ax is None:
         _, ax = plt.subplots()
-    xs = df[x] if x in df.columns else range(len(df))
+    if x in col_names:
+        xs = _series_to_list(frame[x])
+    else:
+        xs = list(range(_frame_height(frame)))
     for c in columns:
-        if c in df.columns:
-            ax.plot(xs, df[c], label=str(c), **plot_kwargs)
+        if c in col_names:
+            ax.plot(xs, _series_to_list(frame[c]), label=str(c), **plot_kwargs)
     ax.set_xlabel(x)
     if title:
         ax.set_title(title)
@@ -153,21 +147,22 @@ def plot_grid(
         except Exception:
             frame = getattr(agents, "agents", agents)
 
-    if hasattr(frame, "to_pandas"):
-        df = frame.to_pandas()
-    else:
-        df = frame
+    if not hasattr(frame, "columns"):
+        raise TypeError("plot_grid expects RunResults or a frame with columns")
 
+    col_names = list(frame.columns)
     for col in (x, y):
-        if col not in df.columns:
+        if col not in col_names:
             raise KeyError(
-                f"plot_grid requires column {col!r}; available: {list(df.columns)}"
+                f"plot_grid requires column {col!r}; available: {col_names}"
             )
 
     if ax is None:
         _, ax = plt.subplots()
-    c = df[color] if color and color in df.columns else None
-    sc = ax.scatter(df[x], df[y], c=c, s=s, **scatter_kwargs)
+    xs = _series_to_list(frame[x])
+    ys = _series_to_list(frame[y])
+    c = _series_to_list(frame[color]) if color and color in col_names else None
+    sc = ax.scatter(xs, ys, c=c, s=s, **scatter_kwargs)
     if c is not None:
         try:
             plt.colorbar(sc, ax=ax, label=color)
@@ -179,3 +174,19 @@ def plot_grid(
         ax.set_title(title)
     ax.set_aspect("equal", adjustable="datalim")
     return ax
+
+
+def _series_to_list(series: Any) -> list:
+    if hasattr(series, "to_list"):
+        return series.to_list()
+    if hasattr(series, "to_numpy"):
+        return list(series.to_numpy())
+    return list(series)
+
+
+def _frame_height(frame: Any) -> int:
+    if hasattr(frame, "height"):
+        return int(frame.height)
+    if hasattr(frame, "__len__"):
+        return len(frame)
+    return 0
