@@ -203,12 +203,16 @@ print(Drift({"n": 100_000, "steps": 20, "show_progress": False}).run().info)
 the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).
 
-> **New in 0.4.6:** claim-honest public samples (view API + `GPU_AVAILABLE`
-> branching), [doc-fence / README smokes](tests/test_doc_fences.py),
-> [GPU claim verification script](scripts/run_gpu_claims.py), OOP
+> **New in 0.4.7:** GPU claim script renamed to
+> [`scripts/run_gpu_claims.py`](scripts/run_gpu_claims.py); user-facing docs
+> scrubbed of paper-campaign machine labels. Upgrade with
+> `pip install -U 'ambr>=0.4.7'`. See the [changelog](CHANGELOG.md).
+>
+> **0.4.6:** claim-honest public samples (view API + `GPU_AVAILABLE`
+> branching), [doc-fence / README smokes](tests/test_doc_fences.py), OOP
 > [activation helpers](docs/api/scheduling.rst), [viz helpers](docs/api/viz.rst),
 > [RunResults save/load](docs/api/results.rst), [reproducibility policy](docs/reproducibility.rst),
-> and [1.0 freeze prep](docs/roadmap_1_0.rst). See the [changelog](CHANGELOG.md).
+> and [1.0 freeze prep](docs/roadmap_1_0.rst).
 >
 > **0.4.5:** honest 10M headline snapshot, `ambr[gpu]`, `CITATION.cff`.
 >
@@ -432,7 +436,7 @@ pip install 'ambr[advanced]'   # SMAC optimization
 
 ```python
 import ambr as am
-print(am.__version__)   # 0.4.6+
+print(am.__version__)   # 0.4.7+
 am.print_status()
 ```
 

@@ -91,7 +91,7 @@ from .viz import HAS_MATPLOTLIB, plot_grid, plot_timeseries
 try:
     __version__ = _metadata_version('ambr')
 except _PackageNotFoundError:
-    __version__ = '0.4.6'
+    __version__ = '0.4.7'
 
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'

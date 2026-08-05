@@ -2,10 +2,24 @@
 
 ## Unreleased
 
+## v0.4.7 - 2026-08-05
+
+Patch over 0.4.6: remove paper-campaign machine labels from user-facing docs
+and rename the GPU verification script.
+
 ### Changed
 
-- Renamed the optional GPU verification entrypoint to
-  ``scripts/run_gpu_claims.py`` (generic CUDA-host wording in docs).
+- Renamed ``scripts/run_host_b_gpu_claims.py`` → ``scripts/run_gpu_claims.py``
+  (0.4.6 wheels still contain the old path; upgrade to 0.4.7 for the new name).
+- Docs / CI comments use generic **NVIDIA + CuPy / CUDA host** wording only
+  (no internal Host A/B or provider-specific campaign labels).
+- Benchmark helper scripts: neutralize ``vast.ai`` comments; generic CUDA
+  rerun tags.
+
+### Notes
+
+- **Do not re-tag 0.4.6** — PyPI artifacts are immutable. Install with
+  ``pip install -U 'ambr>=0.4.7'``.
 
 ## v0.4.6 - 2026-08-05
 

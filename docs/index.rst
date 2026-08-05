@@ -83,10 +83,11 @@ Create your first model:
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for what is new in **0.4.6** (doc-fence CI, GPU claim script
-claim script, activation helpers, RunResults I/O, 1.0 freeze prep). 0.4.5
-added honest 10M headline evidence and ``ambr[gpu]``; 0.4.4 added lanes and
-the operational contract.
+See :doc:`changelog` for what is new in **0.4.7** (GPU claim script rename,
+paper-host label scrub). **0.4.6** added doc-fence CI, GPU claim verification,
+activation helpers, RunResults I/O, and 1.0 freeze prep. 0.4.5 added honest
+10M headline evidence and ``ambr[gpu]``; 0.4.4 added lanes and the operational
+contract.
 
 Table of Contents
 -----------------
