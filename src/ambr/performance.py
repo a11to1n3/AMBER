@@ -16,7 +16,12 @@ Numba is the recommended CPU accelerator on Mac (no CUDA). Import
 
 from __future__ import annotations
 
+import base64
+import io
 import json
+import os
+import secrets
+import stat
 import time
 import traceback as _traceback_mod
 from dataclasses import asdict, dataclass
@@ -462,14 +467,25 @@ _CHECKPOINT_SCHEMA = 1
 
 
 def _serialize_frame(df: Any) -> Optional[Dict[str, Any]]:
-    """JSON-safe encoding of a Polars (or None) frame."""
+    """Type-preserving encoding of a Polars frame (Arrow IPC + base64).
+
+    Record-based JSON loses dtypes (UInt8→Int64, Datetime→str, Categorical→str).
+    Arrow IPC preserves the schema on round-trip.
+    """
     if df is None:
         return None
     try:
+        import polars as pl
+
+        if not isinstance(df, pl.DataFrame):
+            return {"_kind": "repr", "value": repr(df)}
+        buf = io.BytesIO()
+        df.write_ipc(buf)
         return {
-            "_kind": "polars_records",
+            "_kind": "polars_ipc_b64",
             "columns": list(df.columns),
-            "rows": df.to_dicts(),
+            "dtypes": [str(dt) for dt in df.dtypes],
+            "data": base64.b64encode(buf.getvalue()).decode("ascii"),
         }
     except Exception:
         return {"_kind": "repr", "value": repr(df)}
@@ -481,7 +497,13 @@ def _deserialize_frame(payload: Any) -> Any:
     if not isinstance(payload, dict):
         return payload
     kind = payload.get("_kind")
+    if kind == "polars_ipc_b64":
+        import polars as pl
+
+        raw = base64.b64decode(payload["data"])
+        return pl.read_ipc(io.BytesIO(raw))
     if kind == "polars_records":
+        # Legacy checkpoints from pre-0.5.1 format (lossy dtypes).
         import polars as pl
 
         rows = payload.get("rows") or []
@@ -492,6 +514,56 @@ def _deserialize_frame(payload: Any) -> Any:
     if kind == "repr":
         return payload.get("value")
     return payload
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Exclusive random-temp write + fsync + replace (symlink-safe)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    tmp = path.parent / f".{path.name}.{secrets.token_hex(16)}.tmp"
+    fd = None
+    try:
+        fd = os.open(str(tmp), flags, 0o644)
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise OSError(f"Refusing non-regular checkpoint temp: {tmp}")
+        written = 0
+        while written < len(data):
+            n = os.write(fd, data[written:])
+            if n <= 0:
+                raise OSError(f"Short write to {tmp}")
+            written += n
+        os.fsync(fd)
+        os.close(fd)
+        fd = None
+        st = os.lstat(tmp)
+        if not stat.S_ISREG(st.st_mode):
+            raise OSError(f"Checkpoint temp is not a regular file: {tmp}")
+        os.replace(str(tmp), str(path))
+        try:
+            dir_fd = os.open(str(path.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            if tmp.exists() or tmp.is_symlink():
+                tmp.unlink()
+        except OSError:
+            pass
 
 
 def _serialize_result(result: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -646,10 +718,14 @@ class ParallelRunner:
 
         Args:
             model_class: Model class to instantiate
-            n_workers: Number of parallel workers (default: CPU count)
+            n_workers: Maximum concurrent worker processes (default: CPU count).
+                Must be ``>= 1``.
         """
         self.model_class = model_class
-        self.n_workers = n_workers or mp.cpu_count()
+        n = n_workers if n_workers is not None else mp.cpu_count()
+        if int(n) < 1:
+            raise ValueError(f"n_workers must be >= 1, got {n_workers!r}")
+        self.n_workers = int(n)
 
     def run(
         self,
@@ -669,12 +745,15 @@ class ParallelRunner:
         Args:
             param_list: List of parameter dictionaries (order preserved).
             show_progress: Print a completion counter.
-            fail_fast: Stop submitting new work after the first failure/timeout.
+            fail_fast: Stop submitting new work after the first failure/timeout
+                and **terminate every remaining live worker**.
             timeout: Per-run wall-clock seconds (``None`` = no limit). Timed-out
                 workers are **terminated** (not cooperatively cancelled).
             retry: Extra attempts after a failed attempt (not applied to
                 timeouts by default).
-            max_in_flight: Bound concurrent processes (default: ``n_workers``).
+            max_in_flight: Optional additional cap on concurrent processes.
+                Effective concurrency is ``min(n_workers, max_in_flight)`` when
+                set; never exceeds ``n_workers``. Must be ``>= 1`` if provided.
             checkpoint_path: Optional JSON path; completed outcomes are
                 written after each finish for crash-safe resume.
             resume: If True and ``checkpoint_path`` exists, skip indices
@@ -689,9 +768,14 @@ class ParallelRunner:
         total = len(param_list)
         outcomes: List[Optional[RunOutcome]] = [None] * total
         max_attempts = 1 + max(0, int(retry))
-        in_flight_cap = max_in_flight if max_in_flight is not None else max(
-            self.n_workers, 1
-        )
+        if max_in_flight is not None and int(max_in_flight) < 1:
+            raise ValueError(
+                f"max_in_flight must be >= 1 when set, got {max_in_flight!r}"
+            )
+        # Never exceed n_workers; max_in_flight is an optional tighter cap.
+        in_flight_cap = self.n_workers
+        if max_in_flight is not None:
+            in_flight_cap = min(self.n_workers, int(max_in_flight))
         ckpt = Path(checkpoint_path) if checkpoint_path else None
 
         if resume:
@@ -775,8 +859,8 @@ class ParallelRunner:
                             )
                         )
                         progressed = True
-                        if stop_submitting:
-                            break
+                        # Continue scanning siblings; fail_fast cleanup
+                        # terminates the full active registry below.
                         continue
 
                     # Non-blocking poll for a finished worker message.
@@ -836,8 +920,9 @@ class ParallelRunner:
 
                         _record(outcome)
                         progressed = True
-                        if stop_submitting:
-                            break
+                        # Do not break mid-iteration: remaining siblings must
+                        # stay registered until the fail_fast cleanup below
+                        # terminates *every* entry in ``active``.
                         continue
 
                     if not proc.is_alive():
@@ -860,14 +945,14 @@ class ParallelRunner:
                             )
                         )
                         progressed = True
-                        if stop_submitting:
-                            break
                         continue
 
                     still_active.append((proc, conn, i, attempt, started))
 
                 if stop_submitting:
-                    for proc, conn, i, attempt, _started in still_active:
+                    # Terminate the full active registry (not only still_active):
+                    # workers not yet visited in this loop must not be orphaned.
+                    for proc, conn, i, attempt, _started in active:
                         try:
                             conn.close()
                         except Exception:
@@ -894,12 +979,13 @@ class ParallelRunner:
                     time.sleep(0.05)
         finally:
             # Ensure no orphaned workers on unexpected exit.
-            for proc, conn, _i, _a, _s in active:
+            for proc, conn, _i, _a, _s in list(active):
                 try:
                     conn.close()
                 except Exception:
                     pass
                 _terminate_process(proc)
+            active.clear()
 
         if show_progress:
             print()
@@ -934,7 +1020,12 @@ class ParallelRunner:
     def _save_checkpoint(
         path: Path, outcomes: List[Optional[RunOutcome]]
     ) -> None:
-        """Write a JSON checkpoint (never pickle — see SECURITY.md)."""
+        """Write a JSON checkpoint (never pickle — see SECURITY.md).
+
+        Uses a random exclusive temp name (not a predictable ``*.tmp`` path)
+        so a pre-planted symlink cannot redirect the write outside the
+        destination directory.
+        """
         payload_outcomes: Dict[str, Any] = {}
         for i, o in enumerate(outcomes):
             if o is None:
@@ -947,11 +1038,8 @@ class ParallelRunner:
             "format": "ambr.ParallelRunner.checkpoint+json",
             "outcomes": payload_outcomes,
         }
-        path.parent.mkdir(parents=True, exist_ok=True)
-        text = json.dumps(payload, indent=2, default=str) + "\n"
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
-        tmp.replace(path)
+        text = (json.dumps(payload, indent=2, default=str) + "\n").encode("utf-8")
+        _atomic_write_bytes(Path(path), text)
 
     @staticmethod
     def _load_checkpoint(path: Path) -> Dict[int, RunOutcome]:

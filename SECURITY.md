@@ -4,10 +4,11 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.4.x   | Yes       |
+| 0.5.x   | Yes       |
+| 0.4.x   | Security fixes only (best-effort) |
 | < 0.4   | No        |
 
-Security fixes ship on the latest **0.4.x** line until 1.0.
+Security fixes ship on the latest **0.5.x** line until 1.0.
 
 ## Reporting a vulnerability
 

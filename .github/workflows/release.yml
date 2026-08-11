@@ -157,6 +157,34 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install build twine
 
+      - name: Stamp AMBER git revision into package source
+        env:
+          AMBER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Embed the release commit so results.info["git_revision"] works
+          # without requiring users to set AMBER_GIT_REVISION.
+          cat > src/ambr/_build_info.py <<EOF
+          """Build-time metadata (stamped by release workflow)."""
+          from __future__ import annotations
+
+          GIT_REVISION = "${AMBER_SHA}"
+          EOF
+          # Strip accidental leading indentation from the heredoc.
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("src/ambr/_build_info.py")
+          lines = [ln.lstrip() if ln.strip() else ln for ln in p.read_text().splitlines(True)]
+          # Keep a clean module: rebuild explicitly.
+          sha = __import__("os").environ["AMBER_SHA"]
+          p.write_text(
+              '"""Build-time metadata (stamped by release workflow)."""\n'
+              "from __future__ import annotations\n\n"
+              f'GIT_REVISION = "{sha}"\n'
+          )
+          print(p.read_text())
+          PY
+
       - name: Build sdist and wheel
         run: python -m build
 
@@ -173,6 +201,47 @@ jobs:
           test -f ${WHEEL} || { echo "Missing wheel for ${VERSION}: dist/"; ls -la dist; exit 1; }
           test -f ${SDIST} || { echo "Missing sdist for ${VERSION}: dist/"; ls -la dist; exit 1; }
           echo "Built ${WHEEL} and ${SDIST}"
+
+      - name: Assert wheel embeds GITHUB_SHA (not "unknown")
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          AMBER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import zipfile
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          sha = os.environ["AMBER_SHA"]
+          wheel = next(Path("dist").glob(f"ambr-{version}-*.whl"))
+          with zipfile.ZipFile(wheel) as zf:
+              names = [n for n in zf.namelist() if n.endswith("_build_info.py")]
+              assert names, f"_build_info.py missing from {wheel}"
+              text = zf.read(names[0]).decode("utf-8")
+          assert "unknown" not in text, text
+          assert sha in text, f"expected {sha!r} in:\n{text}"
+          # Install wheel and confirm runtime provenance
+          import subprocess, sys, tempfile, textwrap
+          with tempfile.TemporaryDirectory() as td:
+              subprocess.check_call(
+                  [sys.executable, "-m", "pip", "install", "--force-reinstall", str(wheel)],
+                  cwd=td,
+              )
+              code = textwrap.dedent(
+                  f"""
+                  import ambr
+                  from ambr.provenance import _ambr_git_revision
+                  assert ambr.__version__ == {version!r}
+                  rev = _ambr_git_revision()
+                  assert rev == {sha!r}, (rev, {sha!r})
+                  print("wheel provenance ok", rev)
+                  """
+              )
+              subprocess.check_call([sys.executable, "-c", code])
+          print("OK: wheel embeds", sha)
+          PY
 
       - name: Package-surface check (no local-only trees)
         run: |
