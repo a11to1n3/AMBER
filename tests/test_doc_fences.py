@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DOC_PATHS = [
     "README.md",
     "docs/quickstart.rst",
+    "docs/tutorial.rst",
     "docs/installation.rst",
     "docs/going_faster.rst",
     "docs/index.rst",
@@ -33,6 +34,7 @@ DOC_PATHS = [
     "docs/api/gpu_ensemble.rst",
     "docs/api/model.rst",
     "docs/api/optimization.rst",
+    "docs/api/results.rst",
 ]
 
 # Fence ids that are intentional fragments or multi-cell continuations.

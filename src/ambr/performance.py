@@ -16,10 +16,21 @@ Numba is the recommended CPU accelerator on Mac (no CUDA). Import
 
 from __future__ import annotations
 
-from typing import List, Tuple, Optional, Dict, Any, Type
-import numpy as np
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import pickle
+import time
+import traceback as _traceback_mod
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    ProcessPoolExecutor,
+    TimeoutError as FuturesTimeoutError,
+    wait,
+)
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 import multiprocessing as mp
+
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # Optional dependencies (soft imports — never fail module load)
@@ -403,16 +414,93 @@ def fast_random_walk_step(
 # =============================================================================
 
 
-def _run_single_simulation(params: Dict[str, Any], model_class: Type) -> Dict[str, Any]:
-    """Worker function for parallel simulation."""
-    model = model_class(params)
-    results = model.run()
-    return {
-        "params": params,
-        "model": results.get("model"),
-        "agents": results.get("agents"),
-        "info": results.get("info"),
-    }
+RunStatus = Literal["success", "failed", "timeout"]
+
+
+@dataclass
+class RunOutcome:
+    """Structured per-run outcome from :class:`ParallelRunner` (input order).
+
+    Attributes
+    ----------
+    index:
+        Position in the original ``param_list``.
+    status:
+        ``success``, ``failed``, or ``timeout``.
+    params:
+        Parameter dict used for this run.
+    result:
+        On success: mapping with ``model`` / ``agents`` / ``info`` (and
+        ``params``). ``None`` on failure/timeout.
+    error_type / error_message / traceback:
+        Populated when ``status`` is not ``success``.
+    attempts:
+        Number of attempts used (1 + retries).
+    """
+
+    index: int
+    status: RunStatus
+    params: Dict[str, Any]
+    result: Optional[Dict[str, Any]] = None
+    error_type: Optional[str] = None
+    error_message: Optional[str] = None
+    traceback: Optional[str] = None
+    attempts: int = 1
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RunOutcome":
+        return cls(
+            index=int(data["index"]),
+            status=data["status"],  # type: ignore[arg-type]
+            params=dict(data.get("params") or {}),
+            result=data.get("result"),
+            error_type=data.get("error_type"),
+            error_message=data.get("error_message"),
+            traceback=data.get("traceback"),
+            attempts=int(data.get("attempts", 1)),
+        )
+
+
+def _run_single_simulation(
+    index: int,
+    params: Dict[str, Any],
+    model_class: Type,
+) -> Dict[str, Any]:
+    """Worker: run one simulation and return a picklable outcome dict."""
+    try:
+        model = model_class(params)
+        results = model.run()
+        return {
+            "index": index,
+            "status": "success",
+            "params": params,
+            "result": {
+                "params": params,
+                "model": results.get("model"),
+                "agents": results.get("agents"),
+                "info": results.get("info"),
+            },
+            "error_type": None,
+            "error_message": None,
+            "traceback": None,
+            "attempts": 1,
+        }
+    except Exception as exc:
+        return {
+            "index": index,
+            "status": "failed",
+            "params": params,
+            "result": None,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "traceback": "".join(
+                _traceback_mod.format_exception(type(exc), exc, exc.__traceback__)
+            ),
+            "attempts": 1,
+        }
 
 
 class ParallelRunner:
@@ -428,14 +516,25 @@ class ParallelRunner:
       must be picklable.
     * Does **not** use the GPU. For many short GPU replicates, prefer
       :class:`~ambr.gpu_ensemble.GPUEnsembleRunner`.
+    * Returns a list of :class:`RunOutcome` **in input order** (not completion
+      order). Failures and timeouts are structured, never silent.
 
     Usage::
 
         runner = ParallelRunner(MyModel, n_workers=4)
-        results = runner.run([
-            {"n": 100, "steps": 20, "seed": 0, "show_progress": False},
-            {"n": 100, "steps": 20, "seed": 1, "show_progress": False},
-        ])
+        outcomes = runner.run(
+            [
+                {"n": 100, "steps": 20, "seed": 0, "show_progress": False},
+                {"n": 100, "steps": 20, "seed": 1, "show_progress": False},
+            ],
+            fail_fast=False,
+            timeout=120,
+            retry=1,
+            max_in_flight=8,
+        )
+        for o in outcomes:
+            if o.status == "success":
+                print(o.index, o.result["info"]["run_uuid"])
     """
 
     def __init__(self, model_class: Type, n_workers: int = None):
@@ -450,70 +549,243 @@ class ParallelRunner:
         self.n_workers = n_workers or mp.cpu_count()
 
     def run(
-        self, param_list: List[Dict[str, Any]], show_progress: bool = True
-    ) -> List[Dict[str, Any]]:
-        """
-        Run simulations in parallel.
+        self,
+        param_list: List[Dict[str, Any]],
+        show_progress: bool = True,
+        *,
+        fail_fast: bool = False,
+        timeout: Optional[float] = None,
+        retry: int = 0,
+        max_in_flight: Optional[int] = None,
+        checkpoint_path: Optional[Union[str, Path]] = None,
+        resume: bool = False,
+    ) -> List[RunOutcome]:
+        """Run simulations in parallel; return :class:`RunOutcome` in input order.
 
         Args:
-            param_list: List of parameter dictionaries
-            show_progress: Whether to show progress
+            param_list: List of parameter dictionaries (order preserved).
+            show_progress: Print a completion counter.
+            fail_fast: Stop submitting new work after the first failure/timeout.
+            timeout: Per-run wall-clock seconds (``None`` = no limit). Timed-out
+                runs are recorded as ``status='timeout'``.
+            retry: Extra attempts after a failed attempt (not applied to
+                timeouts by default).
+            max_in_flight: Bound concurrent submissions (default:
+                ``n_workers * 2``). Prevents unbounded queue growth.
+            checkpoint_path: Optional pickle path; completed outcomes are
+                written after each finish for crash-safe resume.
+            resume: If True and ``checkpoint_path`` exists, skip indices
+                already present in the checkpoint.
 
         Returns:
-            List of result dictionaries
+            ``len(param_list)`` outcomes in the same order as ``param_list``.
         """
-        results = []
         total = len(param_list)
+        outcomes: List[Optional[RunOutcome]] = [None] * total
+        max_attempts = 1 + max(0, int(retry))
+        in_flight_cap = max_in_flight if max_in_flight is not None else max(
+            self.n_workers * 2, 1
+        )
+        ckpt = Path(checkpoint_path) if checkpoint_path else None
 
-        # Use spawn context for better compatibility
+        if resume and ckpt is not None and ckpt.is_file():
+            for idx, outcome in self._load_checkpoint(ckpt).items():
+                if 0 <= idx < total:
+                    outcomes[idx] = outcome
+
+        # Indices still needing work
+        pending_indices = [i for i, o in enumerate(outcomes) if o is None]
+        stop_submitting = False
+        completed_count = sum(1 for o in outcomes if o is not None)
+
         ctx = mp.get_context("spawn")
-
         with ProcessPoolExecutor(
             max_workers=self.n_workers, mp_context=ctx
         ) as executor:
-            # Submit all tasks
-            futures = {
-                executor.submit(_run_single_simulation, params, self.model_class): i
-                for i, params in enumerate(param_list)
-            }
+            # future -> (index, attempt, submit_monotonic)
+            active: Dict[Any, Tuple[int, int, float]] = {}
+            idx_iter = iter(pending_indices)
 
-            # Collect results as they complete
-            completed = 0
-            for future in as_completed(futures):
+            def _submit_one() -> bool:
+                nonlocal stop_submitting
+                if stop_submitting:
+                    return False
                 try:
-                    result = future.result()
-                    results.append(result)
-                    completed += 1
+                    i = next(idx_iter)
+                except StopIteration:
+                    return False
+                fut = executor.submit(
+                    _run_single_simulation, i, param_list[i], self.model_class
+                )
+                active[fut] = (i, 1, time.monotonic())
+                return True
+
+            while len(active) < in_flight_cap and _submit_one():
+                pass
+
+            while active:
+                done_set, _ = wait(
+                    list(active.keys()),
+                    timeout=0.25,
+                    return_when=FIRST_COMPLETED,
+                )
+                now = time.monotonic()
+
+                # Per-task wall-clock timeout for still-running futures
+                if timeout is not None:
+                    for fut, (i, attempt, started) in list(active.items()):
+                        if fut in done_set:
+                            continue
+                        if now - started >= float(timeout):
+                            fut.cancel()
+                            del active[fut]
+                            outcomes[i] = RunOutcome(
+                                index=i,
+                                status="timeout",
+                                params=dict(param_list[i]),
+                                error_type="TimeoutError",
+                                error_message=f"Exceeded timeout={timeout}s",
+                                attempts=attempt,
+                            )
+                            completed_count += 1
+                            if show_progress:
+                                print(
+                                    f"\rCompleted {completed_count}/{total} simulations",
+                                    end="",
+                                )
+                            if ckpt is not None:
+                                self._save_checkpoint(ckpt, outcomes)
+                            if fail_fast:
+                                stop_submitting = True
+                                for other in list(active.keys()):
+                                    other.cancel()
+                                active.clear()
+                                break
+
+                if stop_submitting and not active:
+                    break
+
+                for fut in done_set:
+                    if fut not in active:
+                        continue
+                    i, attempt, _started = active.pop(fut)
+                    try:
+                        raw = fut.result(timeout=0)
+                        outcome = RunOutcome.from_dict(raw)
+                        outcome.attempts = attempt
+                    except FuturesTimeoutError:
+                        outcome = RunOutcome(
+                            index=i,
+                            status="timeout",
+                            params=dict(param_list[i]),
+                            error_type="TimeoutError",
+                            error_message=f"Exceeded timeout={timeout}s",
+                            attempts=attempt,
+                        )
+                    except Exception as exc:
+                        outcome = RunOutcome(
+                            index=i,
+                            status="failed",
+                            params=dict(param_list[i]),
+                            error_type=type(exc).__name__,
+                            error_message=str(exc),
+                            traceback="".join(
+                                _traceback_mod.format_exception(
+                                    type(exc), exc, exc.__traceback__
+                                )
+                            ),
+                            attempts=attempt,
+                        )
+
+                    # Retry failed (not timeout) attempts
+                    if (
+                        outcome.status == "failed"
+                        and attempt < max_attempts
+                        and not stop_submitting
+                    ):
+                        new_fut = executor.submit(
+                            _run_single_simulation,
+                            i,
+                            param_list[i],
+                            self.model_class,
+                        )
+                        active[new_fut] = (i, attempt + 1, time.monotonic())
+                        continue
+
+                    outcomes[i] = outcome
+                    completed_count += 1
                     if show_progress:
-                        print(f"\rCompleted {completed}/{total} simulations", end="")
-                except Exception as e:
-                    print(f"\nSimulation failed: {e}")
-                    results.append(
-                        {"error": str(e), "params": param_list[futures[future]]}
-                    )
-                    completed += 1
+                        print(
+                            f"\rCompleted {completed_count}/{total} simulations",
+                            end="",
+                        )
+                    if ckpt is not None:
+                        self._save_checkpoint(ckpt, outcomes)
+
+                    if outcome.status != "success" and fail_fast:
+                        stop_submitting = True
+                        for other in list(active.keys()):
+                            other.cancel()
+                        active.clear()
+                        break
+
+                    while len(active) < in_flight_cap and _submit_one():
+                        pass
 
         if show_progress:
-            print()  # New line after progress
+            print()
 
-        return results
+        # Any index never finished (fail_fast cancel) → explicit failed records
+        for i, o in enumerate(outcomes):
+            if o is None:
+                outcomes[i] = RunOutcome(
+                    index=i,
+                    status="failed",
+                    params=dict(param_list[i]),
+                    error_type="Cancelled",
+                    error_message="Not run (fail_fast or cancelled)",
+                )
+
+        if ckpt is not None:
+            self._save_checkpoint(ckpt, outcomes)
+
+        return [o for o in outcomes if o is not None]
 
     def run_with_seeds(
-        self, base_params: Dict[str, Any], seeds: List[int], show_progress: bool = True
-    ) -> List[Dict[str, Any]]:
-        """
-        Run same parameters with different random seeds.
-
-        Args:
-            base_params: Base parameter dictionary
-            seeds: List of random seeds
-            show_progress: Whether to show progress
-
-        Returns:
-            List of result dictionaries
-        """
+        self,
+        base_params: Dict[str, Any],
+        seeds: List[int],
+        show_progress: bool = True,
+        **run_kwargs: Any,
+    ) -> List[RunOutcome]:
+        """Run the same parameters with different random seeds."""
         param_list = [{**base_params, "seed": seed} for seed in seeds]
-        return self.run(param_list, show_progress)
+        return self.run(param_list, show_progress=show_progress, **run_kwargs)
+
+    @staticmethod
+    def _save_checkpoint(
+        path: Path, outcomes: List[Optional[RunOutcome]]
+    ) -> None:
+        payload = {
+            i: o.to_dict()
+            for i, o in enumerate(outcomes)
+            if o is not None
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        with tmp.open("wb") as fh:
+            pickle.dump(payload, fh, protocol=pickle.HIGHEST_PROTOCOL)
+        tmp.replace(path)
+
+    @staticmethod
+    def _load_checkpoint(path: Path) -> Dict[int, RunOutcome]:
+        with path.open("rb") as fh:
+            payload = pickle.load(fh)
+        out: Dict[int, RunOutcome] = {}
+        if isinstance(payload, dict):
+            for k, v in payload.items():
+                out[int(k)] = RunOutcome.from_dict(v)
+        return out
 
 
 # =============================================================================
@@ -677,6 +949,7 @@ def install_performance_deps():
 __all__ = [
     "SpatialIndex",
     "ParallelRunner",
+    "RunOutcome",
     # Scatter (vectorized write path)
     "scatter_add_1d",
     "scatter_write_1d",

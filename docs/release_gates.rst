@@ -46,3 +46,25 @@ Security defaults
 * Publish job: ``id-token: write`` (OIDC) and ``contents: write`` (GitHub
   Release assets). No long-lived PyPI API token is required when Trusted
   Publishing is configured.
+
+Definition of done (production-candidate)
+-----------------------------------------
+
+Before the next production-candidate release, require **all** of::
+
+   pytest -q
+   ruff check src/ambr
+   mypy
+   sphinx-build -W --keep-going -b html docs docs/_build/html
+   python -m build
+   twine check dist/*
+
+Plus:
+
+* Fresh wheel installation passes CPU quick starts.
+* Real CUDA verification passes.
+* Persistence traversal/staleness tests pass.
+* Importing AMBER does not alter Matplotlib configuration.
+* Intentional model/optimizer failures remain visible and diagnosable.
+
+See also :doc:`contributing` and ``SECURITY.md``.

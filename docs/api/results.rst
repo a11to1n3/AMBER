@@ -19,7 +19,7 @@ Attribute access (AgentPy-shaped)
    results = model.run()
    results.agents          # same as results['agents']
    results.model           # model-level time series (Polars)
-   results.info            # steps, run_time, device, mode, …
+   results.info            # provenance: versions, seed, UUID, lane, …
    print(results.keys_overview())
 
 Group / aggregate with Polars
@@ -48,14 +48,21 @@ Save / load
 Compared to AgentPy ``DataDict``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-==========================  ===============================================
-AgentPy                     AMBER
-==========================  ===============================================
-``results.variables.Model`` ``results.model`` (Polars DataFrame)
-``results.variables.Agent`` opt-in ``agent_reporters`` → long ``agent_vars``
-``results.info``            ``results.info`` (dict)
-save/load helpers           :meth:`~ambr.results.RunResults.save` / ``load``
-Sobol / arrange APIs        use Polars / external SALib as needed
-==========================  ===============================================
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - AgentPy
+     - AMBER
+   * - ``results.variables.Model``
+     - ``results.model`` (Polars DataFrame)
+   * - ``results.variables.Agent``
+     - opt-in ``agent_reporters`` → long ``agent_vars``
+   * - ``results.info``
+     - ``results.info`` provenance dict (versions, seed, UUID, lane, …)
+   * - save/load helpers
+     - :meth:`~ambr.results.RunResults.save` / ``load``
+   * - Sobol / arrange APIs
+     - use Polars / external SALib as needed
 
 See also :doc:`../from_agentpy`.

@@ -7,7 +7,7 @@ name = "ambr"
 version = "0.4.7"
 description = "Agent-based Modeling with Blazingly Efficient Records"
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [
@@ -24,10 +24,11 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Artificial Intelligence"
 ]
@@ -118,7 +119,7 @@ omit = [
 ]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
 src = ["src"]
 

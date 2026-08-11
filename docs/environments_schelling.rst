@@ -11,7 +11,7 @@ Agent **attributes** stay on the columnar table (``model.agents`` /
 ``agents_df``). The environment owns **placement** (where each agent sits).
 
 Grid occupancy helpers (0.4.1)
------------------------------
+------------------------------
 
 On :class:`~ambr.GridEnvironment`:
 
