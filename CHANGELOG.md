@@ -46,6 +46,19 @@
   least-privilege permissions (`id-token: write` only on publish); protected
   `pypi` environment for maintainer approval; SBOM + provenance attestation;
   GPU hardware evidence artifact. See `docs/release_gates.rst`.
+- **Run provenance**: `results.info` now records AMBER/Python versions,
+  fully-qualified model class, parameters/seed, start/end timestamps and
+  status, run UUID, config hash, Polars/NumPy/CuPy/CUDA versions, device and
+  execution lane, optional git/app revision.
+- **ParallelRunner**: returns ordered `RunOutcome` records
+  (`success`/`failed`/`timeout`) with error type/message/traceback; adds
+  `fail_fast`, per-run `timeout`, `retry`, `max_in_flight`, and
+  checkpoint/resume.
+- **Docs CI + maintenance**: `sphinx-build -W` in CI; fixed malformed RST
+  tables; absolute GitHub/RTD URLs in the PyPI README; `SECURITY.md`,
+  `CODEOWNERS`, Dependabot, `pip-audit`, issue templates; min/latest
+  dependency lanes; Python **3.10–3.13** (3.14 experimental); dropped EOL
+  **3.9**. Definition of done documented in contributing / release_gates.
 
 ## v0.4.7 - 2026-08-05
 

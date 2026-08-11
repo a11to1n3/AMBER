@@ -161,18 +161,38 @@ Full details: :doc:`versioning` and :doc:`roadmap_1_0`.
 - **Minor** (x.y.0): Backward-compatible features
 - **Patch** (x.y.z): Backward-compatible fixes
 
-Before tagging a release:
+Before tagging a release (definition of done)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-1. Make sure ``dev`` is up to date with ``origin/dev`` and merged or fast
-   forwarded into ``main`` for release.
-2. Run ``pytest`` (include doc fences + deprecation inventory).
-3. If GPU claims changed, run ``scripts/run_gpu_claims.py`` on a CUDA host.
-4. Update ``CHANGELOG.md`` and version metadata.
+Require **all** of the following on a clean checkout (see also
+:doc:`release_gates`):
+
+.. code-block:: bash
+
+   pytest -q
+   ruff check src/ambr
+   mypy
+   sphinx-build -W --keep-going -b html docs docs/_build/html
+   python -m build
+   twine check dist/*
+
+Additionally:
+
+* Fresh wheel installation passes CPU quick starts.
+* Real CUDA verification passes (``scripts/run_gpu_claims.py`` on NVIDIA+CuPy).
+* Persistence traversal/staleness tests pass.
+* Importing AMBER does not alter Matplotlib configuration.
+* Intentional model/optimizer failures remain visible and diagnosable.
+
+Release checklist
+~~~~~~~~~~~~~~~~~
+
+1. Make sure ``dev`` is up to date with ``origin/dev`` and merged or
+   fast-forwarded into ``main`` for release.
 2. Bump the package version in ``pyproject.toml`` and update
    ``CHANGELOG.md`` plus ``docs/changelog.rst`` (also keep
    ``src/ambr/__init__.py`` and ``docs/conf.py`` fallbacks in sync).
-3. Run ``make release-check`` from a clean checkout. This builds the wheel and
-   source distribution, runs ``twine check``, and executes the test suite.
+3. Run the definition-of-done commands above (or ``make release-check``).
 4. Inspect the source distribution: only package metadata and ``src/ambr``
    should ship (benchmarks, docs sources, examples stay out of the sdist via
    ``MANIFEST.in``; local paper drafts stay untracked via ``.gitignore`` —
@@ -180,8 +200,10 @@ Before tagging a release:
 5. Create and push an annotated ``vX.Y.Z`` tag from the release commit on
    ``main``. The ``Release`` workflow (``.github/workflows/release.yml``):
 
-   * builds and validates the sdist/wheel
-   * attaches them to a GitHub Release
+   * validates tag vs ``project.version`` and proves the version is absent
+     from PyPI
+   * builds the wheel once and runs CPU + CUDA gates against that wheel
+   * attaches artifacts to a GitHub Release after maintainer approval
    * publishes to **PyPI** via Trusted Publishing (OIDC)
 
 PyPI Trusted Publishing (one-time, preferred)

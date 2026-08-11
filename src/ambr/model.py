@@ -1,7 +1,7 @@
 """Core simulation model: population store, write flush, and run loop.
 
 Write architecture (single source of truth = Polars ``agents_df``)
------------------------------------------------------------------
+------------------------------------------------------------------
 * **OOP path** — ``Agent.__setattr__`` queues into ``_pending_writes``;
   :meth:`_flush_pending_writes` applies them (uses :mod:`ambr._id_index`).
 * **Vectorized path** — view API in :mod:`ambr.sequences` calls
@@ -31,6 +31,7 @@ from .contract import (
     ContractViolationError,
 )
 from .results import RunResults
+from .provenance import build_run_info
 from .execution import (
     active_rng,
     active_xp,
@@ -692,6 +693,7 @@ class Model(BaseModel):
             self._ensure_setup()
             begin_execution(self, config)
 
+        run_status = "completed"
         try:
             if can_fast_run:
                 # The model-specific private loop owns only the hot step
@@ -711,6 +713,10 @@ class Model(BaseModel):
                         self._print_progress(self.t, max_steps)
 
                 self.end()
+        except Exception:
+            # Failures stay visible to the caller; no silent swallow.
+            run_status = "failed"
+            raise
         finally:
             end_execution(self)
 
@@ -719,7 +725,11 @@ class Model(BaseModel):
             self._print_end_info(start_time, max_steps)
 
         return self._collect_results(
-            start_time, max_steps, device=config.device, mode=config.mode
+            start_time,
+            max_steps,
+            device=config.device,
+            mode=config.mode,
+            status=run_status,
         )
 
     # --- Helper methods ---
@@ -742,6 +752,7 @@ class Model(BaseModel):
         *,
         device: str = "cpu",
         mode: str = "vectorized",
+        status: str = "completed",
     ):
         if self._model_data:
             # Column-oriented construction to avoid Polars concat ShapeErrors with sparse data
@@ -769,13 +780,22 @@ class Model(BaseModel):
         else:
             model_df = pl.DataFrame({'t': []})
 
-        results = RunResults(
-            info={
-                'steps': self.t,
-                'run_time': time.time() - start_time,
-                'device': device,
-                'mode': mode,
+        end_time = time.time()
+        info = build_run_info(
+            self,
+            steps=self.t,
+            start_time=start_time,
+            end_time=end_time,
+            device=device,
+            mode=mode,
+            status=status,
+            extra={
+                # Keep requested step count alongside completed ``steps``.
+                "steps_requested": max_steps,
             },
+        )
+        results = RunResults(
+            info=info,
             # agents_df flushes the buffered write queue so OOP /
             # update_agent_data writes land in the returned frame.
             agents=self.agents_df,

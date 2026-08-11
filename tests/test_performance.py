@@ -10,6 +10,7 @@ import ambr as am
 from ambr.performance import (
     SpatialIndex,
     ParallelRunner,
+    RunOutcome,
     fast_distance_matrix,
     fast_neighbors_within_radius,
     fast_all_neighbors_within_radius,
@@ -22,15 +23,25 @@ from ambr.performance import (
     install_performance_deps,
     HAS_SCIPY,
     HAS_NUMBA,
-    _run_single_simulation  # Import private function for direct testing
+    _run_single_simulation,  # private worker for direct testing
 )
 
-# Mock model for ParallelRunner testing
+# Mock model for ParallelRunner testing (must be top-level for spawn pickling)
 class MockModel(am.Model):
     def setup(self):
         pass
     def step(self):
         self.record_model("step_val", self.t)
+
+
+class BoomModel(am.Model):
+    """Always fails — used to assert structured ParallelRunner errors."""
+
+    def setup(self):
+        pass
+
+    def step(self):
+        raise RuntimeError("intentional boom")
         self.record_model("param_val", self.p.get("param", 0))
 
 @pytest.fixture
@@ -295,50 +306,86 @@ class TestParallelRunner:
 
     def test_run_single_simulation_helper(self):
         """Directly test the worker function."""
-        params = {"param": 123, "steps": 5}
-        result = _run_single_simulation(params, MockModel)
+        params = {"param": 123, "steps": 5, "show_progress": False}
+        result = _run_single_simulation(0, params, MockModel)
 
+        assert result["index"] == 0
+        assert result["status"] == "success"
         assert result["params"] == params
-        assert result["model"] is not None
-
-        # Check that model actually ran (our MockModel records 'param_val')
-        # We need to dig into the internal data structure or rely on return values
-        # Since _run_single_simulation calls model.run(), which returns dict
-        # And MockModel inherits Model, it should work.
+        assert result["result"] is not None
+        assert result["result"]["model"] is not None
 
     def test_parallel_runner_execution(self):
-        """Test full parallel execution."""
+        """Test full parallel execution — outcomes in input order."""
         runner = ParallelRunner(MockModel, n_workers=2)
 
         params_list = [
-            {"steps": 2, "param": 10},
-            {"steps": 2, "param": 20}
+            {"steps": 2, "param": 10, "show_progress": False},
+            {"steps": 2, "param": 20, "show_progress": False},
         ]
 
-        # Run with print captured to avoid noise
         with patch("builtins.print"):
             results = runner.run(params_list, show_progress=False)
 
         assert len(results) == 2
-
-        # Validate results
-        p1 = [r for r in results if r["params"]["param"] == 10][0]
-        p2 = [r for r in results if r["params"]["param"] == 20][0]
-
-        assert p1 is not None
-        assert p2 is not None
+        assert all(isinstance(r, RunOutcome) for r in results)
+        assert [r.index for r in results] == [0, 1]
+        assert results[0].status == "success"
+        assert results[0].params["param"] == 10
+        assert results[1].params["param"] == 20
+        assert results[0].result is not None
+        assert "info" in results[0].result
 
     def test_parallel_runner_with_seeds(self):
         """Test run_with_seeds."""
         runner = ParallelRunner(MockModel, n_workers=2)
-        base_params = {"steps": 1}
+        base_params = {"steps": 1, "show_progress": False}
         seeds = [42, 43]
 
         with patch("builtins.print"):
             results = runner.run_with_seeds(base_params, seeds, show_progress=False)
 
         assert len(results) == 2
-        assert {r["params"]["seed"] for r in results} == {42, 43}
+        assert {r.params["seed"] for r in results} == {42, 43}
+        assert [r.index for r in results] == [0, 1]
+
+    def test_parallel_runner_failed_outcome_visible(self, tmp_path):
+        """Intentional model failures remain structured and diagnosable."""
+        # Model class must be top-level (spawn pickling).
+        runner = ParallelRunner(BoomModel, n_workers=1)
+        outcomes = runner.run(
+            [{"steps": 1, "show_progress": False}],
+            show_progress=False,
+            retry=0,
+        )
+        assert len(outcomes) == 1
+        assert outcomes[0].status == "failed"
+        assert outcomes[0].error_type == "RuntimeError"
+        assert "boom" in (outcomes[0].error_message or "")
+        assert outcomes[0].traceback
+
+    def test_parallel_runner_checkpoint_resume(self, tmp_path):
+        runner = ParallelRunner(MockModel, n_workers=1)
+        ckpt = tmp_path / "runs.pkl"
+        params_list = [
+            {"steps": 1, "param": 1, "show_progress": False},
+            {"steps": 1, "param": 2, "show_progress": False},
+        ]
+        with patch("builtins.print"):
+            first = runner.run(
+                params_list, show_progress=False, checkpoint_path=ckpt
+            )
+        assert ckpt.is_file()
+        assert all(o.status == "success" for o in first)
+
+        with patch("builtins.print"):
+            second = runner.run(
+                params_list,
+                show_progress=False,
+                checkpoint_path=ckpt,
+                resume=True,
+            )
+        assert [o.params["param"] for o in second] == [1, 2]
 
 
 class TestDependencyUtilities:

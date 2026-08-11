@@ -59,6 +59,7 @@ from .optimization import (
 from .performance import (
     SpatialIndex,
     ParallelRunner,
+    RunOutcome,
     vectorized_move,
     vectorized_wealth_transfer,
     vectorized_random_velocities,
@@ -153,6 +154,7 @@ __all__ = [
     # Performance utilities
     'SpatialIndex',
     'ParallelRunner',
+    'RunOutcome',
     'vectorized_move',
     'vectorized_wealth_transfer',
     'vectorized_random_velocities',
