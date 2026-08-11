@@ -623,6 +623,41 @@ class TestParallelRunner:
         assert all(o.status in {"failed", "timeout", "cancelled"} for o in outcomes)
         assert any(o.status == "cancelled" for o in outcomes)
 
+    def test_child_conn_close_failure_still_registers_worker(self):
+        """child_conn.close() raising after start must not orphan the worker.
+
+        Regression: ``active.append`` used to run *after* ``child_conn.close()``.
+        If close raised, the process was live but missing from the cleanup
+        registry, so ``finally`` / fail_fast could not terminate it.
+        """
+        import multiprocessing as mp
+        from multiprocessing.connection import Connection
+
+        real_close = Connection.close
+        state = {"n": 0}
+
+        def flaky_close(self):
+            state["n"] += 1
+            # First close is parent dropping the child write end in _start_worker.
+            if state["n"] == 1:
+                raise OSError("simulated child_conn.close failure")
+            return real_close(self)
+
+        runner = ParallelRunner(MockModel, n_workers=1)
+        with patch.object(Connection, "close", flaky_close):
+            with patch("builtins.print"):
+                with pytest.raises(OSError, match="simulated child_conn.close"):
+                    runner.run(
+                        [{"steps": 1, "show_progress": False}],
+                        show_progress=False,
+                    )
+        # Exception escaped run(), but finally must still terminate the worker
+        # that was registered before the failed close.
+        assert state["n"] >= 1
+        time.sleep(0.3)
+        live = [p for p in mp.active_children() if p.is_alive()]
+        assert live == [], f"orphaned workers after close failure: {live}"
+
     def test_retry_cannot_escape_fail_fast_cleanup(self, tmp_path):
         """A mid-scan retry must be in the live registry for fail_fast kill.
 

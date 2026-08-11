@@ -1115,15 +1115,22 @@ class ParallelRunner:
         idx_iter = iter(pending_indices)
 
         def _start_worker(i: int, attempt: int) -> None:
-            """Spawn one worker and register it in ``active`` immediately."""
+            """Spawn one worker and register it in ``active`` immediately.
+
+            Registration happens **before** parent-side ``child_conn.close()``
+            so a close failure cannot leave a live process outside the
+            fail_fast / ``finally`` cleanup set.
+            """
             parent_conn, child_conn = ctx.Pipe(duplex=False)
             proc = ctx.Process(
                 target=_process_worker,
                 args=(child_conn, i, param_list[i], self.model_class),
             )
             proc.start()
-            child_conn.close()  # only child writes
+            # Register before any post-start cleanup on the parent pipe end so
+            # fail_fast / finally always see this process even if close raises.
             active.append((proc, parent_conn, i, attempt, time.monotonic()))
+            child_conn.close()  # only child writes
 
         def _submit_one() -> bool:
             if stop_submitting:

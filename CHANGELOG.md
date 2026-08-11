@@ -10,6 +10,9 @@
   a GPU runner); schedule / ``workflow_dispatch`` still hard-require CUDA.
 - **ParallelRunner fail_fast**: terminates the full active-worker registry
   (no orphaned sibling processes / delayed side effects).
+- **ParallelRunner worker registry**: register each process in ``active``
+  immediately after ``start()``, before parent-side ``child_conn.close()``,
+  so a close failure cannot leave a live worker outside cleanup.
 - **Checkpoint writes**: random exclusive temp + ``O_NOFOLLOW`` / ``fsync`` /
   ``os.replace`` (no predictable ``*.tmp`` symlink escape).
 - **Checkpoint dtypes**: frames stored as Arrow IPC (base64), not lossy
