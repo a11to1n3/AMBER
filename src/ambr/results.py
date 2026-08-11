@@ -534,8 +534,18 @@ class RunResults(dict):
                     f"Incomplete save: missing file for {key!r}: {rel}"
                 )
             expected = entry.get("sha256")
+            if (
+                not isinstance(expected, str)
+                or len(expected) != 64
+                or any(c not in "0123456789abcdef" for c in expected.lower())
+            ):
+                raise RunResultsIOError(
+                    f"Entry {key!r} missing valid sha256 "
+                    f"(need 64 hex chars), got {expected!r}"
+                )
+            expected = expected.lower()
             actual = _sha256_file(file_path)
-            if expected is not None and actual != expected:
+            if actual != expected:
                 raise RunResultsIOError(
                     f"Corrupt file for {key!r}: sha256 mismatch "
                     f"(expected {expected}, got {actual})"

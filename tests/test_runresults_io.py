@@ -274,6 +274,20 @@ def test_contract_full_violations_persisted(tmp_path):
 
 
 @pytest.mark.unit
+def test_manifest_requires_sha256(tmp_path):
+    dest = tmp_path / "nosha"
+    r = RunResults({"x": 1})
+    r.save(dest)
+    manifest_path = dest / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for entry in manifest["entries"].values():
+        entry.pop("sha256", None)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    with pytest.raises(RunResultsIOError, match="sha256"):
+        RunResults.load(dest)
+
+
+@pytest.mark.unit
 def test_json_payload_checksum_stable_with_newlines(tmp_path):
     """LF JSON bytes must round-trip checksums on all platforms (incl. Windows)."""
     r = RunResults({"note": "line1\nline2\n", "n": 1})

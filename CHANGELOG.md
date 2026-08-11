@@ -8,6 +8,17 @@
   is not expanded to CRLF (SHA-256 checksums stay stable on Windows CI).
 - **GPU nightly**: no longer runs on every path-push (would fail red without
   a GPU runner); schedule / ``workflow_dispatch`` still hard-require CUDA.
+- **ParallelRunner fail_fast**: terminates the full active-worker registry
+  (no orphaned sibling processes / delayed side effects).
+- **Checkpoint writes**: random exclusive temp + ``O_NOFOLLOW`` / ``fsync`` /
+  ``os.replace`` (no predictable ``*.tmp`` symlink escape).
+- **Checkpoint dtypes**: frames stored as Arrow IPC (base64), not lossy
+  record JSON.
+- **max_in_flight**: never exceeds ``n_workers``; reject non-positive limits.
+- **Manifest integrity**: ``sha256`` required (64 hex chars) on every entry.
+- **Release wheels**: stamp ``GITHUB_SHA`` into ``_build_info.GIT_REVISION``
+  and assert it in the built wheel.
+- **Min-deps CI** aligned to declared floors; ``SECURITY.md`` supports 0.5.x.
 
 ## v0.5.0 - 2026-08-11
 

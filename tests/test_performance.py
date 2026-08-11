@@ -52,6 +52,25 @@ class SlowModel(am.Model):
 
     def step(self):
         time.sleep(float(self.p.get("sleep", 2.0)))
+
+
+class SideEffectModel(am.Model):
+    """Either fails immediately or writes a marker after a delay."""
+
+    def setup(self):
+        pass
+
+    def step(self):
+        from pathlib import Path as _Path
+
+        mode = self.p.get("mode", "boom")
+        if mode == "boom":
+            raise RuntimeError("boom for fail_fast")
+        delay = float(self.p.get("delay", 1.5))
+        time.sleep(delay)
+        marker = self.p.get("marker")
+        if marker:
+            _Path(marker).write_text("written\n", encoding="utf-8")
         self.record_model("param_val", self.p.get("param", 0))
 
 @pytest.fixture
@@ -459,6 +478,119 @@ class TestParallelRunner:
         assert outcomes[0].status == "failed"
         # Remaining slots marked cancelled / failed, not silent success
         assert all(o.status in {"failed", "timeout"} for o in outcomes)
+
+    def test_fail_fast_terminates_in_flight_siblings(self, tmp_path):
+        """With two in-flight workers, fail_fast must kill the sibling.
+
+        Regression: breaking mid-loop left the second process alive so it
+        could still write side effects after run() returned.
+        """
+        marker = tmp_path / "side_effect.txt"
+        # Slow write first in the list so it is almost certainly running when
+        # the boom worker fails; both must be in flight (max_in_flight=2).
+        runner = ParallelRunner(SideEffectModel, n_workers=2)
+        params = [
+            {
+                "steps": 1,
+                "show_progress": False,
+                "marker": str(marker),
+                "mode": "slow_write",
+                "delay": 3.0,
+            },
+            {
+                "steps": 1,
+                "show_progress": False,
+                "marker": str(marker),
+                "mode": "boom",
+                "delay": 0.0,
+            },
+        ]
+        t0 = time.monotonic()
+        with patch("builtins.print"):
+            outcomes = runner.run(
+                params,
+                show_progress=False,
+                fail_fast=True,
+                max_in_flight=2,  # both in flight — critical for the bug
+            )
+        elapsed = time.monotonic() - t0
+        assert len(outcomes) == 2
+        assert any(o.status == "failed" for o in outcomes)
+        # Sibling must not complete its delayed write (allow spawn overhead).
+        time.sleep(0.5)
+        assert not marker.exists(), "sibling worker still wrote after fail_fast"
+        # Must not wait out the full 3s slow path (spawn overhead can be ~1–2s).
+        assert elapsed < 2.5, f"fail_fast waited for sibling: {elapsed:.2f}s"
+        # No live worker children
+        import multiprocessing as mp
+
+        live = [p for p in mp.active_children() if p.is_alive()]
+        assert live == [], f"live children remain: {live}"
+
+    def test_max_in_flight_never_exceeds_n_workers(self):
+        runner = ParallelRunner(MockModel, n_workers=2)
+        with pytest.raises(ValueError, match="max_in_flight"):
+            runner.run(
+                [{"steps": 1, "show_progress": False}],
+                show_progress=False,
+                max_in_flight=0,
+            )
+        # max_in_flight=8 with n_workers=2 must not start 8 processes
+        with patch("builtins.print"):
+            outcomes = runner.run(
+                [{"steps": 1, "param": i, "show_progress": False} for i in range(4)],
+                show_progress=False,
+                max_in_flight=8,
+            )
+        assert len(outcomes) == 4
+        assert all(o.status == "success" for o in outcomes)
+
+    def test_checkpoint_preserves_dtypes(self):
+        """Arrow IPC payload keeps UInt8 / Categorical / Datetime."""
+        import polars as pl
+        from datetime import datetime, timezone
+        from ambr.performance import _deserialize_frame, _serialize_frame
+
+        df = pl.DataFrame(
+            {
+                "flag": pl.Series("flag", [1, 2], dtype=pl.UInt8),
+                "label": pl.Series("label", ["A", "B"], dtype=pl.Categorical),
+                "ts": pl.Series(
+                    "ts",
+                    [
+                        datetime(2024, 1, 1, tzinfo=timezone.utc),
+                        datetime(2024, 1, 2, tzinfo=timezone.utc),
+                    ],
+                ),
+            }
+        )
+        payload = _serialize_frame(df)
+        assert payload is not None
+        assert payload["_kind"] == "polars_ipc_b64"
+        restored = _deserialize_frame(payload)
+        assert restored.schema["flag"] == pl.UInt8
+        assert str(restored.schema["label"]).startswith("Categorical")
+        assert restored.schema["ts"] == df.schema["ts"]
+        assert restored["flag"].to_list() == [1, 2]
+
+    def test_checkpoint_symlink_tmp_cannot_escape(self, tmp_path):
+        """Predictable *.json.tmp plant must not redirect checkpoint writes."""
+        dest = tmp_path / "ckpt.json"
+        outside = tmp_path / "escaped.txt"
+        outside.write_text("ORIGINAL\n", encoding="utf-8")
+        planted = tmp_path / "ckpt.json.tmp"
+        planted.symlink_to(outside)
+
+        runner = ParallelRunner(MockModel, n_workers=1)
+        with patch("builtins.print"):
+            runner.run(
+                [{"steps": 1, "show_progress": False}],
+                show_progress=False,
+                checkpoint_path=dest,
+            )
+        assert outside.read_text(encoding="utf-8") == "ORIGINAL\n"
+        assert dest.is_file() and not dest.is_symlink()
+        assert "schema_version" in dest.read_text(encoding="utf-8")
 
     def test_parallel_runner_ordered_indices(self):
         runner = ParallelRunner(MockModel, n_workers=2)
