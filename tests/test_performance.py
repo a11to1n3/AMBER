@@ -56,7 +56,11 @@ class SlowModel(am.Model):
 
 
 class SideEffectModel(am.Model):
-    """Either fails immediately or writes a marker after a delay."""
+    """Either fails immediately or writes a marker after a delay.
+
+    Uses param ``behavior`` (not ``mode``) — ``mode`` is reserved for AMBER
+    execution lanes (``vectorized`` / ``oop``).
+    """
 
     def setup(self):
         pass
@@ -64,8 +68,8 @@ class SideEffectModel(am.Model):
     def step(self):
         from pathlib import Path as _Path
 
-        mode = self.p.get("mode", "boom")
-        if mode == "boom":
+        behavior = self.p.get("behavior", "boom")
+        if behavior == "boom":
             raise RuntimeError("boom for fail_fast")
         delay = float(self.p.get("delay", 1.5))
         time.sleep(delay)
@@ -559,18 +563,27 @@ class TestParallelRunner:
     def test_parallel_runner_hard_timeout_wall_clock(self):
         """timeout must terminate the worker, not wait for it to finish."""
         runner = ParallelRunner(SlowModel, n_workers=1)
+        sleep_s = 5.0
         t0 = time.monotonic()
         with patch("builtins.print"):
             outcomes = runner.run(
-                [{"steps": 1, "show_progress": False, "sleep": 2.0}],
+                [{"steps": 1, "show_progress": False, "sleep": sleep_s}],
                 show_progress=False,
-                timeout=0.2,
+                timeout=0.3,
             )
         elapsed = time.monotonic() - t0
         assert len(outcomes) == 1
         assert outcomes[0].status == "timeout"
-        # Worker sleeps 2s; wall clock must be well under that if terminate works.
-        assert elapsed < 1.2, f"timeout did not kill worker: elapsed={elapsed:.2f}s"
+        # Spawn/import overhead varies by platform; only require we did not
+        # wait out the full worker sleep.
+        assert elapsed < sleep_s * 0.8, (
+            f"timeout did not kill worker: elapsed={elapsed:.2f}s "
+            f"(worker sleep={sleep_s}s)"
+        )
+        import multiprocessing as mp
+
+        live = [p for p in mp.active_children() if p.is_alive()]
+        assert live == [], f"live children remain: {live}"
 
     def test_parallel_runner_fail_fast_cancels_rest(self):
         runner = ParallelRunner(BoomModel, n_workers=2)
@@ -636,24 +649,29 @@ class TestParallelRunner:
 
         Regression: breaking mid-loop left the second process alive so it
         could still write side effects after run() returned.
+
+        Uses param ``behavior`` (not reserved ``mode``) so SideEffectModel.step
+        actually runs. Assertions prefer side-effect / live-child checks over
+        tight wall-clock bounds (spawn+import overhead varies by platform).
         """
         marker = tmp_path / "side_effect.txt"
-        # Slow write first in the list so it is almost certainly running when
-        # the boom worker fails; both must be in flight (max_in_flight=2).
+        slow_delay = 8.0
+        # Slow write first so it is almost certainly running when boom fails;
+        # both must be in flight (max_in_flight=2).
         runner = ParallelRunner(SideEffectModel, n_workers=2)
         params = [
             {
                 "steps": 1,
                 "show_progress": False,
                 "marker": str(marker),
-                "mode": "slow_write",
-                "delay": 3.0,
+                "behavior": "slow_write",
+                "delay": slow_delay,
             },
             {
                 "steps": 1,
                 "show_progress": False,
                 "marker": str(marker),
-                "mode": "boom",
+                "behavior": "boom",
                 "delay": 0.0,
             },
         ]
@@ -667,17 +685,23 @@ class TestParallelRunner:
             )
         elapsed = time.monotonic() - t0
         assert len(outcomes) == 2
-        assert any(o.status == "failed" for o in outcomes)
-        # Sibling must not complete its delayed write (allow spawn overhead).
-        time.sleep(0.5)
+        # Boom must actually run step() and fail as RuntimeError (not mode validation)
+        assert any(
+            o.status == "failed" and o.error_type == "RuntimeError" for o in outcomes
+        ), outcomes
+        # Primary correctness: sibling must not complete its delayed write, and
+        # no worker children remain. Allow generous headroom for spawn/import.
+        time.sleep(0.75)
         assert not marker.exists(), "sibling worker still wrote after fail_fast"
-        # Must not wait out the full 3s slow path (spawn overhead can be ~1–2s).
-        assert elapsed < 2.5, f"fail_fast waited for sibling: {elapsed:.2f}s"
-        # No live worker children
         import multiprocessing as mp
 
         live = [p for p in mp.active_children() if p.is_alive()]
         assert live == [], f"live children remain: {live}"
+        # Soft timing bound only: must not wait out the full slow delay.
+        assert elapsed < slow_delay * 0.85, (
+            f"fail_fast waited for sibling: {elapsed:.2f}s "
+            f"(slow_delay={slow_delay}s)"
+        )
 
     def test_max_in_flight_never_exceeds_n_workers(self):
         runner = ParallelRunner(MockModel, n_workers=2)
