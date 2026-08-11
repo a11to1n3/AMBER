@@ -22,6 +22,8 @@
 - **ParallelRunner retry + fail_fast**: retries register in the live process
   registry immediately (not only a dual ``still_active`` list), so fail_fast
   cleanup terminates them.
+- **Release wheel install assert**: resolve the built wheel to an absolute path
+  before ``pip install`` under a temporary ``cwd`` (relative ``dist/…`` failed).
 
 ## v0.5.0 - 2026-08-11
 

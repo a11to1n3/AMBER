@@ -215,7 +215,10 @@ jobs:
 
           version = os.environ["VERSION"]
           sha = os.environ["AMBER_SHA"]
-          wheel = next(Path("dist").glob(f"ambr-{version}-*.whl"))
+          # Absolute path: pip runs with cwd=temp, so a relative dist/… path
+          # would resolve under the temp dir and fail to find the wheel.
+          wheel = next(Path("dist").glob(f"ambr-{version}-*.whl")).resolve()
+          assert wheel.is_file(), wheel
           with zipfile.ZipFile(wheel) as zf:
               names = [n for n in zf.namelist() if n.endswith("_build_info.py")]
               assert names, f"_build_info.py missing from {wheel}"
@@ -226,7 +229,14 @@ jobs:
           import subprocess, sys, tempfile, textwrap
           with tempfile.TemporaryDirectory() as td:
               subprocess.check_call(
-                  [sys.executable, "-m", "pip", "install", "--force-reinstall", str(wheel)],
+                  [
+                      sys.executable,
+                      "-m",
+                      "pip",
+                      "install",
+                      "--force-reinstall",
+                      str(wheel),
+                  ],
                   cwd=td,
               )
               code = textwrap.dedent(
@@ -239,7 +249,7 @@ jobs:
                   print("wheel provenance ok", rev)
                   """
               )
-              subprocess.check_call([sys.executable, "-c", code])
+              subprocess.check_call([sys.executable, "-c", code], cwd=td)
           print("OK: wheel embeds", sha)
           PY
 
