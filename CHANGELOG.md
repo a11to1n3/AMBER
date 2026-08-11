@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Windows RunResults I/O**: exclusive payload writes use ``O_BINARY`` so LF
+  is not expanded to CRLF (SHA-256 checksums stay stable on Windows CI).
+- **GPU nightly**: no longer runs on every path-push (would fail red without
+  a GPU runner); schedule / ``workflow_dispatch`` still hard-require CUDA.
+
 ## v0.5.0 - 2026-08-11
 
 Production-candidate cut of the post-0.4.7 correctness, integrity, and

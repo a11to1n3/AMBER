@@ -9,18 +9,11 @@ name: GPU claims (nightly / manual)
 
 on:
   schedule:
-    # 06:00 UTC daily
+    # 06:00 UTC daily — hard-fails as NOT VERIFIED without CUDA
     - cron: "0 6 * * *"
   workflow_dispatch:
-  push:
-    paths:
-      - "src/ambr/gpu*.py"
-      - "src/ambr/device_columns.py"
-      - "src/ambr/execution.py"
-      - "scripts/run_gpu_claims.py"
-      - ".github/workflows/gpu-nightly.yml"
-      - "tests/test_gpu_backend.py"
-      - "tests/test_gpu_ensemble.py"
+  # No path-push trigger: without a GPU runner every merge would fail red.
+  # Release tags still run the CUDA gate in release.yml.
 
 permissions:
   contents: read

@@ -13,7 +13,7 @@ import polars as pl
 import pytest
 
 from ambr.contract import ContractCertificate, ContractViolation
-from ambr.results import RunResults, RunResultsIOError, SCHEMA_VERSION
+from ambr.results import RunResults, RunResultsIOError, SCHEMA_VERSION, _sha256_file
 
 
 class _Tiny(am.Model):
@@ -271,6 +271,23 @@ def test_contract_full_violations_persisted(tmp_path):
     assert dup["columns"] == ["wealth"]
     assert dup["ids"] == [0, 1]
     assert "cell written twice" in dup["detail"]
+
+
+@pytest.mark.unit
+def test_json_payload_checksum_stable_with_newlines(tmp_path):
+    """LF JSON bytes must round-trip checksums on all platforms (incl. Windows)."""
+    r = RunResults({"note": "line1\nline2\n", "n": 1})
+    dest = tmp_path / "lf"
+    r.save(dest)
+    # Load re-hashes every payload; mismatch would raise RunResultsIOError.
+    loaded = RunResults.load(dest)
+    assert loaded["note"] == "line1\nline2\n"
+    assert loaded["n"] == 1
+    # On-disk bytes must match the hash in the manifest exactly.
+    manifest = json.loads((dest / "manifest.json").read_text(encoding="utf-8"))
+    for key, entry in manifest["entries"].items():
+        path = dest / entry["file"]
+        assert _sha256_file(path) == entry["sha256"], key
 
 
 @pytest.mark.unit
