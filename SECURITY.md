@@ -31,7 +31,10 @@ case by case; please allow a reasonable window before public discussion.
 AMBER is a scientific simulation library. Typical issues of interest:
 
 - Unsafe deserialization of untrusted run directories or checkpoints
+  (`ParallelRunner` checkpoints are **JSON only**; resume requires
+  `trust_checkpoint=True` — never unpickle untrusted files)
 - Path traversal or write-outside-destination bugs in `RunResults.save` / `load`
+  (manifest commit uses exclusive random temps with `O_NOFOLLOW` / `fsync`)
 - Supply-chain concerns in published wheels
 
 Out of scope: model scientific validity, GPU driver bugs, and third-party

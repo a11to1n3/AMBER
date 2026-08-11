@@ -116,6 +116,9 @@ where = ["src"]
 omit = [
     "src/ambr/gpu.py",
     "src/ambr/gpu_ensemble.py",
+    # Device kernels require CUDA; exercised by GPU CI / run_gpu_claims.py.
+    "src/ambr/gpu_kernels.py",
+    "src/ambr/device_columns.py",
 ]
 
 [tool.ruff]

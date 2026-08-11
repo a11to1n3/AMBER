@@ -16,15 +16,9 @@ Numba is the recommended CPU accelerator on Mac (no CUDA). Import
 
 from __future__ import annotations
 
-import pickle
+import json
 import time
 import traceback as _traceback_mod
-from concurrent.futures import (
-    FIRST_COMPLETED,
-    ProcessPoolExecutor,
-    TimeoutError as FuturesTimeoutError,
-    wait,
-)
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
@@ -464,6 +458,64 @@ class RunOutcome:
         )
 
 
+_CHECKPOINT_SCHEMA = 1
+
+
+def _serialize_frame(df: Any) -> Optional[Dict[str, Any]]:
+    """JSON-safe encoding of a Polars (or None) frame."""
+    if df is None:
+        return None
+    try:
+        return {
+            "_kind": "polars_records",
+            "columns": list(df.columns),
+            "rows": df.to_dicts(),
+        }
+    except Exception:
+        return {"_kind": "repr", "value": repr(df)}
+
+
+def _deserialize_frame(payload: Any) -> Any:
+    if payload is None:
+        return None
+    if not isinstance(payload, dict):
+        return payload
+    kind = payload.get("_kind")
+    if kind == "polars_records":
+        import polars as pl
+
+        rows = payload.get("rows") or []
+        if not rows:
+            cols = payload.get("columns") or []
+            return pl.DataFrame({c: [] for c in cols}) if cols else pl.DataFrame()
+        return pl.DataFrame(rows)
+    if kind == "repr":
+        return payload.get("value")
+    return payload
+
+
+def _serialize_result(result: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if result is None:
+        return None
+    return {
+        "params": result.get("params"),
+        "info": result.get("info"),
+        "model": _serialize_frame(result.get("model")),
+        "agents": _serialize_frame(result.get("agents")),
+    }
+
+
+def _deserialize_result(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if data is None:
+        return None
+    return {
+        "params": data.get("params"),
+        "info": data.get("info"),
+        "model": _deserialize_frame(data.get("model")),
+        "agents": _deserialize_frame(data.get("agents")),
+    }
+
+
 def _run_single_simulation(
     index: int,
     params: Dict[str, Any],
@@ -503,8 +555,56 @@ def _run_single_simulation(
         }
 
 
+def _process_worker(
+    conn: Any,
+    index: int,
+    params: Dict[str, Any],
+    model_class: Type,
+) -> None:
+    """Child process entry: run one simulation and send the outcome dict."""
+    try:
+        conn.send(_run_single_simulation(index, params, model_class))
+    except Exception as exc:  # pragma: no cover - extremely defensive
+        conn.send(
+            {
+                "index": index,
+                "status": "failed",
+                "params": params,
+                "result": None,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "traceback": "".join(
+                    _traceback_mod.format_exception(
+                        type(exc), exc, exc.__traceback__
+                    )
+                ),
+                "attempts": 1,
+            }
+        )
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _terminate_process(proc: mp.Process, grace: float = 1.0) -> None:
+    """Hard-kill a worker process (terminate → kill)."""
+    if not proc.is_alive():
+        proc.join(timeout=grace)
+        return
+    proc.terminate()
+    proc.join(timeout=grace)
+    if proc.is_alive():
+        try:
+            proc.kill()  # Python 3.7+
+        except AttributeError:  # pragma: no cover
+            pass
+        proc.join(timeout=grace)
+
+
 class ParallelRunner:
-    """Run multiple independent simulations in **CPU process pools**.
+    """Run multiple independent simulations in **CPU processes**.
 
     Important
     ---------
@@ -513,11 +613,14 @@ class ParallelRunner:
       sweeps, or :class:`~ambr.gpu_ensemble.GPUEnsembleRunner` for GPU batches)
       when you want many runs.
     * Uses ``multiprocessing`` with the ``spawn`` context — models and params
-      must be picklable.
+      must be picklable. Each task runs in its **own process** so ``timeout``
+      can hard-terminate hung workers (``Process.terminate`` / ``kill``).
     * Does **not** use the GPU. For many short GPU replicates, prefer
       :class:`~ambr.gpu_ensemble.GPUEnsembleRunner`.
     * Returns a list of :class:`RunOutcome` **in input order** (not completion
       order). Failures and timeouts are structured, never silent.
+    * Checkpoints are **JSON** (no ``pickle``). Resume requires
+      ``trust_checkpoint=True`` and a schema-validated file.
 
     Usage::
 
@@ -559,6 +662,7 @@ class ParallelRunner:
         max_in_flight: Optional[int] = None,
         checkpoint_path: Optional[Union[str, Path]] = None,
         resume: bool = False,
+        trust_checkpoint: bool = False,
     ) -> List[RunOutcome]:
         """Run simulations in parallel; return :class:`RunOutcome` in input order.
 
@@ -567,15 +671,17 @@ class ParallelRunner:
             show_progress: Print a completion counter.
             fail_fast: Stop submitting new work after the first failure/timeout.
             timeout: Per-run wall-clock seconds (``None`` = no limit). Timed-out
-                runs are recorded as ``status='timeout'``.
+                workers are **terminated** (not cooperatively cancelled).
             retry: Extra attempts after a failed attempt (not applied to
                 timeouts by default).
-            max_in_flight: Bound concurrent submissions (default:
-                ``n_workers * 2``). Prevents unbounded queue growth.
-            checkpoint_path: Optional pickle path; completed outcomes are
+            max_in_flight: Bound concurrent processes (default: ``n_workers``).
+            checkpoint_path: Optional JSON path; completed outcomes are
                 written after each finish for crash-safe resume.
             resume: If True and ``checkpoint_path`` exists, skip indices
-                already present in the checkpoint.
+                already present. Requires ``trust_checkpoint=True``.
+            trust_checkpoint: Explicit opt-in to read a checkpoint file.
+                Checkpoints are JSON (not pickle); still only load files you
+                control.
 
         Returns:
             ``len(param_list)`` outcomes in the same order as ``param_list``.
@@ -584,62 +690,82 @@ class ParallelRunner:
         outcomes: List[Optional[RunOutcome]] = [None] * total
         max_attempts = 1 + max(0, int(retry))
         in_flight_cap = max_in_flight if max_in_flight is not None else max(
-            self.n_workers * 2, 1
+            self.n_workers, 1
         )
         ckpt = Path(checkpoint_path) if checkpoint_path else None
 
-        if resume and ckpt is not None and ckpt.is_file():
-            for idx, outcome in self._load_checkpoint(ckpt).items():
-                if 0 <= idx < total:
-                    outcomes[idx] = outcome
+        if resume:
+            if not trust_checkpoint:
+                raise ValueError(
+                    "resume=True requires trust_checkpoint=True. "
+                    "Only resume from checkpoint files you control "
+                    "(JSON schema v1; pickle is not used)."
+                )
+            if ckpt is not None and ckpt.is_file():
+                for idx, outcome in self._load_checkpoint(ckpt).items():
+                    if 0 <= idx < total:
+                        outcomes[idx] = outcome
 
-        # Indices still needing work
         pending_indices = [i for i, o in enumerate(outcomes) if o is None]
         stop_submitting = False
         completed_count = sum(1 for o in outcomes if o is not None)
 
         ctx = mp.get_context("spawn")
-        with ProcessPoolExecutor(
-            max_workers=self.n_workers, mp_context=ctx
-        ) as executor:
-            # future -> (index, attempt, submit_monotonic)
-            active: Dict[Any, Tuple[int, int, float]] = {}
-            idx_iter = iter(pending_indices)
+        # Each entry: (process, parent_conn, index, attempt, started)
+        active: List[Tuple[mp.Process, Any, int, int, float]] = []
+        idx_iter = iter(pending_indices)
 
-            def _submit_one() -> bool:
-                nonlocal stop_submitting
-                if stop_submitting:
-                    return False
-                try:
-                    i = next(idx_iter)
-                except StopIteration:
-                    return False
-                fut = executor.submit(
-                    _run_single_simulation, i, param_list[i], self.model_class
+        def _submit_one() -> bool:
+            nonlocal stop_submitting
+            if stop_submitting:
+                return False
+            try:
+                i = next(idx_iter)
+            except StopIteration:
+                return False
+            parent_conn, child_conn = ctx.Pipe(duplex=False)
+            proc = ctx.Process(
+                target=_process_worker,
+                args=(child_conn, i, param_list[i], self.model_class),
+            )
+            proc.start()
+            child_conn.close()  # only child writes
+            active.append((proc, parent_conn, i, 1, time.monotonic()))
+            return True
+
+        def _record(outcome: RunOutcome) -> None:
+            nonlocal completed_count, stop_submitting
+            outcomes[outcome.index] = outcome
+            completed_count += 1
+            if show_progress:
+                print(
+                    f"\rCompleted {completed_count}/{total} simulations",
+                    end="",
                 )
-                active[fut] = (i, 1, time.monotonic())
-                return True
+            if ckpt is not None:
+                self._save_checkpoint(ckpt, outcomes)
+            if outcome.status != "success" and fail_fast:
+                stop_submitting = True
 
+        try:
             while len(active) < in_flight_cap and _submit_one():
                 pass
 
             while active:
-                done_set, _ = wait(
-                    list(active.keys()),
-                    timeout=0.25,
-                    return_when=FIRST_COMPLETED,
-                )
                 now = time.monotonic()
+                still_active: List[Tuple[mp.Process, Any, int, int, float]] = []
+                progressed = False
 
-                # Per-task wall-clock timeout for still-running futures
-                if timeout is not None:
-                    for fut, (i, attempt, started) in list(active.items()):
-                        if fut in done_set:
-                            continue
-                        if now - started >= float(timeout):
-                            fut.cancel()
-                            del active[fut]
-                            outcomes[i] = RunOutcome(
+                for proc, conn, i, attempt, started in active:
+                    # Hard wall-clock timeout → terminate the process.
+                    if timeout is not None and (now - started) >= float(timeout):
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        _terminate_process(proc)
+                        _record(
+                            RunOutcome(
                                 index=i,
                                 status="timeout",
                                 params=dict(param_list[i]),
@@ -647,95 +773,137 @@ class ParallelRunner:
                                 error_message=f"Exceeded timeout={timeout}s",
                                 attempts=attempt,
                             )
-                            completed_count += 1
-                            if show_progress:
-                                print(
-                                    f"\rCompleted {completed_count}/{total} simulations",
-                                    end="",
-                                )
-                            if ckpt is not None:
-                                self._save_checkpoint(ckpt, outcomes)
-                            if fail_fast:
-                                stop_submitting = True
-                                for other in list(active.keys()):
-                                    other.cancel()
-                                active.clear()
-                                break
-
-                if stop_submitting and not active:
-                    break
-
-                for fut in done_set:
-                    if fut not in active:
+                        )
+                        progressed = True
+                        if stop_submitting:
+                            break
                         continue
-                    i, attempt, _started = active.pop(fut)
+
+                    # Non-blocking poll for a finished worker message.
                     try:
-                        raw = fut.result(timeout=0)
+                        ready = conn.poll(0)
+                    except Exception:
+                        ready = False
+
+                    if ready:
+                        try:
+                            raw = conn.recv()
+                        except EOFError:
+                            raw = {
+                                "index": i,
+                                "status": "failed",
+                                "params": dict(param_list[i]),
+                                "result": None,
+                                "error_type": "EOFError",
+                                "error_message": "Worker closed pipe without result",
+                                "traceback": None,
+                                "attempts": attempt,
+                            }
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        proc.join(timeout=1.0)
+                        if proc.is_alive():
+                            _terminate_process(proc)
+
                         outcome = RunOutcome.from_dict(raw)
                         outcome.attempts = attempt
-                    except FuturesTimeoutError:
-                        outcome = RunOutcome(
-                            index=i,
-                            status="timeout",
-                            params=dict(param_list[i]),
-                            error_type="TimeoutError",
-                            error_message=f"Exceeded timeout={timeout}s",
-                            attempts=attempt,
-                        )
-                    except Exception as exc:
-                        outcome = RunOutcome(
-                            index=i,
-                            status="failed",
-                            params=dict(param_list[i]),
-                            error_type=type(exc).__name__,
-                            error_message=str(exc),
-                            traceback="".join(
-                                _traceback_mod.format_exception(
-                                    type(exc), exc, exc.__traceback__
-                                )
-                            ),
-                            attempts=attempt,
-                        )
 
-                    # Retry failed (not timeout) attempts
-                    if (
-                        outcome.status == "failed"
-                        and attempt < max_attempts
-                        and not stop_submitting
-                    ):
-                        new_fut = executor.submit(
-                            _run_single_simulation,
-                            i,
-                            param_list[i],
-                            self.model_class,
-                        )
-                        active[new_fut] = (i, attempt + 1, time.monotonic())
+                        if (
+                            outcome.status == "failed"
+                            and attempt < max_attempts
+                            and not stop_submitting
+                        ):
+                            # Retry: spawn a fresh process
+                            parent_conn, child_conn = ctx.Pipe(duplex=False)
+                            new_proc = ctx.Process(
+                                target=_process_worker,
+                                args=(
+                                    child_conn,
+                                    i,
+                                    param_list[i],
+                                    self.model_class,
+                                ),
+                            )
+                            new_proc.start()
+                            child_conn.close()
+                            still_active.append(
+                                (new_proc, parent_conn, i, attempt + 1, time.monotonic())
+                            )
+                            progressed = True
+                            continue
+
+                        _record(outcome)
+                        progressed = True
+                        if stop_submitting:
+                            break
                         continue
 
-                    outcomes[i] = outcome
-                    completed_count += 1
-                    if show_progress:
-                        print(
-                            f"\rCompleted {completed_count}/{total} simulations",
-                            end="",
+                    if not proc.is_alive():
+                        # Died without a message
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        proc.join(timeout=0.5)
+                        _record(
+                            RunOutcome(
+                                index=i,
+                                status="failed",
+                                params=dict(param_list[i]),
+                                error_type="WorkerDied",
+                                error_message=(
+                                    f"Worker exited with code {proc.exitcode}"
+                                ),
+                                attempts=attempt,
+                            )
                         )
-                    if ckpt is not None:
-                        self._save_checkpoint(ckpt, outcomes)
+                        progressed = True
+                        if stop_submitting:
+                            break
+                        continue
 
-                    if outcome.status != "success" and fail_fast:
-                        stop_submitting = True
-                        for other in list(active.keys()):
-                            other.cancel()
-                        active.clear()
-                        break
+                    still_active.append((proc, conn, i, attempt, started))
 
-                    while len(active) < in_flight_cap and _submit_one():
-                        pass
+                if stop_submitting:
+                    for proc, conn, i, attempt, _started in still_active:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        _terminate_process(proc)
+                        if outcomes[i] is None:
+                            outcomes[i] = RunOutcome(
+                                index=i,
+                                status="failed",
+                                params=dict(param_list[i]),
+                                error_type="Cancelled",
+                                error_message="Cancelled (fail_fast)",
+                                attempts=attempt,
+                            )
+                    active = []
+                    break
+
+                active = still_active
+                while len(active) < in_flight_cap and _submit_one():
+                    progressed = True
+
+                if not progressed and active:
+                    # Avoid busy-spin; short sleep while workers run.
+                    time.sleep(0.05)
+        finally:
+            # Ensure no orphaned workers on unexpected exit.
+            for proc, conn, _i, _a, _s in active:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                _terminate_process(proc)
 
         if show_progress:
             print()
 
-        # Any index never finished (fail_fast cancel) → explicit failed records
         for i, o in enumerate(outcomes):
             if o is None:
                 outcomes[i] = RunOutcome(
@@ -766,25 +934,63 @@ class ParallelRunner:
     def _save_checkpoint(
         path: Path, outcomes: List[Optional[RunOutcome]]
     ) -> None:
+        """Write a JSON checkpoint (never pickle — see SECURITY.md)."""
+        payload_outcomes: Dict[str, Any] = {}
+        for i, o in enumerate(outcomes):
+            if o is None:
+                continue
+            d = o.to_dict()
+            d["result"] = _serialize_result(o.result)
+            payload_outcomes[str(i)] = d
         payload = {
-            i: o.to_dict()
-            for i, o in enumerate(outcomes)
-            if o is not None
+            "schema_version": _CHECKPOINT_SCHEMA,
+            "format": "ambr.ParallelRunner.checkpoint+json",
+            "outcomes": payload_outcomes,
         }
         path.parent.mkdir(parents=True, exist_ok=True)
+        text = json.dumps(payload, indent=2, default=str) + "\n"
         tmp = path.with_suffix(path.suffix + ".tmp")
-        with tmp.open("wb") as fh:
-            pickle.dump(payload, fh, protocol=pickle.HIGHEST_PROTOCOL)
+        tmp.write_text(text, encoding="utf-8")
         tmp.replace(path)
 
     @staticmethod
     def _load_checkpoint(path: Path) -> Dict[int, RunOutcome]:
-        with path.open("rb") as fh:
-            payload = pickle.load(fh)
+        """Load a JSON checkpoint. Raises on unknown / unsafe formats."""
+        try:
+            raw_text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"Checkpoint {path} is not UTF-8 JSON. "
+                "Pickle checkpoints are not supported (RCE risk)."
+            ) from exc
+        try:
+            payload = json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Checkpoint {path} is not valid JSON. "
+                "Pickle checkpoints are not supported (RCE risk)."
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ValueError("Checkpoint root must be a JSON object")
+        if payload.get("schema_version") != _CHECKPOINT_SCHEMA:
+            raise ValueError(
+                f"Unsupported checkpoint schema_version="
+                f"{payload.get('schema_version')!r}; expected {_CHECKPOINT_SCHEMA}"
+            )
+        if payload.get("format") != "ambr.ParallelRunner.checkpoint+json":
+            raise ValueError(
+                f"Unsupported checkpoint format={payload.get('format')!r}"
+            )
+        outcomes_raw = payload.get("outcomes")
+        if not isinstance(outcomes_raw, dict):
+            raise ValueError("Checkpoint 'outcomes' must be an object")
         out: Dict[int, RunOutcome] = {}
-        if isinstance(payload, dict):
-            for k, v in payload.items():
-                out[int(k)] = RunOutcome.from_dict(v)
+        for k, v in outcomes_raw.items():
+            if not isinstance(v, dict):
+                continue
+            data = dict(v)
+            data["result"] = _deserialize_result(data.get("result"))
+            out[int(k)] = RunOutcome.from_dict(data)
         return out
 
 

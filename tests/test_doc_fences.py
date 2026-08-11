@@ -52,6 +52,12 @@ FRAGMENT_ALLOWLIST = {
     "docs/api/agent.rst:2",
     "docs/api/sequences.rst:0",
     "docs/api/sequences.rst:1",
+    # Tutorial multi-cell continuations (need prior class definitions).
+    "docs/tutorial.rst:1",  # runs WealthModel from prior fence
+    "docs/tutorial.rst:3",  # continues SpatialWealthModel
+    "docs/tutorial.rst:5",  # plots AnalyticalWealthModel + plt
+    "docs/tutorial.rst:7",  # random_search needs prior model+space
+    "docs/tutorial.rst:9",  # experiment_results from prior fence
 }
 
 # Fences that are complete but too heavy for every CI matrix cell.
@@ -104,17 +110,26 @@ def _collect_fences() -> list[tuple[str, str]]:
 
 def _is_self_contained(code: str) -> bool:
     """Heuristic: has imports and either defines a runnable model or status/print."""
+    # Explicit multi-cell / continuation markers must never run alone.
+    if re.search(
+        r"(?i)continues? (the )?(previous|prior|part)|paste both blocks|"
+        r"must be defined in the previous",
+        code,
+    ):
+        return False
     has_import = bool(re.search(r"^\s*(import|from)\s", code, re.M))
     if not has_import:
         return False
-    if "class " in code and (".run(" in code or "grid_search(" in code):
+    if "class " in code and (".run(" in code or "grid_search(" in code or "Experiment(" in code):
         return True
     if "print_status" in code or "recommend(" in code:
         return True
     if "GPUEnsembleRunner" in code or "grid_search(" in code:
         return True
     if "print(" in code and "ambr" in code and "class " not in code:
-        # version / status snippets
+        # version / status snippets — only if they don't reference undefined models
+        if re.search(r"\b[A-Z][A-Za-z0-9_]*Model\b", code):
+            return False
         return True
     return False
 

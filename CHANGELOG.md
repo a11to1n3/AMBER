@@ -59,6 +59,12 @@
   `CODEOWNERS`, Dependabot, `pip-audit`, issue templates; min/latest
   dependency lanes; Python **3.10–3.13** (3.14 experimental); dropped EOL
   **3.9**. Definition of done documented in contributing / release_gates.
+- **P1 release blockers**: tutorial fence allowlist + self-contained heuristic;
+  metadata floor **3.10**; `RunResults.save` exclusive random temp +
+  `O_NOFOLLOW`/`fsync` (no predictable `manifest.json.tmp` symlink escape);
+  `ParallelRunner` hard process terminate on timeout; JSON checkpoints with
+  `trust_checkpoint` (no pickle); provenance `git_revision` only from
+  `AMBER_GIT_REVISION` / build info (never CWD `git rev-parse`).
 
 ## v0.4.7 - 2026-08-05
 
