@@ -2,6 +2,7 @@
 Tests for ambr.performance module.
 """
 
+import json
 import pytest
 import numpy as np
 import time
@@ -645,11 +646,86 @@ class TestParallelRunner:
         payload = _serialize_frame(df)
         assert payload is not None
         assert payload["_kind"] == "polars_ipc_b64"
-        restored = _deserialize_frame(payload)
+        restored = _deserialize_frame(payload, schema_version=2)
         assert restored.schema["flag"] == pl.UInt8
         assert str(restored.schema["label"]).startswith("Categorical")
         assert restored.schema["ts"] == df.schema["ts"]
         assert restored["flag"].to_list() == [1, 2]
+
+    def test_checkpoint_writer_emits_schema_2(self, tmp_path):
+        runner = ParallelRunner(MockModel, n_workers=1)
+        ckpt = tmp_path / "s2.json"
+        with patch("builtins.print"):
+            runner.run(
+                [{"steps": 1, "show_progress": False}],
+                show_progress=False,
+                checkpoint_path=ckpt,
+            )
+        payload = json.loads(ckpt.read_text(encoding="utf-8"))
+        assert payload["schema_version"] == 2
+        # Frames use IPC kind under schema 2
+        model = payload["outcomes"]["0"]["result"]["model"]
+        if model is not None:
+            assert model.get("_kind") == "polars_ipc_b64"
+
+    def test_legacy_schema_1_records_still_load(self, tmp_path):
+        """Explicit legacy schema 1 (lossy records) remains readable."""
+        import polars as pl
+        from ambr.performance import ParallelRunner
+
+        ckpt = tmp_path / "legacy.json"
+        legacy = {
+            "schema_version": 1,
+            "format": "ambr.ParallelRunner.checkpoint+json",
+            "outcomes": {
+                "0": {
+                    "index": 0,
+                    "status": "success",
+                    "params": {"steps": 1},
+                    "result": {
+                        "params": {"steps": 1},
+                        "info": {"steps": 1},
+                        "model": {
+                            "_kind": "polars_records",
+                            "columns": ["t", "x"],
+                            "rows": [{"t": 1, "x": 2}],
+                        },
+                        "agents": None,
+                    },
+                    "error_type": None,
+                    "error_message": None,
+                    "traceback": None,
+                    "attempts": 1,
+                }
+            },
+        }
+        ckpt.write_text(json.dumps(legacy), encoding="utf-8")
+        loaded = ParallelRunner._load_checkpoint(ckpt)
+        assert 0 in loaded
+        assert loaded[0].status == "success"
+        assert isinstance(loaded[0].result["model"], pl.DataFrame)
+        assert loaded[0].result["model"]["x"].to_list() == [2]
+
+    def test_ipc_failure_raises_clearly(self):
+        """Object columns that cannot IPC-encode must not silently become str."""
+        import polars as pl
+        from ambr.performance import (
+            CheckpointSerializationError,
+            _serialize_frame,
+        )
+
+        df = pl.DataFrame({"obj": pl.Series("obj", [{"a": 1}], dtype=pl.Object)})
+        with pytest.raises(CheckpointSerializationError, match="Arrow IPC|Object"):
+            _serialize_frame(df)
+
+    def test_schema_2_rejects_lossy_records_kind(self):
+        from ambr.performance import _deserialize_frame
+
+        with pytest.raises(ValueError, match="polars_records"):
+            _deserialize_frame(
+                {"_kind": "polars_records", "columns": ["x"], "rows": [{"x": 1}]},
+                schema_version=2,
+            )
 
     def test_checkpoint_symlink_tmp_cannot_escape(self, tmp_path):
         """Predictable *.json.tmp plant must not redirect checkpoint writes."""
