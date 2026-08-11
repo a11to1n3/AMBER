@@ -34,6 +34,11 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
 
+    env:
+      # Non-interactive backend for ambr[viz] helpers (library never calls
+      # matplotlib.use itself).
+      MPLBACKEND: Agg
+
     steps:
     - uses: actions/checkout@v6
 
@@ -46,12 +51,13 @@ jobs:
       shell: bash
       run: |
         python -m pip install --upgrade pip
-        # Core test extras. On one matrix cell also install [perf] (Numba)
-        # so scatter JIT paths are exercised in CI without slowing every job.
+        # Core test extras + viz (matplotlib is optional at runtime).
+        # On one matrix cell also install [perf] (Numba) so scatter JIT paths
+        # are exercised in CI without slowing every job.
         if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.python-version }}" = "3.12" ]; then
-          pip install -e ".[dev,advanced,perf]"
+          pip install -e ".[dev,advanced,perf,viz]"
         else
-          pip install -e ".[dev,advanced]"
+          pip install -e ".[dev,advanced,viz]"
         fi
 
     - name: Run tests with coverage
@@ -85,9 +91,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev,advanced,perf]"
+        pip install -e ".[dev,advanced,perf,viz]"
 
     - name: Run tests with coverage for badge
+      env:
+        MPLBACKEND: Agg
       run: |
         pytest tests/ --cov=src/ambr --cov-report=term-missing --cov-report=xml --cov-fail-under=0
 

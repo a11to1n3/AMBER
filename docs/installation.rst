@@ -9,8 +9,10 @@ AMBER requires Python 3.9 or higher and the following dependencies:
 * **polars** >= 0.20.0 - High-performance DataFrame library
 * **numpy** >= 1.20.0 - Numerical computing
 * **networkx** >= 2.5 - Graph and network analysis
-* **matplotlib** >= 3.3.0 - Plotting and visualization
-* **seaborn** >= 0.11.0 - Statistical data visualization
+
+Optional plotting (``ambr[viz]``) pulls in **matplotlib** >= 3.3.0.
+CI and documentation builds should set ``MPLBACKEND=Agg`` when a
+non-interactive backend is required; AMBER never forces a matplotlib backend.
 
 Install from PyPI
 ------------------
@@ -77,7 +79,7 @@ AMBER extras (install what you need):
    # SMAC Bayesian / multi-objective optimization (pins scikit-learn for SMAC 2.4)
    pip install 'ambr[advanced]'
 
-   # Plot helpers alias (matplotlib is already a core dependency)
+   # Plot helpers (matplotlib; import ambr never pulls it until plot_* is used)
    pip install 'ambr[viz]'
 
    # Interactive example notebooks
@@ -117,7 +119,9 @@ Common Issues
 
 .. code-block:: bash
 
-   pip install --upgrade polars numpy networkx matplotlib seaborn
+   pip install --upgrade polars numpy networkx
+   # optional plotting:
+   # pip install 'ambr[viz]'
 
 **Performance Issues**: For large simulations, consider:
 

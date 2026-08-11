@@ -36,9 +36,8 @@ def test_plot_helpers_require_matplotlib_or_run():
             am.plot_grid(r)
         return
 
-    import matplotlib
-
-    matplotlib.use("Agg")
+    # Prefer MPLBACKEND=Agg from the environment (CI); do not force use() here
+    # beyond what the process already has.
     ax = am.plot_timeseries(r, columns=["total"], title="wealth")
     assert ax is not None
     assert ax.get_title() == "wealth"

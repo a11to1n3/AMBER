@@ -14,6 +14,10 @@ import os
 import sys
 from importlib.metadata import PackageNotFoundError, version as metadata_version
 
+# Headless backend for any docs that exercise ambr.viz / matplotlib.
+# The library itself never calls matplotlib.use().
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 sys.path.insert(0, os.path.abspath('../src'))
 
 # -- Project information -----------------------------------------------------

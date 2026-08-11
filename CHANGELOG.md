@@ -29,6 +29,16 @@
   `allow_fallback=True`. Full contract certificates (violations, not just
   counts) are persisted. Legacy 0.4.x directories still load with a migration
   warning. Manifest commit is atomic (`manifest.json.tmp` → `os.replace`).
+- **Optional deps / lazy viz (breaking install surface)**: core package no
+  longer depends on matplotlib, seaborn, or scikit-optimize. Plot helpers live
+  under `ambr[viz]`; SMAC stays under `ambr[advanced]`. `import ambr` does not
+  load matplotlib — `plot_grid` / `plot_timeseries` / `HAS_MATPLOTLIB` resolve
+  via lazy `__getattr__`. `ambr.viz` no longer calls `matplotlib.use("Agg")`;
+  set `MPLBACKEND=Agg` in CI and docs builds instead.
+- **Virus example usability**: uses `run_step()` (not bare `step`/`update`),
+  `model.rng` only, UI gated behind `__main__`, `--headless` three-step smoke,
+  `anywidget` in `ambr[examples]`, and background-thread status reports
+  failures instead of always showing "Completed".
 
 ## v0.4.7 - 2026-08-05
 

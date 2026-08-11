@@ -100,7 +100,7 @@ Some examples may require additional dependencies:
    pip install 'ambr[perf]'          # Numba CPU path
    pip install 'ambr[gpu]'           # NVIDIA + CuPy only (not Metal/MPS)
    pip install 'ambr[advanced]'      # SMAC examples
-   pip install matplotlib seaborn plotly jupyter
+   pip install 'ambr[viz,examples]'
 
    # For optimization examples
    pip install smac ConfigSpace
