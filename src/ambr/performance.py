@@ -537,14 +537,10 @@ def _deserialize_frame(payload: Any, *, schema_version: int) -> Any:
         )
     kind = payload.get("_kind")
     if kind == "polars_ipc_b64":
-        # IPC is the schema-2+ representation. Accept under legacy files that
-        # already contain it, but never under pure schema-1 (records-only).
-        if schema_version < 2:
-            raise ValueError(
-                "Frame kind 'polars_ipc_b64' requires schema_version>=2; "
-                f"got schema_version={schema_version}. "
-                "Re-run under a current ParallelRunner to rewrite the checkpoint."
-            )
+        # Canonical representation for schema 2+. Early schema-1 writers
+        # (historical intermediate commits) also emitted IPC while still
+        # labeling schema_version=1 — accept that hybrid so real checkpoints
+        # remain readable. Schema 1 may also use polars_records (lossy).
         import polars as pl
 
         try:
@@ -741,13 +737,30 @@ def _workload_identity(
     }
 
 
+def _workload_fingerprint_v3(
+    model_class: Type,
+    param_list: List[Dict[str, Any]],
+) -> str:
+    """Schema-3 fingerprint: model class name + param list only.
+
+    Schema 3 writers hashed only these fields. Resume must recompute with the
+    same algorithm or every otherwise-identical schema-3 checkpoint fails.
+    """
+    payload = {
+        "model_class": _qualified_model_name(model_class),
+        "n": len(param_list),
+        "params": param_list,
+    }
+    return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
+
+
 def _workload_fingerprint(
     model_class: Type,
     param_list: List[Dict[str, Any]],
     *,
     workload_revision: Optional[str] = None,
 ) -> str:
-    """Hash of model identity, params, and code-revision inputs.
+    """Hash of model identity, params, and code-revision inputs (schema 4+).
 
     Includes AMBER version/revision, a source digest of ``model_class`` when
     available, and an optional caller-supplied workload revision so editing
@@ -758,6 +771,21 @@ def _workload_fingerprint(
         model_class, param_list, workload_revision=workload_revision
     )
     return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
+
+
+def _expected_workload_fingerprint(
+    model_class: Type,
+    param_list: List[Dict[str, Any]],
+    *,
+    schema_version: int,
+    workload_revision: Optional[str] = None,
+) -> str:
+    """Fingerprint the current run would have under ``schema_version``."""
+    if int(schema_version) <= 3:
+        return _workload_fingerprint_v3(model_class, param_list)
+    return _workload_fingerprint(
+        model_class, param_list, workload_revision=workload_revision
+    )
 
 
 def _params_match(saved: Any, requested: Dict[str, Any]) -> bool:
@@ -939,6 +967,7 @@ class ParallelRunner:
         checkpoint_path: Optional[Union[str, Path]] = None,
         resume: bool = False,
         trust_checkpoint: bool = False,
+        allow_unverified_checkpoint: bool = False,
     ) -> List[RunOutcome]:
         """Run simulations in parallel; return :class:`RunOutcome` in input order.
 
@@ -964,6 +993,13 @@ class ParallelRunner:
             trust_checkpoint: Explicit opt-in to read a checkpoint file.
                 Checkpoints are JSON (not pickle); still only load files you
                 control.
+            allow_unverified_checkpoint: Opt into resuming schema-1/2
+                checkpoints that lack workload identity (no fingerprint /
+                ``model_class``). Default ``False`` — those files are still
+                loadable via :meth:`_load_checkpoint` for inspection/export,
+                but resume refuses them to prevent silent cross-model
+                restore when only per-index params match. Prefer re-running
+                once to rewrite as schema 4.
 
         Returns:
             ``len(param_list)`` outcomes in the same order as ``param_list``.
@@ -1001,20 +1037,56 @@ class ParallelRunner:
                 )
             if ckpt is not None and ckpt.is_file():
                 meta, loaded = self._load_checkpoint(ckpt)
+                schema_ver = int(meta.get("schema_version") or 0)
                 saved_fp = meta.get("workload_fingerprint")
-                if saved_fp is not None and saved_fp != workload_fp:
-                    raise ValueError(
-                        "Checkpoint workload fingerprint mismatch: the saved "
-                        "run is for a different model and/or parameter list. "
-                        f"checkpoint={saved_fp!r} requested={workload_fp!r}. "
-                        "Use a matching param_list/model_class or a new checkpoint."
-                    )
                 saved_model = meta.get("model_class")
-                if saved_model is not None and saved_model != model_name:
+                # Schema 1/2 had no workload identity. Resume must not accept
+                # params-only matches (cross-model restore). Load remains ok.
+                identity_less = (
+                    schema_ver < 3
+                    or (saved_fp is None and saved_model is None)
+                )
+                if identity_less and not allow_unverified_checkpoint:
                     raise ValueError(
-                        f"Checkpoint model_class mismatch: "
-                        f"checkpoint={saved_model!r} requested={model_name!r}"
+                        "Checkpoint lacks workload identity "
+                        f"(schema_version={schema_ver}, no fingerprint/"
+                        "model_class). Resume is refused by default to prevent "
+                        "silent cross-model restore. Re-run without resume to "
+                        "rewrite as schema 4, inspect via _load_checkpoint, or "
+                        "pass allow_unverified_checkpoint=True for an unsafe "
+                        "params-only migration."
                     )
+                if not identity_less:
+                    expected_fp = _expected_workload_fingerprint(
+                        self.model_class,
+                        param_list,
+                        schema_version=schema_ver,
+                        workload_revision=self.workload_revision,
+                    )
+                    if saved_fp is None:
+                        raise ValueError(
+                            "Checkpoint schema "
+                            f"{schema_ver} is missing workload_fingerprint. "
+                            "Refuse resume; re-run without resume or use a "
+                            "complete checkpoint."
+                        )
+                    if saved_fp != expected_fp:
+                        raise ValueError(
+                            "Checkpoint workload fingerprint mismatch: the "
+                            "saved run is for a different model, parameter "
+                            "list, and/or code revision. "
+                            f"checkpoint={saved_fp!r} "
+                            f"requested={expected_fp!r} "
+                            f"(validated as schema {schema_ver}). "
+                            "Use a matching param_list/model_class or a new "
+                            "checkpoint."
+                        )
+                    if saved_model is not None and saved_model != model_name:
+                        raise ValueError(
+                            f"Checkpoint model_class mismatch: "
+                            f"checkpoint={saved_model!r} "
+                            f"requested={model_name!r}"
+                        )
                 for idx, outcome in loaded.items():
                     if not (0 <= idx < total):
                         continue
@@ -1027,8 +1099,6 @@ class ParallelRunner:
                             f"run (saved={outcome.params!r}, "
                             f"requested={param_list[idx]!r})"
                         )
-                    # Legacy checkpoints without a fingerprint still require
-                    # per-index param equality (checked above).
                     outcomes[idx] = outcome
 
         pending_indices = [i for i, o in enumerate(outcomes) if o is None]

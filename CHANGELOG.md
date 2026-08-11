@@ -26,16 +26,21 @@
   before ``pip install`` under a temporary ``cwd`` (relative ``dist/…`` failed).
 - **Checkpoint schema v2/v3/v4**: writers emit ``schema_version=4`` with
   ``polars_ipc_b64`` frames + revision-aware workload fingerprint; schemas
-  1–3 still load. IPC is rejected under pure schema 1 (records-only). IPC
-  encode failures raise ``CheckpointSerializationError`` instead of silently
-  storing ``repr(df)``.
-- **Checkpoint resume integrity**: workload fingerprint includes AMBER
+  1–3 still load (including historical schema-1 files that already stored
+  IPC). IPC encode failures raise ``CheckpointSerializationError`` instead
+  of silently storing ``repr(df)``.
+- **Checkpoint resume integrity**: schema-4 fingerprints include AMBER
   version/revision, model source digest, and optional
   ``workload_revision`` / ``AMBER_APP_REVISION`` so code edits invalidate
-  resume; per-index params must still match. Never-run slots use
-  ``status=cancelled`` (not ``error_type == "Cancelled"``) and are omitted
-  from checkpoints so resume re-queues them; a user exception class named
-  ``Cancelled`` remains a persisted ``failed`` outcome.
+  resume. Schema-3 fingerprints are validated with the original
+  model+params algorithm so existing schema-3 files still resume.
+  Identity-less schema-1/2 resume is refused by default
+  (``allow_unverified_checkpoint=True`` for an explicit unsafe migration;
+  ``_load_checkpoint`` remains available for inspection). Per-index params
+  must still match. Never-run slots use ``status=cancelled`` (not
+  ``error_type == "Cancelled"``) and are omitted from checkpoints so resume
+  re-queues them; a user exception class named ``Cancelled`` remains a
+  persisted ``failed`` outcome.
 
 ## v0.5.0 - 2026-08-11
 

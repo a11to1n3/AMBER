@@ -839,17 +839,28 @@ class TestParallelRunner:
         with pytest.raises(CheckpointSerializationError, match="Arrow IPC|Object"):
             _serialize_frame(df)
 
-    def test_schema_1_rejects_ipc_kind(self):
-        """IPC payloads must not load under pure schema-1 (records-only)."""
-        from ambr.performance import _deserialize_frame
+    def test_schema_1_accepts_historical_ipc_kind(self):
+        """Historical schema-1 writers emitted IPC; those checkpoints must load."""
+        import base64
 
-        with pytest.raises(ValueError, match="polars_ipc_b64|schema_version"):
+        import polars as pl
+        from ambr.performance import _deserialize_frame, _serialize_frame
+
+        df = pl.DataFrame({"x": [1, 2], "y": [3, 4]})
+        payload = _serialize_frame(df)
+        assert payload["_kind"] == "polars_ipc_b64"
+        # Same payload under schema_version=1 (historical hybrid)
+        restored = _deserialize_frame(payload, schema_version=1)
+        assert restored["x"].to_list() == [1, 2]
+        assert restored["y"].to_list() == [3, 4]
+        # Corrupt data still fails clearly
+        with pytest.raises(ValueError, match="polars_ipc_b64|decode"):
             _deserialize_frame(
                 {
                     "_kind": "polars_ipc_b64",
                     "columns": ["x"],
                     "dtypes": ["Int64"],
-                    "data": "AAAA",
+                    "data": base64.b64encode(b"not-ipc").decode("ascii"),
                 },
                 schema_version=1,
             )
@@ -862,6 +873,126 @@ class TestParallelRunner:
                 {"_kind": "polars_records", "columns": ["x"], "rows": [{"x": 1}]},
                 schema_version=2,
             )
+
+    def test_schema_3_resume_uses_legacy_fingerprint(self, tmp_path):
+        """Schema-3 fingerprints (model+params only) must still resume under v4."""
+        import polars as pl
+        from ambr.performance import (
+            ParallelRunner,
+            _serialize_frame,
+            _workload_fingerprint_v3,
+        )
+
+        params = [{"steps": 1, "show_progress": False, "tag": "a"}]
+        fp_v3 = _workload_fingerprint_v3(MockModel, params)
+        success = {
+            "index": 0,
+            "status": "success",
+            "params": params[0],
+            "result": {
+                "params": params[0],
+                "info": {"steps": 1},
+                "model": _serialize_frame(pl.DataFrame({"t": [1], "v": [42]})),
+                "agents": None,
+            },
+            "error_type": None,
+            "error_message": None,
+            "traceback": None,
+            "attempts": 1,
+        }
+        ckpt = tmp_path / "schema3.json"
+        payload = {
+            "schema_version": 3,
+            "format": "ambr.ParallelRunner.checkpoint+json",
+            "workload_fingerprint": fp_v3,
+            "model_class": f"{MockModel.__module__}.{MockModel.__qualname__}",
+            "n_params": 1,
+            "outcomes": {"0": success},
+        }
+        ckpt.write_text(json.dumps(payload), encoding="utf-8")
+
+        runner = ParallelRunner(MockModel, n_workers=1)
+        with patch("builtins.print"):
+            outcomes = runner.run(
+                params,
+                show_progress=False,
+                checkpoint_path=ckpt,
+                resume=True,
+                trust_checkpoint=True,
+            )
+        assert outcomes[0].status == "success"
+        assert outcomes[0].result["model"]["v"].to_list() == [42]
+        # Next save rewrites as schema 4
+        rewritten = json.loads(ckpt.read_text(encoding="utf-8"))
+        assert rewritten["schema_version"] == 4
+
+    def test_identity_less_resume_rejected_by_default(self, tmp_path):
+        """Schema-1/2 without model_class/fingerprint must not silently restore."""
+        from ambr.performance import ParallelRunner
+
+        class ModelB(am.Model):
+            def setup(self):
+                pass
+
+            def step(self):
+                self.record_model("who", "B")
+
+        params = [{"steps": 1, "show_progress": False}]
+        ckpt = tmp_path / "legacy12.json"
+        legacy = {
+            "schema_version": 1,
+            "format": "ambr.ParallelRunner.checkpoint+json",
+            "outcomes": {
+                "0": {
+                    "index": 0,
+                    "status": "success",
+                    "params": params[0],
+                    "result": {
+                        "params": params[0],
+                        "info": {"steps": 1},
+                        "model": {
+                            "_kind": "polars_records",
+                            "columns": ["who"],
+                            "rows": [{"who": "A"}],
+                        },
+                        "agents": None,
+                    },
+                    "error_type": None,
+                    "error_message": None,
+                    "traceback": None,
+                    "attempts": 1,
+                }
+            },
+        }
+        ckpt.write_text(json.dumps(legacy), encoding="utf-8")
+
+        # Load still works for inspection/export
+        _meta, loaded = ParallelRunner._load_checkpoint(ckpt)
+        assert loaded[0].result["model"]["who"].to_list() == ["A"]
+
+        runner_b = ParallelRunner(ModelB, n_workers=1)
+        with patch("builtins.print"):
+            with pytest.raises(ValueError, match="workload identity|unverified"):
+                runner_b.run(
+                    params,
+                    show_progress=False,
+                    checkpoint_path=ckpt,
+                    resume=True,
+                    trust_checkpoint=True,
+                )
+
+        # Explicit unsafe opt-in restores by params only (documented migration).
+        with patch("builtins.print"):
+            outcomes = runner_b.run(
+                params,
+                show_progress=False,
+                checkpoint_path=ckpt,
+                resume=True,
+                trust_checkpoint=True,
+                allow_unverified_checkpoint=True,
+            )
+        assert outcomes[0].status == "success"
+        assert outcomes[0].result["model"]["who"].to_list() == ["A"]
 
     def test_user_cancelled_exception_is_persisted(self, tmp_path):
         """A model raising class Cancelled must not be treated as never-run."""
