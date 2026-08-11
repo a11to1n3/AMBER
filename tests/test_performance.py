@@ -629,28 +629,39 @@ class TestParallelRunner:
         Regression: ``active.append`` used to run *after* ``child_conn.close()``.
         If close raised, the process was live but missing from the cleanup
         registry, so ``finally`` / fail_fast could not terminate it.
+
+        Inject via instance override on the Pipe child end (not Connection.close
+        class patch): Windows returns ``PipeConnection``, so class-patching
+        ``Connection.close`` never fires there. Restore the spawn context's
+        ``Pipe`` afterward — get_context("spawn") is cached process-wide.
         """
         import multiprocessing as mp
-        from multiprocessing.connection import Connection
 
-        real_close = Connection.close
         state = {"n": 0}
+        # ParallelRunner uses get_context("spawn"); that context object is cached.
+        ctx = mp.get_context("spawn")
+        real_pipe = ctx.Pipe
 
-        def flaky_close(self):
-            state["n"] += 1
-            # First close is parent dropping the child write end in _start_worker.
-            if state["n"] == 1:
+        def flaky_pipe(duplex=True):
+            parent, child = real_pipe(duplex)
+            def boom_close():
+                state["n"] += 1
                 raise OSError("simulated child_conn.close failure")
-            return real_close(self)
+            # Instance attribute — works for Connection and PipeConnection.
+            child.close = boom_close
+            return parent, child
 
         runner = ParallelRunner(MockModel, n_workers=1)
-        with patch.object(Connection, "close", flaky_close):
+        ctx.Pipe = flaky_pipe
+        try:
             with patch("builtins.print"):
                 with pytest.raises(OSError, match="simulated child_conn.close"):
                     runner.run(
                         [{"steps": 1, "show_progress": False}],
                         show_progress=False,
                     )
+        finally:
+            ctx.Pipe = real_pipe
         # Exception escaped run(), but finally must still terminate the worker
         # that was registered before the failed close.
         assert state["n"] >= 1
