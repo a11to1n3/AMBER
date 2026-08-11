@@ -1,7 +1,8 @@
-from typing import Type, Dict, Any, List, Callable, Optional
+from typing import Type, Dict, Any, List, Callable, Optional, Literal
 import polars as pl
 import numpy as np
 import itertools
+import traceback as _traceback_mod
 from .model import Model
 
 # SMAC is an optional dependency. Probe a real import path (not just the
@@ -14,6 +15,20 @@ try:
     HAS_SMAC = True
 except Exception as exc:  # ImportError, or sklearn.tree._tree.DTYPE breakage
     _SMAC_IMPORT_ERROR = exc
+
+# Large finite penalty used when on_error='penalize' maps a failed evaluation.
+_PENALTY_COST = 1e10
+
+# Phrases SMAC / ConfigSpace may emit when the configuration space is
+# exhausted mid-search. Only these (message-matched) failures are treated as
+# non-fatal "stop and return partial history"; everything else re-raises.
+_SEARCH_EXHAUSTED_MARKERS = (
+    "configuration space exhausted",
+    "no more configurations",
+    "no configurations left",
+    "cannot sample more",
+    "exhausted the configuration space",
+)
 
 
 def _check_smac():
@@ -30,6 +45,64 @@ def _check_smac():
         raise ImportError(
             "SMAC is required for advanced optimization features. " + hint + detail
         )
+
+
+def _is_search_exhausted(exc: BaseException) -> bool:
+    """Return True only for the documented SMAC 'search exhausted' condition.
+
+    Broad ``except Exception: pass`` is intentionally *not* used: real target
+    failures, import errors, and programmer bugs must surface. Exhaustion is
+    identified by message markers (SMAC versions differ in exception type).
+    """
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _SEARCH_EXHAUSTED_MARKERS)
+
+
+def _failure_record(
+    configuration: Dict[str, Any],
+    exc: BaseException,
+) -> Dict[str, Any]:
+    """Structured failure record for ``on_error='penalize'`` paths."""
+    return {
+        "configuration": dict(configuration),
+        "exception_type": type(exc).__name__,
+        "message": str(exc),
+        "traceback": "".join(
+            _traceback_mod.format_exception(type(exc), exc, exc.__traceback__)
+        ),
+    }
+
+
+def _extract_metric_value(model_data: Any, metric: str) -> float:
+    """Return the last non-null finite numeric value of ``metric``.
+
+    Raises
+    ------
+    KeyError
+        If ``metric`` is not a column of ``model_data``.
+    ValueError
+        If the column is empty after dropping nulls, or the last value is
+        non-numeric / non-finite.
+    """
+    if metric not in model_data.columns:
+        raise KeyError(
+            f"Metric {metric!r} was not recorded; available: {list(model_data.columns)}"
+        )
+
+    values = model_data[metric].drop_nulls()
+    if values.is_empty():
+        raise ValueError(f"Metric {metric!r} contains no values")
+
+    value = values[-1]
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Metric {metric!r} is non-numeric: {value!r}"
+        ) from exc
+    if not np.isfinite(numeric):
+        raise ValueError(f"Metric {metric!r} is non-finite: {value!r}")
+    return numeric
 
 
 # Simple ParameterSpace for basic optimization functions
@@ -100,13 +173,23 @@ def objective_function(model_class: Type[Model], parameters: Dict[str, Any],
     Args:
         model_class: Model class to instantiate
         parameters: Parameters to pass to model
-        metric: Name of metric to optimize
-        iterations: Number of iterations to average over
-        minimize: Whether to minimize (True) or maximize (False)
+        metric: Name of metric to optimize (must be present, non-empty, finite)
+        iterations: Number of iterations to average over (must be ``>= 1``)
+        minimize: Whether to minimize (True) or maximize (False). Sorting of
+            search results uses this flag; the returned value is always the
+            raw metric average (not negated).
 
     Returns:
-        Objective value
+        Objective value (mean of the last recorded metric over iterations)
+
+    Raises:
+        ValueError: If ``iterations < 1``, the metric column is empty, or the
+            last value is non-numeric / non-finite.
+        KeyError: If ``metric`` was never recorded on the model frame.
     """
+    if iterations < 1:
+        raise ValueError(f"iterations must be >= 1, got {iterations!r}")
+
     total = 0.0
 
     for _ in range(iterations):
@@ -116,22 +199,10 @@ def objective_function(model_class: Type[Model], parameters: Dict[str, Any],
         model = model_class(model_params)
         results = model.run()
 
-        # Get the metric value from model data
         model_data = results['model']
-        if metric in model_data.columns:
-            # Get the last recorded value of the metric
-            values = model_data[metric].to_list()
-            if values:
-                value = values[-1]
-            else:
-                value = 0
-        else:
-            value = 0
+        total += _extract_metric_value(model_data, metric)
 
-        total += value
-
-    average = total / iterations
-    return average
+    return total / iterations
 
 
 def grid_search(model_class: Type[Model], parameter_space: ParameterSpace,
@@ -201,7 +272,9 @@ def random_search(model_class: Type[Model], parameter_space: ParameterSpace,
 def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSpace,
                          metric: str, n_calls: int = 10, iterations: int = 1,
                          minimize: bool = False, random_state: Optional[int] = None,
-                         n_initial_design: int = 5) -> List[Dict[str, Any]]:
+                         n_initial_design: int = 5,
+                         on_error: Literal["raise", "penalize"] = "raise",
+                         ) -> List[Dict[str, Any]]:
     """Perform Bayesian optimisation using SMAC3's Gaussian Process facade.
 
     Converts the simple ``ParameterSpace`` to a SMAC3 ``ConfigurationSpace``
@@ -218,11 +291,23 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
         random_state: Random state for reproducibility.
         n_initial_design: Number of initial random designs before
             Bayesian search begins.
+        on_error: How to handle target evaluation failures.
+
+            * ``'raise'`` (default) — propagate the exception.
+            * ``'penalize'`` — map the failure to a large finite cost and
+              append a structured record to the returned result list under
+              ``'failure'`` (configuration, exception type, message,
+              traceback). Successful trials omit the ``failure`` key.
 
     Returns:
-        List of results sorted by objective value (best first).
+        List of results sorted by objective value (best first). Failed
+        trials (when ``on_error='penalize'``) sort as worst.
     """
     _check_smac()
+    if on_error not in ("raise", "penalize"):
+        raise ValueError(
+            f"on_error must be 'raise' or 'penalize', got {on_error!r}"
+        )
 
     from ConfigSpace import (
         ConfigurationSpace,
@@ -289,11 +374,13 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
         output_directory=tmp_dir,
     )
 
-    # Target function for SMAC (always minimises)
-    def _target(config: dict, seed: int = 0) -> float:
-        # Merge SMAC config + fixed params + restore categorical types
+    # Side-channel for penalized failures (config id is not stable across
+    # SMAC versions, so we key by a frozen parameter tuple).
+    failure_by_params: Dict[tuple, Dict[str, Any]] = {}
+
+    def _resolve_params(config: dict) -> Dict[str, Any]:
         params = dict(fixed_params)
-        for k, v in config.items():
+        for k, v in dict(config).items():
             if k in cat_params:
                 str_choices = [str(cv) for cv in cat_params[k]]
                 try:
@@ -303,7 +390,24 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
                     params[k] = v
             else:
                 params[k] = v
-        obj = objective_function(model_class, params, metric, iterations, minimize)
+        return params
+
+    # Target function for SMAC (always minimises)
+    def _target(config: dict, seed: int = 0) -> float:
+        # Merge SMAC config + fixed params + restore categorical types
+        params = _resolve_params(config)
+        try:
+            obj = objective_function(
+                model_class, params, metric, iterations, minimize
+            )
+        except Exception as exc:
+            if on_error == "raise":
+                raise
+            key = tuple(sorted(params.items()))
+            failure_by_params[key] = _failure_record(params, exc)
+            # SMAC minimises; a large positive cost is "worst" for both
+            # minimize and maximize (maximize path negates successful objs).
+            return _PENALTY_COST
         # SMAC always minimises; if the user wants to maximise, negate
         return -obj if not minimize else obj
 
@@ -320,33 +424,32 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
 
     try:
         smac.optimize()
-    except Exception:
-        # Configuration space exhausted — proceed with whatever SMAC3
-        # evaluated so far (runhistory still has the partial results).
-        pass
+    except Exception as exc:
+        # Only the documented "search exhausted" condition is non-fatal —
+        # proceed with whatever SMAC evaluated so far (runhistory still has
+        # the partial results). All other exceptions re-raise.
+        if not _is_search_exhausted(exc):
+            raise
 
     # --- collect history ---------------------------------------------------
     results: List[Dict[str, Any]] = []
     for config in smac.runhistory.get_configs():
         try:
             cost = smac.runhistory.get_cost(config)
-        except Exception:
+        except KeyError:
             cost = float('inf')
-        params = dict(fixed_params)
-        for k, v in dict(config).items():
-            if k in cat_params:
-                str_choices = [str(cv) for cv in cat_params[k]]
-                try:
-                    idx = str_choices.index(str(v))
-                    params[k] = cat_params[k][idx]
-                except ValueError:
-                    params[k] = v
-            else:
-                params[k] = v
-        results.append({
+        params = _resolve_params(config)
+        entry: Dict[str, Any] = {
             'parameters': params,
             'objective': -cost if not minimize else cost,
-        })
+        }
+        fail = failure_by_params.get(tuple(sorted(params.items())))
+        if fail is not None:
+            entry['failure'] = fail
+            # Keep penalized objectives as worst-sorted even after the
+            # maximize-path negation of a large positive cost.
+            entry['objective'] = -_PENALTY_COST if not minimize else _PENALTY_COST
+        results.append(entry)
 
     results.sort(key=lambda x: x['objective'], reverse=not minimize)
     return results
@@ -468,7 +571,8 @@ class SMACOptimizer:
                  initial_design: str = 'latin_hypercube',
                  surrogate_model: str = 'random_forest',
                  use_multi_fidelity: bool = False,
-                 use_random_search: bool = False):
+                 use_random_search: bool = False,
+                 on_error: Literal["raise", "penalize"] = "raise"):
         """Initialize the optimizer.
 
         Args:
@@ -484,9 +588,16 @@ class SMACOptimizer:
             surrogate_model: Surrogate model type ('random_forest', 'gaussian_process', 'random_forest_with_instances')
             use_multi_fidelity: Whether to use multi-fidelity optimization
             use_random_search: Whether to use random search
+            on_error: ``'raise'`` (default) propagates evaluation failures;
+                ``'penalize'`` maps them to a large finite cost and records a
+                structured failure entry on ``self.failures``.
         """
         # Check SMAC availability and do lazy imports
         _check_smac()
+        if on_error not in ("raise", "penalize"):
+            raise ValueError(
+                f"on_error must be 'raise' or 'penalize', got {on_error!r}"
+            )
         from smac import HyperparameterOptimizationFacade, Scenario, MultiFidelityFacade, RandomFacade, AlgorithmConfigurationFacade
         from smac.model.random_forest import RandomForest
         from smac.model.gaussian_process import GaussianProcess
@@ -501,6 +612,8 @@ class SMACOptimizer:
         self.n_trials = n_trials
         self.n_workers = n_workers
         self.seed = seed
+        self.on_error = on_error
+        self.failures: List[Dict[str, Any]] = []
 
         # Initialize SMAC components
         self.configspace = param_space.get_configspace()
@@ -621,49 +734,74 @@ class SMACOptimizer:
         model = self.model_type(params)
         # Store results on the model so a Callable[[Model], float] objective can
         # read ``model.results`` (Model.run returns the dict but does not assign
-        # it). SMAC's surrogate cannot be fit on non-finite targets, so map a
-        # failed / degenerate evaluation to a large finite penalty.
+        # it). With on_error='penalize', map a failed / degenerate evaluation to
+        # a large finite cost and keep a structured failure record.
         try:
             model.results = model.run()
             value = self.objective(model)
-        except Exception:
-            return 1e10
+        except Exception as exc:
+            if self.on_error == "raise":
+                raise
+            self.failures.append(_failure_record(params, exc))
+            return _PENALTY_COST
         if value is None or not np.isfinite(value):
-            return 1e10
+            if self.on_error == "raise":
+                raise ValueError(
+                    f"Objective returned non-finite value: {value!r}"
+                )
+            self.failures.append(
+                _failure_record(
+                    params,
+                    ValueError(f"Objective returned non-finite value: {value!r}"),
+                )
+            )
+            return _PENALTY_COST
         return float(value)
 
     def optimize(self) -> Dict[str, Any]:
         """Run the optimization.
 
         Returns:
-            Dictionary containing best configuration and results
+            Dictionary containing best configuration and results. When
+            ``on_error='penalize'``, also includes ``failures`` (list of
+            structured failure records).
         """
-        # Run optimization
-        incumbent = self.smac.optimize()
+        # Run optimization; only documented search-exhaustion is non-fatal.
+        try:
+            incumbent = self.smac.optimize()
+        except Exception as exc:
+            if not _is_search_exhausted(exc):
+                raise
+            incumbent = None
 
         # Convert the run history to a DataFrame (SMAC 2.x RunHistory is a
         # Mapping of TrialKey -> TrialValue; access configs via get_config).
         history = self.smac.runhistory
         data = []
-        try:
-            for trial_key, trial_value in history.items():
-                config = history.get_config(trial_key.config_id)
-                data.append({
-                    **dict(config),
-                    'cost': trial_value.cost,
-                    'time': getattr(trial_value, 'time', 0.0),
-                })
-        except Exception:
-            data = []
+        for trial_key, trial_value in history.items():
+            config = history.get_config(trial_key.config_id)
+            data.append({
+                **dict(config),
+                'cost': trial_value.cost,
+                'time': getattr(trial_value, 'time', 0.0),
+            })
         history_df = pl.DataFrame(data) if data else pl.DataFrame()
 
-        best_cost = history.get_cost(incumbent) if incumbent is not None else None
-        return {
+        best_cost = None
+        if incumbent is not None:
+            try:
+                best_cost = history.get_cost(incumbent)
+            except KeyError:
+                best_cost = None
+        out: Dict[str, Any] = {
             'best_config': dict(incumbent) if incumbent is not None else {},
             'best_cost': best_cost,
             'best_objective': best_cost,  # alias for callers expecting this key
             'history': history_df,
         }
+        if self.on_error == "penalize":
+            out['failures'] = list(self.failures)
+        return out
 
 class MultiObjectiveSMAC:
     """Multi-objective optimization by running one SMAC search per objective.

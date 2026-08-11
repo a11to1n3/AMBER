@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Changed
+
+- **Step-data lifecycle (breaking for silent loss)**: `run_step` now allocates
+  the model-data row *before* `step()`, so values recorded via
+  `record_model` inside `step()` are retained. Precedence on duplicate keys
+  (later wins): `step()` → declarative `model_reporters` → `update()`.
+  A failed step discards the partial row and does not append it; `t` is not
+  advanced. Contract modes (`off` / `check` / `warn` / `raise`) share this
+  behaviour.
+- **Optimization metrics are strict by default (breaking)**:
+  `objective_function` no longer silently returns `0` for missing, empty,
+  non-numeric, or non-finite metrics — it raises `KeyError` / `ValueError`.
+  `iterations` must be `>= 1`.
+- **SMAC error handling (breaking)**: `bayesian_optimization` and
+  `SMACOptimizer` default to `on_error='raise'`. Pass `on_error='penalize'` to
+  map evaluation failures to a large finite cost and keep structured failure
+  records (`configuration`, `exception_type`, `message`, `traceback`). Broad
+  `except Exception: pass` around `smac.optimize()` is removed; only the
+  documented configuration-space-exhausted condition is treated as non-fatal.
+
 ## v0.4.7 - 2026-08-05
 
 Patch over 0.4.6: remove paper-campaign machine labels from user-facing docs
