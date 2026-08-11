@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.5.0 - 2026-08-11
+
+Production-candidate cut of the post-0.4.7 correctness, integrity, and
+release-gate series. **Requires a new PyPI version** (0.4.7 already published).
+
 ### Changed
 
 - **Step-data lifecycle (breaking for silent loss)**: `run_step` now allocates
@@ -10,7 +15,8 @@
   (later wins): `step()` → declarative `model_reporters` → `update()`.
   A failed step discards the partial row and does not append it; `t` is not
   advanced. Contract modes (`off` / `check` / `warn` / `raise`) share this
-  behaviour.
+  behaviour. Docs updated to match (quickstart / tutorial no longer claim
+  step recordings are discarded).
 - **Optimization metrics are strict by default (breaking)**:
   `objective_function` no longer silently returns `0` for missing, empty,
   non-numeric, or non-finite metrics — it raises `KeyError` / `ValueError`.
@@ -28,7 +34,8 @@
   clearly. Preferred format is `format="parquet"` with optional
   `allow_fallback=True`. Full contract certificates (violations, not just
   counts) are persisted. Legacy 0.4.x directories still load with a migration
-  warning. Manifest commit is atomic (`manifest.json.tmp` → `os.replace`).
+  warning. Manifest commit uses exclusive random temps + `O_NOFOLLOW` /
+  `fsync` / `os.replace` (no predictable `manifest.json.tmp` symlink escape).
 - **Optional deps / lazy viz (breaking install surface)**: core package no
   longer depends on matplotlib, seaborn, or scikit-optimize. Plot helpers live
   under `ambr[viz]`; SMAC stays under `ambr[advanced]`. `import ambr` does not
@@ -46,25 +53,32 @@
   least-privilege permissions (`id-token: write` only on publish); protected
   `pypi` environment for maintainer approval; SBOM + provenance attestation;
   GPU hardware evidence artifact. See `docs/release_gates.rst`.
+- **GPU nightly**: no longer soft-skips green without CUDA — reports
+  **NOT VERIFIED** and fails; uploads hardware evidence when a GPU runner is
+  configured (`GPU_RUNNER`).
+- **GPU teardown**: `end_execution` always clears `model._execution` even if
+  sync/synchronize fails; simulation exceptions are not masked by teardown
+  errors.
 - **Run provenance**: `results.info` now records AMBER/Python versions,
   fully-qualified model class, parameters/seed, start/end timestamps and
   status, run UUID, config hash, Polars/NumPy/CuPy/CUDA versions, device and
-  execution lane, optional git/app revision.
+  execution lane, optional git/app revision (`AMBER_GIT_REVISION` /
+  build-info only — never CWD `git rev-parse`).
 - **ParallelRunner**: returns ordered `RunOutcome` records
-  (`success`/`failed`/`timeout`) with error type/message/traceback; adds
-  `fail_fast`, per-run `timeout`, `retry`, `max_in_flight`, and
-  checkpoint/resume.
+  (`success`/`failed`/`timeout`) with error type/message/traceback; hard
+  process terminate on timeout; JSON checkpoints with `trust_checkpoint`;
+  `fail_fast`, `retry`, `max_in_flight`, checkpoint/resume.
 - **Docs CI + maintenance**: `sphinx-build -W` in CI; fixed malformed RST
   tables; absolute GitHub/RTD URLs in the PyPI README; `SECURITY.md`,
   `CODEOWNERS`, Dependabot, `pip-audit`, issue templates; min/latest
-  dependency lanes; Python **3.10–3.13** (3.14 experimental); dropped EOL
-  **3.9**. Definition of done documented in contributing / release_gates.
-- **P1 release blockers**: tutorial fence allowlist + self-contained heuristic;
-  metadata floor **3.10**; `RunResults.save` exclusive random temp +
-  `O_NOFOLLOW`/`fsync` (no predictable `manifest.json.tmp` symlink escape);
-  `ParallelRunner` hard process terminate on timeout; JSON checkpoints with
-  `trust_checkpoint` (no pickle); provenance `git_revision` only from
-  `AMBER_GIT_REVISION` / build info (never CWD `git rev-parse`).
+  dependency lanes; Python **3.10–3.13** hard-gated (3.14 not advertised until
+  release matrix covers it); dropped EOL **3.9**.
+
+### Notes
+
+- Supported Python: **3.10–3.13** (release wheel test matrix matches).
+- Tag ``v0.5.0`` from ``main`` after ``dev`` merge; release workflow refuses
+  re-publishing existing PyPI versions.
 
 ## v0.4.7 - 2026-08-05
 

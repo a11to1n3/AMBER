@@ -245,14 +245,28 @@ def sync_all_device_columns(model: "Model", *, dirty_only: bool = False) -> None
 
 
 def end_execution(model: "Model") -> None:
-    """Flush device columns (if any) and clear active execution state."""
+    """Flush device columns (if any) and clear active execution state.
+
+    ``model._execution`` is always cleared, even when host sync / device
+    synchronize fails, so a failed teardown cannot leave a stale active
+    execution behind. Sync errors are re-raised after the clear.
+    """
     ex = active_execution(model)
     if ex is None:
         return
-    if ex.config.device == "gpu":
-        # Device columns are the canonical state during the run.  Only flush
-        # columns that the model actually wrote; unchanged columns remain in
-        # the original Polars frame and need no host transfer.
-        sync_all_device_columns(model, dirty_only=True)
-        synchronize()
-    model._execution = None
+    sync_error: Optional[BaseException] = None
+    try:
+        if ex.config.device == "gpu":
+            # Device columns are the canonical state during the run.  Only flush
+            # columns that the model actually wrote; unchanged columns remain in
+            # the original Polars frame and need no host transfer.
+            try:
+                sync_all_device_columns(model, dirty_only=True)
+                synchronize()
+            except Exception as exc:
+                sync_error = exc
+    finally:
+        # Always clear — never leave _execution active after teardown.
+        model._execution = None
+    if sync_error is not None:
+        raise sync_error

@@ -694,6 +694,7 @@ class Model(BaseModel):
             begin_execution(self, config)
 
         run_status = "completed"
+        run_error: Optional[BaseException] = None
         try:
             if can_fast_run:
                 # The model-specific private loop owns only the hot step
@@ -713,12 +714,26 @@ class Model(BaseModel):
                         self._print_progress(self.t, max_steps)
 
                 self.end()
-        except Exception:
+        except Exception as exc:
             # Failures stay visible to the caller; no silent swallow.
             run_status = "failed"
+            run_error = exc
             raise
         finally:
-            end_execution(self)
+            # Teardown must not mask the original simulation exception.
+            try:
+                end_execution(self)
+            except Exception as teardown_exc:
+                if run_error is not None:
+                    try:
+                        run_error.add_note(  # type: ignore[attr-defined]
+                            f"GPU/execution teardown also failed: {teardown_exc!r}"
+                        )
+                    except Exception:
+                        pass
+                    # Keep raising the simulation error (already active).
+                else:
+                    raise
 
         if self._show_progress:
             self._print_progress(max_steps, max_steps, force=True)

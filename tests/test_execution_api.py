@@ -191,6 +191,58 @@ def test_execution_state_cleared_after_run():
     assert m._execution is None
 
 
+def test_end_execution_clears_state_even_when_sync_fails(monkeypatch):
+    """GPU sync failure must not leave model._execution active."""
+    from ambr.execution import (
+        ActiveExecution,
+        ExecutionConfig,
+        end_execution,
+    )
+
+    class M(am.Model):
+        def step(self):
+            pass
+
+    m = M({"steps": 1, "show_progress": False})
+    m._execution = ActiveExecution(
+        config=ExecutionConfig(device="gpu", mode="vectorized"),
+        xp=None,
+        device_columns={},
+        dirty_columns=set(),
+        device_rng=None,
+        ids_are_arange=True,
+    )
+
+    def boom_sync(*_a, **_k):
+        raise RuntimeError("simulated sync failure")
+
+    monkeypatch.setattr("ambr.execution.sync_all_device_columns", boom_sync)
+    with pytest.raises(RuntimeError, match="simulated sync failure"):
+        end_execution(m)
+    assert m._execution is None
+
+
+def test_run_does_not_mask_simulation_error_with_teardown_error(monkeypatch):
+    """If step fails and teardown also fails, the step error remains visible."""
+    from ambr.execution import end_execution as real_end
+
+    class Boom(am.Model):
+        def step(self):
+            raise ValueError("step exploded")
+
+    m = Boom({"steps": 1, "show_progress": False})
+
+    def bad_teardown(model):
+        # Clear like the real end_execution, then raise.
+        model._execution = None
+        raise RuntimeError("teardown also failed")
+
+    monkeypatch.setattr("ambr.model.end_execution", bad_teardown)
+    with pytest.raises(ValueError, match="step exploded"):
+        m.run()
+    assert m._execution is None
+
+
 @pytest.mark.skipif(not GPU_AVAILABLE, reason="CUDA/CuPy not available")
 def test_native_gpu_step_does_not_export_boolean_masks():
     from unittest.mock import patch

@@ -36,7 +36,8 @@ Maintainer setup
 * GitHub Environment ``pypi``: enable required reviewers.
 * Repository variable ``GPU_RUNNER``: self-hosted runner label(s) with CUDA
   (for example ``self-hosted`` or a custom label). Without this, the CUDA
-  gate fails as not verified.
+  gate **and** the nightly GPU workflow fail as **NOT VERIFIED** (never
+  soft-green).
 
 Security defaults
 -----------------

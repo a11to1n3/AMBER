@@ -156,8 +156,8 @@ Let's add comprehensive data collection to track model-level metrics.
            self.agents.at[recipients].scatter_add(wealth=1)
 
        def update(self):
-           # record_model is collected after step(); recording only inside
-           # step() is discarded when the step row is built.
+           # Post-step metrics (record_model in step() is also kept; update
+           # wins on duplicate keys). Prefer model_reporters when declarative.
            wealth = self.agents.wealth
            self.record_model('total_wealth', int(wealth.sum()))
            self.record_model('mean_wealth', float(wealth.mean()))

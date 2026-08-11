@@ -145,8 +145,9 @@ vectorized way:
            self.agents.at[recipients].scatter_add(wealth=1)
 
        def update(self):
-           # record_model must run in update() (or via model_reporters);
-           # values recorded only inside step() are reset before the row is saved.
+           # Prefer update() / model_reporters for post-step aggregates.
+           # record_model inside step() is also retained (later stages win on
+           # duplicate keys: step → model_reporters → update).
            self.record_model('total_wealth', int(self.agents.wealth.sum()))
 
    # Prefer GPU when available (NVIDIA + CuPy); else CPU vectorized.
@@ -240,10 +241,10 @@ Let's enhance the model with a 20×20 grid:
 Model-level analytics
 ---------------------
 
-Aggregate metrics go through ``self.record_model`` inside ``update()`` (or,
-declaratively, a class-level ``model_reporters`` dict). Values written only
-inside ``step()`` / ``step_vectorized()`` are discarded when the step row is
-built — ``update()`` is the imperative recording hook:
+Aggregate metrics go through ``self.record_model`` (often inside ``update()``)
+or a class-level ``model_reporters`` dict. Values written inside ``step()`` /
+``step_vectorized()`` are **retained**; on duplicate keys the later stage
+wins: ``step()`` → declarative ``model_reporters`` → ``update()``.
 
 .. code-block:: python
 
@@ -262,9 +263,8 @@ built — ``update()`` is the imperative recording hook:
            self.agents.at[recipients].scatter_add(wealth=1)
 
        def update(self):
-           # Imperative metrics belong in update() (after step); step-body
-           # record_model calls are wiped when the step row is finalized.
-           # Prefer model_reporters for simple declarative aggregates.
+           # Post-step aggregates (update wins over reporters / step on the
+           # same key). Prefer model_reporters for simple declarative metrics.
            wealth = self.agents.wealth
            self.record_model('mean_wealth', float(wealth.mean()))
            self.record_model('wealth_std', float(wealth.std() or 0.0))
