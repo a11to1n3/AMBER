@@ -40,6 +40,7 @@ import hashlib
 import json
 import os
 import secrets
+import stat
 import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -48,7 +49,8 @@ PathLike = Union[str, Path]
 
 SCHEMA_VERSION = 1
 _MANIFEST_NAME = "manifest.json"
-_MANIFEST_TMP = "manifest.json.tmp"
+# Legacy predictable temp name — never written to (symlink-attack surface).
+_MANIFEST_TMP_LEGACY = "manifest.json.tmp"
 _FRAMES_DIR = "frames"
 _JSON_DIR = "json"
 
@@ -91,6 +93,83 @@ def _safe_join(root: Path, *parts: str) -> Path:
             f"Refusing path that escapes run directory: {candidate}"
         ) from exc
     return candidate
+
+
+def _is_symlink(path: Path) -> bool:
+    try:
+        return path.is_symlink() or stat.S_ISLNK(os.lstat(path).st_mode)
+    except OSError:
+        return False
+
+
+def _write_bytes_exclusive(path: Path, data: bytes) -> None:
+    """Create ``path`` with O_EXCL|O_NOFOLLOW and write ``data`` (fsynced).
+
+    Refuses to open through a pre-existing path (including a symlink). Random
+    opaque names should be used by callers so an attacker cannot plant the
+    target path ahead of time.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(str(path), flags, 0o644)
+    try:
+        # Double-check we own a regular file, not a race-swapped symlink.
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise RunResultsIOError(f"Refusing non-regular file: {path}")
+        written = 0
+        while written < len(data):
+            n = os.write(fd, data[written:])
+            if n <= 0:
+                raise RunResultsIOError(f"Short write to {path}")
+            written += n
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _atomic_commit_manifest(root: Path, manifest: Dict[str, Any]) -> None:
+    """Write manifest via exclusive random temp + fsync + os.replace.
+
+    Never uses the predictable name ``manifest.json.tmp`` (symlink TOCTOU).
+    """
+    root = Path(root)
+    final = root / _MANIFEST_NAME
+    payload = (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
+    # Opaque name under root — not guessable as a plantable symlink target.
+    tmp_name = f".manifest-{secrets.token_hex(16)}.tmp"
+    tmp_path = root / tmp_name
+    try:
+        _write_bytes_exclusive(tmp_path, payload)
+        # Ensure temp is still a regular file before replace.
+        st = os.lstat(tmp_path)
+        if not stat.S_ISREG(st.st_mode):
+            raise RunResultsIOError(
+                f"Manifest temp is not a regular file: {tmp_path}"
+            )
+        # os.replace replaces a symlink *inode* at final (does not follow it),
+        # so a planted symlink at manifest.json cannot redirect the write.
+        os.replace(str(tmp_path), str(final))
+        # Best-effort directory fsync so the rename is durable.
+        try:
+            dir_fd = os.open(str(root), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
+    finally:
+        if tmp_path.exists() or _is_symlink(tmp_path):
+            try:
+                tmp_path.unlink(missing_ok=True)  # type: ignore[call-arg]
+            except TypeError:
+                # Python < 3.8 missing_ok not available — we require 3.10+.
+                try:
+                    tmp_path.unlink()
+                except FileNotFoundError:
+                    pass
 
 
 def _contract_to_jsonable(value: list) -> List[Dict[str, Any]]:
@@ -351,7 +430,7 @@ class RunResults(dict):
                 rel = f"{_JSON_DIR}/{stem}.json"
                 file_path = _safe_join(root, _JSON_DIR, f"{stem}.json")
                 raw = (json.dumps(payload, default=str, indent=2) + "\n").encode("utf-8")
-                file_path.write_bytes(raw)
+                _write_bytes_exclusive(file_path, raw)
                 entries[key] = {
                     "kind": "contract",
                     "format": "json",
@@ -370,7 +449,7 @@ class RunResults(dict):
             stem = _new_stem()
             rel = f"{_JSON_DIR}/{stem}.json"
             file_path = _safe_join(root, _JSON_DIR, f"{stem}.json")
-            file_path.write_bytes(raw)
+            _write_bytes_exclusive(file_path, raw)
             entries[key] = {
                 "kind": "json",
                 "format": "json",
@@ -382,12 +461,9 @@ class RunResults(dict):
             "schema_version": SCHEMA_VERSION,
             "entries": entries,
         }
-        # Atomic commit: write temp then replace so a crash leaves the
-        # previous manifest (if any) readable.
-        tmp = root / _MANIFEST_TMP
-        final = root / _MANIFEST_NAME
-        tmp.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        os.replace(tmp, final)
+        # Atomic commit with exclusive random temp (never predictable
+        # manifest.json.tmp) so a pre-planted symlink cannot redirect writes.
+        _atomic_commit_manifest(root, manifest)
         return root
 
     @classmethod

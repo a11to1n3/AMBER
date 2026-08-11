@@ -26,8 +26,9 @@ def test_documentation_version_matches_distribution_metadata():
 def test_python_support_floor_is_declared_consistently():
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
-    assert 'requires-python = ">=3.9"' in pyproject
-    assert '"Programming Language :: Python :: 3.9"' in pyproject
+    assert 'requires-python = ">=3.10"' in pyproject
+    assert '"Programming Language :: Python :: 3.10"' in pyproject
+    assert '"Programming Language :: Python :: 3.9"' not in pyproject
 
 
 def test_local_only_paths_are_excluded_from_release_surface():

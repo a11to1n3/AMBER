@@ -42,6 +42,16 @@ class BoomModel(am.Model):
 
     def step(self):
         raise RuntimeError("intentional boom")
+
+
+class SlowModel(am.Model):
+    """Sleeps in step — for hard-timeout tests."""
+
+    def setup(self):
+        pass
+
+    def step(self):
+        time.sleep(float(self.p.get("sleep", 2.0)))
         self.record_model("param_val", self.p.get("param", 0))
 
 @pytest.fixture
@@ -366,7 +376,7 @@ class TestParallelRunner:
 
     def test_parallel_runner_checkpoint_resume(self, tmp_path):
         runner = ParallelRunner(MockModel, n_workers=1)
-        ckpt = tmp_path / "runs.pkl"
+        ckpt = tmp_path / "runs.json"
         params_list = [
             {"steps": 1, "param": 1, "show_progress": False},
             {"steps": 1, "param": 2, "show_progress": False},
@@ -377,6 +387,10 @@ class TestParallelRunner:
             )
         assert ckpt.is_file()
         assert all(o.status == "success" for o in first)
+        # JSON only — never pickle
+        text = ckpt.read_text(encoding="utf-8")
+        assert "schema_version" in text
+        assert "ambr.ParallelRunner.checkpoint+json" in text
 
         with patch("builtins.print"):
             second = runner.run(
@@ -384,8 +398,77 @@ class TestParallelRunner:
                 show_progress=False,
                 checkpoint_path=ckpt,
                 resume=True,
+                trust_checkpoint=True,
             )
         assert [o.params["param"] for o in second] == [1, 2]
+
+    def test_checkpoint_resume_requires_trust_flag(self, tmp_path):
+        runner = ParallelRunner(MockModel, n_workers=1)
+        ckpt = tmp_path / "runs.json"
+        with patch("builtins.print"):
+            runner.run(
+                [{"steps": 1, "show_progress": False}],
+                show_progress=False,
+                checkpoint_path=ckpt,
+            )
+        with pytest.raises(ValueError, match="trust_checkpoint"):
+            runner.run(
+                [{"steps": 1, "show_progress": False}],
+                show_progress=False,
+                checkpoint_path=ckpt,
+                resume=True,
+            )
+
+    def test_checkpoint_rejects_pickle_bytes(self, tmp_path):
+        ckpt = tmp_path / "evil.pkl"
+        # Binary payload must not be loaded as a checkpoint
+        ckpt.write_bytes(b"\x80\x04\x95pickle-payload")
+        with pytest.raises(ValueError, match="JSON|pickle"):
+            ParallelRunner._load_checkpoint(ckpt)
+
+    def test_parallel_runner_hard_timeout_wall_clock(self):
+        """timeout must terminate the worker, not wait for it to finish."""
+        runner = ParallelRunner(SlowModel, n_workers=1)
+        t0 = time.monotonic()
+        with patch("builtins.print"):
+            outcomes = runner.run(
+                [{"steps": 1, "show_progress": False, "sleep": 2.0}],
+                show_progress=False,
+                timeout=0.2,
+            )
+        elapsed = time.monotonic() - t0
+        assert len(outcomes) == 1
+        assert outcomes[0].status == "timeout"
+        # Worker sleeps 2s; wall clock must be well under that if terminate works.
+        assert elapsed < 1.2, f"timeout did not kill worker: elapsed={elapsed:.2f}s"
+
+    def test_parallel_runner_fail_fast_cancels_rest(self):
+        runner = ParallelRunner(BoomModel, n_workers=2)
+        with patch("builtins.print"):
+            outcomes = runner.run(
+                [
+                    {"steps": 1, "show_progress": False},
+                    {"steps": 1, "show_progress": False},
+                    {"steps": 1, "show_progress": False},
+                ],
+                show_progress=False,
+                fail_fast=True,
+                max_in_flight=1,
+            )
+        assert len(outcomes) == 3
+        assert outcomes[0].status == "failed"
+        # Remaining slots marked cancelled / failed, not silent success
+        assert all(o.status in {"failed", "timeout"} for o in outcomes)
+
+    def test_parallel_runner_ordered_indices(self):
+        runner = ParallelRunner(MockModel, n_workers=2)
+        params = [
+            {"steps": 1, "param": i, "show_progress": False} for i in range(5)
+        ]
+        with patch("builtins.print"):
+            outcomes = runner.run(params, show_progress=False, max_in_flight=2)
+        assert [o.index for o in outcomes] == list(range(5))
+        assert [o.params["param"] for o in outcomes] == list(range(5))
 
 
 class TestDependencyUtilities:

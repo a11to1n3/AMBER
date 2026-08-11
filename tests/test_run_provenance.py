@@ -70,3 +70,32 @@ def test_failed_run_propagates_exception():
 
     with pytest.raises(ValueError, match="visible failure"):
         Boom({"steps": 1, "show_progress": False}).run()
+
+
+@pytest.mark.unit
+def test_git_revision_not_from_cwd(monkeypatch, tmp_path):
+    """git_revision must not pick up an unrelated checkout's HEAD."""
+    import ambr.provenance as prov
+
+    # Clear env so only build-info / None is used
+    monkeypatch.delenv("AMBER_GIT_REVISION", raising=False)
+    monkeypatch.delenv("AMBER_APP_REVISION", raising=False)
+
+    # Simulate a different repo in CWD with its own HEAD
+    fake = tmp_path / "other_repo"
+    fake.mkdir()
+    (fake / ".git").mkdir()
+    monkeypatch.chdir(fake)
+
+    # Without env / build stamp, revision is None (not CWD git)
+    assert prov._ambr_git_revision() is None
+
+    monkeypatch.setenv("AMBER_GIT_REVISION", "deadbeefcafebabe")
+    assert prov._ambr_git_revision() == "deadbeefcafebabe"
+
+    monkeypatch.setenv("AMBER_APP_REVISION", "app-sha-1")
+    assert prov._application_revision() == "app-sha-1"
+
+    res = _Tiny({"steps": 1, "seed": 0, "show_progress": False}).run()
+    assert res.info["git_revision"] == "deadbeefcafebabe"
+    assert res.info["application_revision"] == "app-sha-1"

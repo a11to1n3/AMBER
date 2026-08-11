@@ -274,6 +274,47 @@ def test_contract_full_violations_persisted(tmp_path):
 
 
 @pytest.mark.unit
+def test_exclusive_json_write_refuses_preexisting_file(tmp_path):
+    """Payload JSON paths use O_EXCL — cannot clobber a pre-planted file."""
+    from ambr.results import _write_bytes_exclusive, RunResultsIOError
+
+    dest = tmp_path / "x.json"
+    dest.write_text("planted\n", encoding="utf-8")
+    with pytest.raises((FileExistsError, OSError, RunResultsIOError)):
+        _write_bytes_exclusive(dest, b'{"ok": true}\n')
+    assert dest.read_text(encoding="utf-8") == "planted\n"
+
+
+@pytest.mark.unit
+def test_manifest_tmp_symlink_cannot_escape_destination(tmp_path):
+    """Pre-planted manifest.json.tmp symlink must not redirect writes outside root."""
+    dest = tmp_path / "run"
+    dest.mkdir()
+    outside = tmp_path / "escaped.txt"
+    outside.write_text("ORIGINAL_SECRET\n", encoding="utf-8")
+
+    # Plant the *legacy* predictable temp name as a symlink to an external file.
+    planted = dest / "manifest.json.tmp"
+    planted.symlink_to(outside)
+
+    r = RunResults({"info": {"v": 1}, "model": pl.DataFrame({"t": [1, 2]})})
+    r.save(dest)
+
+    # External target must be untouched
+    assert outside.read_text(encoding="utf-8") == "ORIGINAL_SECRET\n"
+    # Committed manifest is a regular file inside dest
+    final = dest / "manifest.json"
+    assert final.is_file()
+    assert not final.is_symlink()
+    manifest = json.loads(final.read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == SCHEMA_VERSION
+    # Load works
+    loaded = RunResults.load(dest)
+    assert loaded["info"] == {"v": 1}
+    assert loaded.model.height == 2
+
+
+@pytest.mark.unit
 def test_allow_fallback_false_requires_preferred_format(tmp_path, monkeypatch):
     r = RunResults({"model": pl.DataFrame({"t": [1]})})
     dest = tmp_path / "nofallback"
