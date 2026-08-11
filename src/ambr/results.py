@@ -103,15 +103,21 @@ def _is_symlink(path: Path) -> bool:
 
 
 def _write_bytes_exclusive(path: Path, data: bytes) -> None:
-    """Create ``path`` with O_EXCL|O_NOFOLLOW and write ``data`` (fsynced).
+    """Create ``path`` with O_EXCL|O_NOFOLLOW|O_BINARY and write ``data`` (fsynced).
 
     Refuses to open through a pre-existing path (including a symlink). Random
     opaque names should be used by callers so an attacker cannot plant the
     target path ahead of time.
+
+    ``O_BINARY`` is required on Windows so LF is not expanded to CRLF (which
+    would desync the stored SHA-256 checksum from the on-disk bytes).
     """
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
+    # Windows: without O_BINARY, CRT may translate \\n → \\r\\n on write.
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
     fd = os.open(str(path), flags, 0o644)
     try:
         # Double-check we own a regular file, not a race-swapped symlink.
