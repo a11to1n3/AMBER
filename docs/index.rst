@@ -107,6 +107,7 @@ Table of Contents
    versioning
    public_api
    roadmap_1_0
+   release_gates
    benchmarks
    examples/index
 
