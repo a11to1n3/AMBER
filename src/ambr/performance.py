@@ -795,18 +795,16 @@ class ParallelRunner:
         completed_count = sum(1 for o in outcomes if o is not None)
 
         ctx = mp.get_context("spawn")
-        # Each entry: (process, parent_conn, index, attempt, started)
+        # Single authoritative live-process registry. Updated immediately on
+        # every process start (initial submit *and* retries). fail_fast /
+        # finally always terminate this set — never a dual still_active list
+        # that can drop retries from cleanup.
+        # Entry: (process, parent_conn, index, attempt, started)
         active: List[Tuple[mp.Process, Any, int, int, float]] = []
         idx_iter = iter(pending_indices)
 
-        def _submit_one() -> bool:
-            nonlocal stop_submitting
-            if stop_submitting:
-                return False
-            try:
-                i = next(idx_iter)
-            except StopIteration:
-                return False
+        def _start_worker(i: int, attempt: int) -> None:
+            """Spawn one worker and register it in ``active`` immediately."""
             parent_conn, child_conn = ctx.Pipe(duplex=False)
             proc = ctx.Process(
                 target=_process_worker,
@@ -814,7 +812,16 @@ class ParallelRunner:
             )
             proc.start()
             child_conn.close()  # only child writes
-            active.append((proc, parent_conn, i, 1, time.monotonic()))
+            active.append((proc, parent_conn, i, attempt, time.monotonic()))
+
+        def _submit_one() -> bool:
+            if stop_submitting:
+                return False
+            try:
+                i = next(idx_iter)
+            except StopIteration:
+                return False
+            _start_worker(i, 1)
             return True
 
         def _record(outcome: RunOutcome) -> None:
@@ -831,16 +838,42 @@ class ParallelRunner:
             if outcome.status != "success" and fail_fast:
                 stop_submitting = True
 
+        def _kill_all_live(*, cancel_unfinished: bool) -> None:
+            """Terminate every process currently in the live registry."""
+            for proc, conn, i, attempt, _started in list(active):
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                _terminate_process(proc)
+                if cancel_unfinished and outcomes[i] is None:
+                    outcomes[i] = RunOutcome(
+                        index=i,
+                        status="failed",
+                        params=dict(param_list[i]),
+                        error_type="Cancelled",
+                        error_message="Cancelled (fail_fast)",
+                        attempts=attempt,
+                    )
+            active.clear()
+
         try:
             while len(active) < in_flight_cap and _submit_one():
                 pass
 
             while active:
                 now = time.monotonic()
-                still_active: List[Tuple[mp.Process, Any, int, int, float]] = []
                 progressed = False
+                # Snapshot for safe iteration; mutations (remove finished /
+                # append retries) go to the authoritative ``active`` list.
+                snapshot = list(active)
 
-                for proc, conn, i, attempt, started in active:
+                for entry in snapshot:
+                    if entry not in active:
+                        # Already removed earlier in this scan.
+                        continue
+                    proc, conn, i, attempt, started = entry
+
                     # Hard wall-clock timeout → terminate the process.
                     if timeout is not None and (now - started) >= float(timeout):
                         try:
@@ -848,6 +881,10 @@ class ParallelRunner:
                         except Exception:
                             pass
                         _terminate_process(proc)
+                        try:
+                            active.remove(entry)
+                        except ValueError:
+                            pass
                         _record(
                             RunOutcome(
                                 index=i,
@@ -859,8 +896,6 @@ class ParallelRunner:
                             )
                         )
                         progressed = True
-                        # Continue scanning siblings; fail_fast cleanup
-                        # terminates the full active registry below.
                         continue
 
                     # Non-blocking poll for a finished worker message.
@@ -890,6 +925,10 @@ class ParallelRunner:
                         proc.join(timeout=1.0)
                         if proc.is_alive():
                             _terminate_process(proc)
+                        try:
+                            active.remove(entry)
+                        except ValueError:
+                            pass
 
                         outcome = RunOutcome.from_dict(raw)
                         outcome.attempts = attempt
@@ -899,30 +938,15 @@ class ParallelRunner:
                             and attempt < max_attempts
                             and not stop_submitting
                         ):
-                            # Retry: spawn a fresh process
-                            parent_conn, child_conn = ctx.Pipe(duplex=False)
-                            new_proc = ctx.Process(
-                                target=_process_worker,
-                                args=(
-                                    child_conn,
-                                    i,
-                                    param_list[i],
-                                    self.model_class,
-                                ),
-                            )
-                            new_proc.start()
-                            child_conn.close()
-                            still_active.append(
-                                (new_proc, parent_conn, i, attempt + 1, time.monotonic())
-                            )
+                            # Retry: register in ``active`` immediately so a
+                            # later fail_fast in this same scan (or finally)
+                            # can terminate it.
+                            _start_worker(i, attempt + 1)
                             progressed = True
                             continue
 
                         _record(outcome)
                         progressed = True
-                        # Do not break mid-iteration: remaining siblings must
-                        # stay registered until the fail_fast cleanup below
-                        # terminates *every* entry in ``active``.
                         continue
 
                     if not proc.is_alive():
@@ -932,6 +956,10 @@ class ParallelRunner:
                         except Exception:
                             pass
                         proc.join(timeout=0.5)
+                        try:
+                            active.remove(entry)
+                        except ValueError:
+                            pass
                         _record(
                             RunOutcome(
                                 index=i,
@@ -947,30 +975,14 @@ class ParallelRunner:
                         progressed = True
                         continue
 
-                    still_active.append((proc, conn, i, attempt, started))
+                    # Still running — leave in active.
 
                 if stop_submitting:
-                    # Terminate the full active registry (not only still_active):
-                    # workers not yet visited in this loop must not be orphaned.
-                    for proc, conn, i, attempt, _started in active:
-                        try:
-                            conn.close()
-                        except Exception:
-                            pass
-                        _terminate_process(proc)
-                        if outcomes[i] is None:
-                            outcomes[i] = RunOutcome(
-                                index=i,
-                                status="failed",
-                                params=dict(param_list[i]),
-                                error_type="Cancelled",
-                                error_message="Cancelled (fail_fast)",
-                                attempts=attempt,
-                            )
-                    active = []
+                    # Kill the entire live registry, including retries started
+                    # mid-scan that never existed on the pre-scan snapshot.
+                    _kill_all_live(cancel_unfinished=True)
                     break
 
-                active = still_active
                 while len(active) < in_flight_cap and _submit_one():
                     progressed = True
 
@@ -979,13 +991,7 @@ class ParallelRunner:
                     time.sleep(0.05)
         finally:
             # Ensure no orphaned workers on unexpected exit.
-            for proc, conn, _i, _a, _s in list(active):
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-                _terminate_process(proc)
-            active.clear()
+            _kill_all_live(cancel_unfinished=False)
 
         if show_progress:
             print()

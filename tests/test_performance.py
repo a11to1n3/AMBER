@@ -71,6 +71,43 @@ class SideEffectModel(am.Model):
         marker = self.p.get("marker")
         if marker:
             _Path(marker).write_text("written\n", encoding="utf-8")
+
+
+class RetryThenSlowModel(am.Model):
+    """First attempt fails (for retry); retry sleeps then writes a marker.
+
+    Used to prove a retry started mid-scan cannot escape fail_fast cleanup.
+    Process-local attempt counter via a file next to the marker.
+    """
+
+    def setup(self):
+        pass
+
+    def step(self):
+        from pathlib import Path as _Path
+
+        role = self.p.get("role", "fail_fast_trigger")
+        if role == "fail_fast_trigger":
+            time.sleep(float(self.p.get("delay", 0.05)))
+            raise RuntimeError("trigger fail_fast")
+
+        # retry_then_slow: count attempts in a sibling file
+        marker = self.p.get("marker")
+        counter = _Path(str(marker) + ".attempts")
+        n = 0
+        if counter.is_file():
+            try:
+                n = int(counter.read_text(encoding="utf-8").strip() or "0")
+            except ValueError:
+                n = 0
+        n += 1
+        counter.write_text(str(n), encoding="utf-8")
+        if n == 1:
+            raise RuntimeError("first attempt fails — schedule retry")
+        # Second attempt (retry): long delay then side effect
+        time.sleep(float(self.p.get("delay", 3.0)))
+        if marker:
+            _Path(marker).write_text("retry completed\n", encoding="utf-8")
         self.record_model("param_val", self.p.get("param", 0))
 
 @pytest.fixture
@@ -478,6 +515,47 @@ class TestParallelRunner:
         assert outcomes[0].status == "failed"
         # Remaining slots marked cancelled / failed, not silent success
         assert all(o.status in {"failed", "timeout"} for o in outcomes)
+
+    def test_retry_cannot_escape_fail_fast_cleanup(self, tmp_path):
+        """A mid-scan retry must be in the live registry for fail_fast kill.
+
+        Reproduction shape: worker A fails (retry starts), then sibling B
+        fails with fail_fast — the retry must not stay alive and write a
+        delayed side effect after run() returns.
+        """
+        marker = tmp_path / "retry_side_effect.txt"
+        runner = ParallelRunner(RetryThenSlowModel, n_workers=2)
+        params = [
+            {
+                "steps": 1,
+                "show_progress": False,
+                "marker": str(marker),
+                "role": "retry_then_slow",
+                "delay": 3.0,
+            },
+            {
+                "steps": 1,
+                "show_progress": False,
+                "marker": str(marker),
+                "role": "fail_fast_trigger",
+                "delay": 0.05,
+            },
+        ]
+        with patch("builtins.print"):
+            outcomes = runner.run(
+                params,
+                show_progress=False,
+                fail_fast=True,
+                retry=1,
+                max_in_flight=2,
+            )
+        assert len(outcomes) == 2
+        time.sleep(0.5)
+        assert not marker.exists(), "retry worker wrote after fail_fast return"
+        import multiprocessing as mp
+
+        live = [p for p in mp.active_children() if p.is_alive()]
+        assert live == [], f"live children remain: {live}"
 
     def test_fail_fast_terminates_in_flight_siblings(self, tmp_path):
         """With two in-flight workers, fail_fast must kill the sibling.

@@ -19,6 +19,9 @@
 - **Release wheels**: stamp ``GITHUB_SHA`` into ``_build_info.GIT_REVISION``
   and assert it in the built wheel.
 - **Min-deps CI** aligned to declared floors; ``SECURITY.md`` supports 0.5.x.
+- **ParallelRunner retry + fail_fast**: retries register in the live process
+  registry immediately (not only a dual ``still_active`` list), so fail_fast
+  cleanup terminates them.
 
 ## v0.5.0 - 2026-08-11
 
