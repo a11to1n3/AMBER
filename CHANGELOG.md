@@ -39,6 +39,13 @@
   `model.rng` only, UI gated behind `__main__`, `--headless` three-step smoke,
   `anywidget` in `ambr[examples]`, and background-thread status reports
   failures instead of always showing "Completed".
+- **Real release gates** (`.github/workflows/release.yml`): validate
+  `vX.Y.Z == project.version` and prove the version is absent from PyPI;
+  build the wheel once and test only that artifact (CPU matrix + CUDA);
+  CUDA missing is **NOT VERIFIED** (never soft-green); SHA-pinned Actions;
+  least-privilege permissions (`id-token: write` only on publish); protected
+  `pypi` environment for maintainer approval; SBOM + provenance attestation;
+  GPU hardware evidence artifact. See `docs/release_gates.rst`.
 
 ## v0.4.7 - 2026-08-05
 

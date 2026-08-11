@@ -1,135 +1,595 @@
 name: Release
 
-# Builds sdist/wheel on tag push (v*), creates a GitHub Release, and publishes
-# to PyPI via Trusted Publishing (OIDC — no long-lived API token in secrets).
+# Real release gates (tag push only). Flow:
 #
-# One-time setup on PyPI (project owner):
-#   1. https://pypi.org/manage/project/ambr/settings/publishing/
-#   2. Add a GitHub trusted publisher:
-#        Owner:      a11to1n3
-#        Repository: AMBER
-#        Workflow:   release.yml
-#        Environment: pypi
-#   3. Create a GitHub Environment named "pypi" (optional protection rules).
-#   4. Prefer revoking any chat-pasted API tokens after this is configured.
+#   Validate tag/version → Build wheel once → Install exact wheel →
+#     ├─ CPU matrix tests
+#     └─ CUDA tests (must verify; never soft-green)
+#   → Protected publish approval → PyPI via OIDC (+ GitHub Release)
 #
-# Fallback (not recommended): store a project-scoped token as secret
-# PYPI_API_TOKEN and the publish step will use it when OIDC is unavailable.
+# One-time setup:
+#   1. PyPI Trusted Publisher for this workflow + environment "pypi"
+#      https://pypi.org/manage/project/ambr/settings/publishing/
+#        Owner: a11to1n3  Repository: AMBER  Workflow: release.yml  Environment: pypi
+#   2. GitHub Environment "pypi" with required reviewers (maintainer approval)
+#   3. Repository variable GPU_RUNNER = self-hosted label(s) for a CUDA machine
+#      (e.g. "self-hosted,gpu"). Missing CUDA → job fails as NOT VERIFIED.
+#
+# Security:
+#   - Actions pinned to full commit SHAs
+#   - Default / build / test jobs: contents: read only
+#   - Publish alone: id-token: write (+ contents: write for GH Release)
+#   - No skip-existing: validate proves the version is absent from PyPI first
 
 on:
   push:
     tags:
       - "v*"
 
+# Least privilege by default. Jobs that need more declare it explicitly.
 permissions:
-  contents: write
+  contents: read
+
+env:
+  MPLBACKEND: Agg
+  # Pin list (comment only — each uses: line carries the SHA):
+  # actions/checkout              v4.2.2  11bd71901bbe5b1630ceea73d27597364c9af683
+  # actions/setup-python          v5.6.0  a26af69be951a213d495a4c3e4e4022e16d87065
+  # actions/upload-artifact       v4.6.2  ea165f8d65b6e75b540449e92b4886f43607fa02
+  # actions/download-artifact     v4.3.0  d3f86a106a0bac45b974a628896c90dbdf5c8093
+  # softprops/action-gh-release   v2.2.1  c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda
+  # pypa/gh-action-pypi-publish   v1.12.4 76f52bc884231f62b9a034ebfe128415bbaabdfc
+  # actions/attest-build-provenance v2.2.3 c074443f1aee8d4aeeae555aebba3282517141b2
+  # anchore/sbom-action           v0.18.0 f325610c9f50a54015d37c8d16cb3b0e2c8f4de0
 
 jobs:
-  build-release:
-    name: Build release distributions
+  # ---------------------------------------------------------------------------
+  # A — Validate tag/version
+  # ---------------------------------------------------------------------------
+  validate:
+    name: Validate tag / version
     runs-on: ubuntu-latest
-    # Required for PyPI Trusted Publishing (OIDC).
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Verify tag vX.Y.Z equals project.version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_REF="${GITHUB_REF_NAME}"
+          if [[ ! "${TAG_REF}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$ ]]; then
+            echo "::error::Tag ${TAG_REF} is not a release tag of the form vX.Y.Z"
+            exit 1
+          fi
+          TAG_VERSION="${TAG_REF#v}"
+          # Prefer PEP 621 project.version from pyproject.toml (no import required).
+          PROJECT_VERSION="$(
+            python - <<'PY'
+          from pathlib import Path
+          text = Path("pyproject.toml").read_text(encoding="utf-8")
+          version = None
+          in_project = False
+          for line in text.splitlines():
+              s = line.strip()
+              if s == "[project]":
+                  in_project = True
+                  continue
+              if in_project and s.startswith("[") and s.endswith("]"):
+                  break
+              if in_project and s.startswith("version"):
+                  # version = "0.4.7"
+                  version = s.split("=", 1)[1].strip().strip('"').strip("'")
+                  break
+          if not version:
+              raise SystemExit("Could not parse project.version from pyproject.toml")
+          print(version)
+          PY
+          )"
+          if [[ "${TAG_VERSION}" != "${PROJECT_VERSION}" ]]; then
+            echo "::error::Tag version ${TAG_VERSION} != project.version ${PROJECT_VERSION}"
+            exit 1
+          fi
+          echo "tag=${TAG_REF}" >> "${GITHUB_OUTPUT}"
+          echo "version=${PROJECT_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "OK: tag ${TAG_REF} matches project.version ${PROJECT_VERSION}"
+
+      - name: Prove version is not already on PyPI
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          version = os.environ["VERSION"]
+          url = f"https://pypi.org/pypi/ambr/{version}/json"
+          try:
+              with urllib.request.urlopen(url, timeout=30) as resp:
+                  data = json.load(resp)
+              files = [u.get("filename") for u in data.get("urls", [])]
+              print(
+                  f"ERROR: ambr=={version} already exists on PyPI "
+                  f"({len(files)} file(s)). Refuse republish (no skip-existing).",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          except urllib.error.HTTPError as exc:
+              if exc.code == 404:
+                  print(f"OK: PyPI has no ambr=={version}")
+              else:
+                  raise
+          PY
+
+  # ---------------------------------------------------------------------------
+  # B — Build wheel once (same artifact used by every downstream job)
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build wheel once
+    needs: [validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ needs.validate.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Twine check
+        run: python -m twine check dist/*
+
+      - name: Verify built distributions match tag version
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          WHEEL="$(echo dist/ambr-${VERSION}-*.whl)"
+          SDIST="$(echo dist/ambr-${VERSION}.tar.gz)"
+          test -f ${WHEEL} || { echo "Missing wheel for ${VERSION}: dist/"; ls -la dist; exit 1; }
+          test -f ${SDIST} || { echo "Missing sdist for ${VERSION}: dist/"; ls -la dist; exit 1; }
+          echo "Built ${WHEEL} and ${SDIST}"
+
+      - name: Package-surface check (no local-only trees)
+        run: |
+          python - <<'PY'
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          dist = Path("dist")
+          sdist = next(dist.glob("ambr-*.tar.gz"))
+          wheel = next(dist.glob("ambr-*.whl"))
+          forbidden_roots = {
+              ".claude",
+              ".github",
+              "benchmarks",
+              "docs",
+              "examples",
+              "paper",
+              "tests",
+              ".grok",
+          }
+          forbidden_files = {"paper.zip"}
+
+          def local_only_members(names):
+              offenders = []
+              for name in names:
+                  parts = Path(name).parts
+                  if len(parts) < 2:
+                      continue
+                  root_member = parts[1]
+                  if root_member in forbidden_roots or root_member in forbidden_files:
+                      offenders.append(name)
+              return offenders
+
+          with tarfile.open(sdist) as archive:
+              sdist_offenders = local_only_members(archive.getnames())
+          if sdist_offenders:
+              raise SystemExit(
+                  "sdist contains local-only paths: "
+                  + ", ".join(sorted(sdist_offenders)[:20])
+              )
+
+          with zipfile.ZipFile(wheel) as archive:
+              wheel_offenders = []
+              for name in archive.namelist():
+                  parts = Path(name).parts
+                  if not parts:
+                      continue
+                  if parts[0] in forbidden_roots or parts[0] in forbidden_files:
+                      wheel_offenders.append(name)
+          if wheel_offenders:
+              raise SystemExit(
+                  "wheel contains local-only paths: "
+                  + ", ".join(sorted(wheel_offenders)[:20])
+              )
+
+          print(f"Checked package surface for {sdist.name} and {wheel.name}")
+          PY
+
+      - name: Locate wheel for SBOM
+        id: wheel
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          WHEEL="$(ls dist/ambr-${VERSION}-*.whl | head -n1)"
+          test -f "${WHEEL}"
+          echo "path=${WHEEL}" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate SBOM (SPDX) from wheel
+        uses: anchore/sbom-action@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0 # v0.18.0
+        with:
+          file: ${{ steps.wheel.outputs.path }}
+          format: spdx-json
+          output-file: ambr-sbom.spdx.json
+          upload-artifact: true
+          artifact-name: ambr-sbom
+          upload-release-assets: false
+
+      - name: Upload distribution artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ambr-dist
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # C + D — Install exact wheel → CPU matrix tests + quickstarts
+  # ---------------------------------------------------------------------------
+  test-cpu:
+    name: CPU tests (wheel)
+    needs: [validate, build]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - name: Checkout (tests / examples only — package comes from the wheel)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download distribution artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ambr-dist
+          path: dist
+
+      - name: Install exact wheel (not the source tree)
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          # Hide the in-tree package so imports resolve only from site-packages.
+          if [[ -d src/ambr ]]; then
+            mv src/ambr "/tmp/ambr-src-hidden-${GITHUB_RUN_ID}"
+          fi
+          WHEEL="$(ls dist/ambr-${VERSION}-*.whl | head -n1)"
+          echo "Installing wheel: ${WHEEL}"
+          # Wheel + optional extras used by the test suite. Never pip install -e .
+          python -m pip install "${WHEEL}[advanced,viz]"
+          python -m pip install pytest pytest-cov pytest-mock
+          python - <<'PY'
+          import pathlib
+          import ambr
+          path = pathlib.Path(ambr.__file__).resolve()
+          print("ambr loaded from:", path)
+          print("ambr.__version__:", getattr(ambr, "__version__", "?"))
+          text = str(path)
+          if "site-packages" not in text and "dist-packages" not in text:
+              raise SystemExit(
+                  f"ambr must load from the installed wheel, not the tree: {path}"
+              )
+          PY
+
+      - name: Package-surface + quickstart against installed wheel
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import ambr as am
+          from importlib.metadata import version as pkg_version
+
+          v = pkg_version("ambr")
+          expected = os.environ["VERSION"]
+          if v != expected:
+              raise SystemExit(f"installed ambr=={v} != tag version {expected}")
+          print("installed ambr", v)
+
+          # Minimal quickstart (CPU)
+          class Wealth(am.Model):
+              model_reporters = {"total": lambda m: int(m.agents.wealth.sum())}
+
+              def setup(self):
+                  self.add_agents(20, wealth=1)
+
+              def step_vectorized(self):
+                  donors = self.agents.where(self.agents.wealth > 0)
+                  if len(donors) == 0:
+                      return
+                  donors.wealth -= 1
+                  rec = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
+                  self.agents.at[rec].scatter_add(wealth=1)
+
+          res = Wealth({"steps": 5, "seed": 0, "show_progress": False}).run()
+          assert "model" in res and res["model"].height >= 5
+          print("quickstart ok")
+          PY
+          # Example headless path (no plotly required)
+          if [[ -f examples/virus_spread_simulation.py ]]; then
+            python examples/virus_spread_simulation.py --headless --steps 3 --n 20
+          fi
+
+      - name: Run test suite against wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Override pytest.ini cov defaults aimed at src/ layout.
+          python -m pytest tests/ \
+            -o addopts='-ra --strict-markers' \
+            --tb=short \
+            -q
+
+  # ---------------------------------------------------------------------------
+  # C + E — Install exact wheel → CUDA tests (must verify; never soft-green)
+  # ---------------------------------------------------------------------------
+  test-cuda:
+    name: CUDA tests (wheel)
+    needs: [validate, build]
+    # Prefer a self-hosted CUDA runner. Falling back to ubuntu-latest without
+    # a GPU must *fail* as NOT VERIFIED — never soft-skip green.
+    runs-on: ${{ vars.GPU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Download distribution artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ambr-dist
+          path: dist
+
+      - name: Require real CUDA (NOT VERIFIED if missing)
+        id: cuda
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p gpu-evidence
+          {
+            echo "runner_name=${RUNNER_NAME:-unknown}"
+            echo "runner_os=${RUNNER_OS:-unknown}"
+            echo "gpu_runner_var=${GPU_RUNNER_VAR:-<unset>}"
+            echo "ambr_commit=${GITHUB_SHA}"
+            echo "ambr_ref=${GITHUB_REF}"
+            date -u +"timestamp_utc=%Y-%m-%dT%H:%M:%SZ"
+          } | tee gpu-evidence/runner.txt
+
+          if ! command -v nvidia-smi >/dev/null 2>&1; then
+            echo "NOT_VERIFIED" | tee gpu-evidence/status.txt
+            echo "::error::GPU release gate NOT VERIFIED: nvidia-smi not found. Configure repository variable GPU_RUNNER to a self-hosted NVIDIA runner (never soft-green)."
+            exit 1
+          fi
+          if ! nvidia-smi -L >/dev/null 2>&1; then
+            echo "NOT_VERIFIED" | tee gpu-evidence/status.txt
+            echo "::error::GPU release gate NOT VERIFIED: nvidia-smi -L failed (no usable GPU)."
+            exit 1
+          fi
+          nvidia-smi -L | tee gpu-evidence/nvidia-smi-L.txt
+          nvidia-smi | tee gpu-evidence/nvidia-smi.txt
+          echo "has_cuda=true" >> "${GITHUB_OUTPUT}"
+          echo "VERIFIED_HARDWARE" | tee gpu-evidence/status.txt
+        env:
+          GPU_RUNNER_VAR: ${{ vars.GPU_RUNNER }}
+
+      - name: Install exact wheel + CuPy
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          if [[ -d src/ambr ]]; then
+            mv src/ambr "/tmp/ambr-src-hidden-${GITHUB_RUN_ID}"
+          fi
+          WHEEL="$(ls dist/ambr-${VERSION}-*.whl | head -n1)"
+          python -m pip install "${WHEEL}[perf,viz]"
+          python -m pip install pytest pytest-cov pytest-mock
+          # CUDA-matched CuPy; fail the gate if none install (do not soft-skip).
+          if ! python -m pip install "cupy-cuda12x" \
+            && ! python -m pip install "cupy-cuda11x" \
+            && ! python -m pip install "cupy"; then
+            echo "NOT_VERIFIED" | tee gpu-evidence/status.txt
+            echo "::error::GPU release gate NOT VERIFIED: could not install CuPy."
+            exit 1
+          fi
+          python - <<'PY'
+          import pathlib
+          import ambr
+          path = pathlib.Path(ambr.__file__).resolve()
+          print("ambr loaded from:", path)
+          if "site-packages" not in str(path) and "dist-packages" not in str(path):
+              raise SystemExit(f"ambr must load from wheel: {path}")
+          if not ambr.GPU_AVAILABLE:
+              raise SystemExit("GPU_AVAILABLE is False after CuPy install — NOT VERIFIED")
+          print("GPU_AVAILABLE=True")
+          PY
+
+      - name: Collect hardware evidence
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          python - <<'PY' | tee gpu-evidence/environment.json
+          import json
+          import os
+          import platform
+          import subprocess
+          import sys
+
+          def sh(cmd):
+              try:
+                  return subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
+              except Exception as exc:
+                  return f"<failed: {exc}>"
+
+          nvidia = sh(["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader"])
+          # Best-effort CUDA version from nvidia-smi header / nvcc
+          cuda = sh(["bash", "-lc", "nvidia-smi | head -n 4"])
+          try:
+              import cupy
+              cupy_ver = getattr(cupy, "__version__", str(cupy))
+          except Exception as exc:
+              cupy_ver = f"<import failed: {exc}>"
+          try:
+              import ambr
+              ambr_ver = getattr(ambr, "__version__", "?")
+              gpu_avail = bool(getattr(ambr, "GPU_AVAILABLE", False))
+          except Exception as exc:
+              ambr_ver = f"<import failed: {exc}>"
+              gpu_avail = False
+
+          evidence = {
+              "gpu_model": nvidia.strip(),
+              "driver_and_memory": nvidia.strip(),
+              "cuda_probe": cuda.strip(),
+              "cupy": cupy_ver,
+              "python": sys.version,
+              "platform": platform.platform(),
+              "ambr_version": ambr_ver,
+              "ambr_commit": os.environ.get("GITHUB_SHA", ""),
+              "ambr_tag": os.environ.get("GITHUB_REF_NAME", ""),
+              "release_version_expected": os.environ.get("VERSION", ""),
+              "gpu_available": gpu_avail,
+          }
+          print(json.dumps(evidence, indent=2))
+          PY
+
+      - name: Run GPU claim script + GPU pytest (wheel)
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          {
+            echo "=== run_gpu_claims.py --quick ==="
+            # Script lives in the repo; package under test is the installed wheel.
+            # Restore scripts path expectations: script adds ROOT/src if present
+            # but we hid src/ambr — wheel import still wins when src is absent.
+            python scripts/run_gpu_claims.py --quick
+            echo "=== pytest GPU modules ==="
+            python -m pytest tests/test_gpu_backend.py tests/test_gpu_ensemble.py \
+              -o addopts='-ra --strict-markers' \
+              --tb=short -q
+          } 2>&1 | tee gpu-evidence/test-output.txt
+
+      - name: Upload GPU hardware evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gpu-release-evidence-${{ needs.validate.outputs.version }}
+          path: gpu-evidence/**
+          if-no-files-found: warn
+          retention-days: 90
+
+  # ---------------------------------------------------------------------------
+  # F + G — Protected publish approval → PyPI via OIDC + GitHub Release
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish to PyPI (OIDC)
+    needs: [validate, build, test-cpu, test-cuda]
+    runs-on: ubuntu-latest
+    # Maintainer approval: configure Environment "pypi" with required reviewers.
     environment:
       name: pypi
       url: https://pypi.org/p/ambr
     permissions:
+      # Only this job may mint OIDC tokens (PyPI Trusted Publishing + provenance).
       contents: write
       id-token: write
-
+      attestations: write
     steps:
-    - uses: actions/checkout@v6
+      - name: Download distribution artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ambr-dist
+          path: dist
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ambr-sbom
+          path: sbom
+        continue-on-error: true
 
-    - name: Install build tools
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install build twine
+      - name: Attest build provenance (exact dist artifacts)
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        with:
+          subject-path: dist/*
 
-    - name: Build distributions
-      run: python -m build
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
+        with:
+          files: |
+            dist/*
+            sbom/**
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Check distributions
-      run: python -m twine check dist/*
-
-    - name: Check package surface
-      run: |
-        python - <<'PY'
-        import tarfile
-        import zipfile
-        from pathlib import Path
-
-        dist = Path("dist")
-        sdist = next(dist.glob("ambr-*.tar.gz"))
-        wheel = next(dist.glob("ambr-*.whl"))
-        forbidden_roots = {
-            ".claude",
-            ".github",
-            "benchmarks",
-            "docs",
-            "examples",
-            "paper",
-            "tests",
-        }
-        forbidden_files = {"paper.zip"}
-
-        def local_only_members(names):
-            offenders = []
-            for name in names:
-                parts = Path(name).parts
-                if len(parts) < 2:
-                    continue
-                root_member = parts[1]
-                if root_member in forbidden_roots or root_member in forbidden_files:
-                    offenders.append(name)
-            return offenders
-
-        with tarfile.open(sdist) as archive:
-            sdist_offenders = local_only_members(archive.getnames())
-        if sdist_offenders:
-            raise SystemExit(
-                "sdist contains local-only paths: "
-                + ", ".join(sorted(sdist_offenders)[:20])
-            )
-
-        with zipfile.ZipFile(wheel) as archive:
-            wheel_offenders = []
-            for name in archive.namelist():
-                parts = Path(name).parts
-                if not parts:
-                    continue
-                if parts[0] in forbidden_roots or parts[0] in forbidden_files:
-                    wheel_offenders.append(name)
-        if wheel_offenders:
-            raise SystemExit(
-                "wheel contains local-only paths: "
-                + ", ".join(sorted(wheel_offenders)[:20])
-            )
-
-        print(f"Checked package surface for {sdist.name} and {wheel.name}")
-        PY
-
-    - name: Upload distribution artifact
-      uses: actions/upload-artifact@v7
-      with:
-        name: ambr-dist
-        path: dist/*
-
-    - name: Create GitHub release
-      uses: softprops/action-gh-release@v3
-      with:
-        files: dist/*
-        generate_release_notes: true
-
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        # Prefer OIDC (Trusted Publishing). If you still use a token instead,
-        # set repository secret PYPI_API_TOKEN and uncomment password below —
-        # do not commit tokens.
-        # password: ${{ secrets.PYPI_API_TOKEN }}
-        skip-existing: true
-        verbose: true
+      - name: Publish to PyPI (OIDC, no skip-existing)
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.12.4
+        with:
+          # skip-existing intentionally false: validate already proved the
+          # version is absent on PyPI; accidental re-tags must fail loudly.
+          skip-existing: false
+          verbose: true
+          packages-dir: dist/
