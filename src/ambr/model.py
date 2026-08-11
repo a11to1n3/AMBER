@@ -462,8 +462,10 @@ class Model(BaseModel):
         """Evaluate declarative ``model_reporters`` into the current step row.
 
         Each spec is a ``callable(model)``, a model attribute/method name, or a
-        constant. Runs before :meth:`update`, so an imperative ``record_model``
-        of the same key wins.
+        constant. Runs after :meth:`step` and before :meth:`update`. On
+        duplicate keys the later stage wins::
+
+            step() record_model  <  model_reporters  <  update() record_model
         """
         reporters = type(self).model_reporters
         if not reporters:
@@ -497,8 +499,9 @@ class Model(BaseModel):
         )
 
     def _finalize_step_data(self):
-        if hasattr(self, '_current_step_data'):
-            self._model_data.append(self._current_step_data.copy())
+        data = getattr(self, '_current_step_data', None)
+        if data:
+            self._model_data.append(data.copy())
 
     def _append_fast_step(self, **data: Any) -> None:
         """Append a model-data row for a private optimized execution loop.
@@ -512,15 +515,33 @@ class Model(BaseModel):
         row.update(data)
         self._model_data.append(row)
 
+    def _begin_step_data(self) -> None:
+        """Allocate the step row *before* :meth:`step` so recordings are kept.
+
+        The row's ``t`` is the post-step time (``self.t + 1``). Call sites must
+        not finalize this row if the step body fails.
+        """
+        self._current_step_data = {'t': self.t + 1}
+
     def _advance_and_record(self) -> None:
-        """Advance ``t`` and capture this step's recorded data.
+        """Advance ``t`` and finalize the current step row.
 
         Owns the step-counter increment and step-data lifecycle so :meth:`update`
-        can be a pure hook. Declarative reporters are evaluated first, then the
-        imperative :meth:`update` hook, then the row is finalized.
+        can be a pure hook. Values already present in ``_current_step_data``
+        (e.g. from :meth:`record_model` during :meth:`step`) are preserved.
+        Declarative reporters are evaluated next, then the imperative
+        :meth:`update` hook (which wins on duplicate keys), then the row is
+        finalized.
+
+        When called without a prior :meth:`_begin_step_data` (tests / legacy),
+        starts a fresh row for the new ``t``.
         """
         self.t += 1
-        self._current_step_data = {'t': self.t}
+        row = getattr(self, '_current_step_data', None)
+        if not row or row.get('t') != self.t:
+            self._current_step_data = {'t': self.t}
+        else:
+            self._current_step_data['t'] = self.t
         self._collect_model_reporters()
         self._snapshot_agent_reporters()
         self.update()
@@ -548,34 +569,41 @@ class Model(BaseModel):
         :meth:`run`), the step body is bracketed by the snapshot-view
         conformance checker and a :class:`~ambr.contract.ContractCertificate`
         is appended to ``self.contract_certificates``.
+
+        The step-data row is allocated before :meth:`step` so values recorded
+        inside ``step()`` survive into the model frame. A failed step discards
+        the partial row and does not append it to ``_model_data``.
         """
         self._ensure_setup()
         execution = getattr(self, "_execution", None)
         mode = execution.config.mode if execution is not None else self._execution_mode
         step_fn = self.step_oop if mode == "oop" else self.step_vectorized
         mon = self._contract
-        if mon.mode == "off":
-            step_fn()
-            self._advance_and_record()
-            return
-
-        mon.begin_step(self._contract_snapshot())
+        self._begin_step_data()
         try:
-            step_fn()
-        finally:
-            cert = mon.end_step(self.t, self._contract_snapshot())
+            if mon.mode == "off":
+                step_fn()
+            else:
+                mon.begin_step(self._contract_snapshot())
+                try:
+                    step_fn()
+                finally:
+                    cert = mon.end_step(self.t, self._contract_snapshot())
 
-        if mon.mode == "warn":
-            for v in cert.violations:
-                warnings.warn(
-                    f"[step {cert.step}] {v.kind}: {v.detail}",
-                    UserWarning,
-                    stacklevel=2,
-                )
-        elif mon.mode == "raise" and not cert.ok:
-            raise ContractViolationError(cert)
+                if mon.mode == "warn":
+                    for v in cert.violations:
+                        warnings.warn(
+                            f"[step {cert.step}] {v.kind}: {v.detail}",
+                            UserWarning,
+                            stacklevel=2,
+                        )
+                elif mon.mode == "raise" and not cert.ok:
+                    raise ContractViolationError(cert)
 
-        self._advance_and_record()
+            self._advance_and_record()
+        except Exception:
+            self._current_step_data = {}
+            raise
 
     def _fast_path_is_eligible(
         self,
