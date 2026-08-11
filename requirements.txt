@@ -1,13 +1,11 @@
 # Convenience pin file for tools that do not read pyproject.toml
 # (e.g. some Read the Docs / legacy scripts). Prefer:
 #   pip install -e .
-#   pip install -e ".[dev,advanced,perf]"
+#   pip install -e ".[dev,advanced,perf,viz]"
 #
 # Keep in sync with [project] dependencies in pyproject.toml.
+# Matplotlib is optional (ambr[viz]); do not re-add seaborn / scikit-optimize.
 
 polars>=0.20.0
 numpy>=1.20.0
-matplotlib>=3.3.0
-seaborn>=0.11.0
 networkx>=2.5
-scikit-optimize>=0.9.0

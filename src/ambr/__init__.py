@@ -86,12 +86,35 @@ from .scheduling import (
     normalize_activation,
     shuffled_ids,
 )
-from .viz import HAS_MATPLOTLIB, plot_grid, plot_timeseries
+
+# Viz helpers are lazy — see ``__getattr__`` — so ``import ambr`` does not
+# pull matplotlib / force a backend.
 
 try:
     __version__ = _metadata_version('ambr')
 except _PackageNotFoundError:
     __version__ = '0.4.7'
+
+_VIZ_EXPORTS = frozenset({"plot_grid", "plot_timeseries", "HAS_MATPLOTLIB"})
+
+
+def __getattr__(name: str):
+    """Lazily resolve optional visualization helpers.
+
+    ``plot_grid``, ``plot_timeseries``, and ``HAS_MATPLOTLIB`` load
+    :mod:`ambr.viz` (and matplotlib) on first access only. Install with
+    ``pip install 'ambr[viz]'``.
+    """
+    if name in _VIZ_EXPORTS:
+        from . import viz
+
+        return getattr(viz, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__) | set(_VIZ_EXPORTS))
+
 
 __author__ = 'a11to1n3'
 __email__ = 'citation.needed@example.com'
