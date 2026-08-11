@@ -24,13 +24,18 @@
   cleanup terminates them.
 - **Release wheel install assert**: resolve the built wheel to an absolute path
   before ``pip install`` under a temporary ``cwd`` (relative ``dist/…`` failed).
-- **Checkpoint schema v2/v3**: writers emit ``schema_version=3`` with
-  ``polars_ipc_b64`` frames + workload fingerprint; schemas 1–2 still load.
-  IPC encode failures raise ``CheckpointSerializationError`` instead of
-  silently storing ``repr(df)``.
-- **Checkpoint resume integrity**: workload fingerprint + per-index params
-  must match before skipping work; ``Cancelled`` never-run slots are omitted
-  from checkpoints so resume re-queues them.
+- **Checkpoint schema v2/v3/v4**: writers emit ``schema_version=4`` with
+  ``polars_ipc_b64`` frames + revision-aware workload fingerprint; schemas
+  1–3 still load. IPC is rejected under pure schema 1 (records-only). IPC
+  encode failures raise ``CheckpointSerializationError`` instead of silently
+  storing ``repr(df)``.
+- **Checkpoint resume integrity**: workload fingerprint includes AMBER
+  version/revision, model source digest, and optional
+  ``workload_revision`` / ``AMBER_APP_REVISION`` so code edits invalidate
+  resume; per-index params must still match. Never-run slots use
+  ``status=cancelled`` (not ``error_type == "Cancelled"``) and are omitted
+  from checkpoints so resume re-queues them; a user exception class named
+  ``Cancelled`` remains a persisted ``failed`` outcome.
 
 ## v0.5.0 - 2026-08-11
 
