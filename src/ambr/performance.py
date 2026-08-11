@@ -463,47 +463,79 @@ class RunOutcome:
         )
 
 
-_CHECKPOINT_SCHEMA = 1
+# Current writer schema (Arrow IPC frames). Schema 1 was lossy record JSON.
+_CHECKPOINT_SCHEMA = 2
+_LEGACY_CHECKPOINT_SCHEMAS = frozenset({1})
+
+
+class CheckpointSerializationError(ValueError):
+    """Raised when a result frame cannot be encoded losslessly for a checkpoint."""
 
 
 def _serialize_frame(df: Any) -> Optional[Dict[str, Any]]:
     """Type-preserving encoding of a Polars frame (Arrow IPC + base64).
 
-    Record-based JSON loses dtypes (UInt8→Int64, Datetime→str, Categorical→str).
-    Arrow IPC preserves the schema on round-trip.
+    Record-based JSON (schema 1) loses dtypes. Schema 2 uses Arrow IPC so
+    UInt8 / Datetime / Categorical round-trip. Encoding failures raise
+    :class:`CheckpointSerializationError` instead of silently storing
+    ``repr(df)`` (which reloads as a string and destroys frame structure).
     """
     if df is None:
         return None
-    try:
-        import polars as pl
+    import polars as pl
 
-        if not isinstance(df, pl.DataFrame):
-            return {"_kind": "repr", "value": repr(df)}
+    if not isinstance(df, pl.DataFrame):
+        raise CheckpointSerializationError(
+            "Checkpoint frames must be Polars DataFrames; "
+            f"got {type(df).__name__}"
+        )
+    try:
         buf = io.BytesIO()
         df.write_ipc(buf)
-        return {
-            "_kind": "polars_ipc_b64",
-            "columns": list(df.columns),
-            "dtypes": [str(dt) for dt in df.dtypes],
-            "data": base64.b64encode(buf.getvalue()).decode("ascii"),
-        }
-    except Exception:
-        return {"_kind": "repr", "value": repr(df)}
+    except Exception as exc:
+        dtypes = [f"{c}:{dt}" for c, dt in zip(df.columns, df.dtypes)]
+        raise CheckpointSerializationError(
+            "Failed to encode DataFrame as Arrow IPC for checkpoint "
+            f"(dtypes=[{', '.join(dtypes)}]). "
+            "Object / unsupported columns cannot be checkpointed losslessly. "
+            f"Underlying error: {exc}"
+        ) from exc
+    return {
+        "_kind": "polars_ipc_b64",
+        "columns": list(df.columns),
+        "dtypes": [str(dt) for dt in df.dtypes],
+        "data": base64.b64encode(buf.getvalue()).decode("ascii"),
+    }
 
 
-def _deserialize_frame(payload: Any) -> Any:
+def _deserialize_frame(payload: Any, *, schema_version: int) -> Any:
+    """Decode a frame payload for a known checkpoint schema version."""
     if payload is None:
         return None
     if not isinstance(payload, dict):
-        return payload
+        raise ValueError(
+            f"Checkpoint frame payload must be an object, got {type(payload).__name__}"
+        )
     kind = payload.get("_kind")
     if kind == "polars_ipc_b64":
+        # Preferred for schema 2; also accepted if found under legacy files.
         import polars as pl
 
-        raw = base64.b64decode(payload["data"])
-        return pl.read_ipc(io.BytesIO(raw))
+        try:
+            raw = base64.b64decode(payload["data"])
+            return pl.read_ipc(io.BytesIO(raw))
+        except Exception as exc:
+            raise ValueError(
+                f"Failed to decode polars_ipc_b64 checkpoint frame: {exc}"
+            ) from exc
     if kind == "polars_records":
-        # Legacy checkpoints from pre-0.5.1 format (lossy dtypes).
+        if schema_version not in _LEGACY_CHECKPOINT_SCHEMAS:
+            raise ValueError(
+                f"Frame kind 'polars_records' is only valid for legacy "
+                f"schema_version in {_LEGACY_CHECKPOINT_SCHEMAS!r}; "
+                f"got schema_version={schema_version}"
+            )
+        # Schema 1: lossy record JSON (dtypes not preserved).
         import polars as pl
 
         rows = payload.get("rows") or []
@@ -512,8 +544,14 @@ def _deserialize_frame(payload: Any) -> Any:
             return pl.DataFrame({c: [] for c in cols}) if cols else pl.DataFrame()
         return pl.DataFrame(rows)
     if kind == "repr":
-        return payload.get("value")
-    return payload
+        raise ValueError(
+            "Checkpoint frame kind 'repr' is no longer supported "
+            "(destroyed DataFrame structure). Re-run the experiment."
+        )
+    raise ValueError(
+        f"Unknown checkpoint frame kind {kind!r} "
+        f"(schema_version={schema_version})"
+    )
 
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -577,14 +615,18 @@ def _serialize_result(result: Optional[Dict[str, Any]]) -> Optional[Dict[str, An
     }
 
 
-def _deserialize_result(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _deserialize_result(
+    data: Optional[Dict[str, Any]], *, schema_version: int
+) -> Optional[Dict[str, Any]]:
     if data is None:
         return None
     return {
         "params": data.get("params"),
         "info": data.get("info"),
-        "model": _deserialize_frame(data.get("model")),
-        "agents": _deserialize_frame(data.get("agents")),
+        "model": _deserialize_frame(data.get("model"), schema_version=schema_version),
+        "agents": _deserialize_frame(
+            data.get("agents"), schema_version=schema_version
+        ),
     }
 
 
@@ -1066,10 +1108,12 @@ class ParallelRunner:
             ) from exc
         if not isinstance(payload, dict):
             raise ValueError("Checkpoint root must be a JSON object")
-        if payload.get("schema_version") != _CHECKPOINT_SCHEMA:
+        version = payload.get("schema_version")
+        supported = {_CHECKPOINT_SCHEMA} | _LEGACY_CHECKPOINT_SCHEMAS
+        if version not in supported:
             raise ValueError(
-                f"Unsupported checkpoint schema_version="
-                f"{payload.get('schema_version')!r}; expected {_CHECKPOINT_SCHEMA}"
+                f"Unsupported checkpoint schema_version={version!r}; "
+                f"supported={sorted(supported)}"
             )
         if payload.get("format") != "ambr.ParallelRunner.checkpoint+json":
             raise ValueError(
@@ -1083,7 +1127,9 @@ class ParallelRunner:
             if not isinstance(v, dict):
                 continue
             data = dict(v)
-            data["result"] = _deserialize_result(data.get("result"))
+            data["result"] = _deserialize_result(
+                data.get("result"), schema_version=int(version)
+            )
             out[int(k)] = RunOutcome.from_dict(data)
         return out
 

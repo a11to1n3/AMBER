@@ -24,6 +24,10 @@
   cleanup terminates them.
 - **Release wheel install assert**: resolve the built wheel to an absolute path
   before ``pip install`` under a temporary ``cwd`` (relative ``dist/…`` failed).
+- **Checkpoint schema v2**: writers emit ``schema_version=2`` with
+  ``polars_ipc_b64`` frames; schema 1 (lossy records) still loads explicitly.
+  IPC encode failures raise ``CheckpointSerializationError`` instead of
+  silently storing ``repr(df)``.
 
 ## v0.5.0 - 2026-08-11
 
