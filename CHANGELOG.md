@@ -21,6 +21,14 @@
   records (`configuration`, `exception_type`, `message`, `traceback`). Broad
   `except Exception: pass` around `smac.optimize()` is removed; only the
   documented configuration-space-exhausted condition is treated as non-fatal.
+- **RunResults persistence (breaking layout)**: `results.save` / `RunResults.load`
+  now use a versioned `manifest.json` (schema v1) mapping logical keys to
+  opaque files under `frames/` and `json/`. User keys never enter filesystem
+  paths; checksums are verified on load; incomplete/corrupt saves fail
+  clearly. Preferred format is `format="parquet"` with optional
+  `allow_fallback=True`. Full contract certificates (violations, not just
+  counts) are persisted. Legacy 0.4.x directories still load with a migration
+  warning. Manifest commit is atomic (`manifest.json.tmp` → `os.replace`).
 
 ## v0.4.7 - 2026-08-05
 
