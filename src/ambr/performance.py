@@ -17,6 +17,7 @@ Numba is the recommended CPU accelerator on Mac (no CUDA). Import
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import os
@@ -463,9 +464,10 @@ class RunOutcome:
         )
 
 
-# Current writer schema (Arrow IPC frames). Schema 1 was lossy record JSON.
-_CHECKPOINT_SCHEMA = 2
-_LEGACY_CHECKPOINT_SCHEMAS = frozenset({1})
+# Current writer schema (Arrow IPC frames + workload fingerprint).
+# Schema 1 was lossy record JSON; schema 2 added IPC frames.
+_CHECKPOINT_SCHEMA = 3
+_LEGACY_CHECKPOINT_SCHEMAS = frozenset({1, 2})
 
 
 class CheckpointSerializationError(ValueError):
@@ -529,11 +531,11 @@ def _deserialize_frame(payload: Any, *, schema_version: int) -> Any:
                 f"Failed to decode polars_ipc_b64 checkpoint frame: {exc}"
             ) from exc
     if kind == "polars_records":
-        if schema_version not in _LEGACY_CHECKPOINT_SCHEMAS:
+        # Only schema 1 used lossy record JSON; schema 2+ is IPC-only.
+        if schema_version != 1:
             raise ValueError(
-                f"Frame kind 'polars_records' is only valid for legacy "
-                f"schema_version in {_LEGACY_CHECKPOINT_SCHEMAS!r}; "
-                f"got schema_version={schema_version}"
+                f"Frame kind 'polars_records' is only valid for "
+                f"schema_version=1; got schema_version={schema_version}"
             )
         # Schema 1: lossy record JSON (dtypes not preserved).
         import polars as pl
@@ -628,6 +630,37 @@ def _deserialize_result(
             data.get("agents"), schema_version=schema_version
         ),
     }
+
+
+def _qualified_model_name(model_class: Type) -> str:
+    return f"{model_class.__module__}.{model_class.__qualname__}"
+
+
+def _stable_json(obj: Any) -> str:
+    return json.dumps(obj, sort_keys=True, default=str, separators=(",", ":"))
+
+
+def _workload_fingerprint(
+    model_class: Type, param_list: List[Dict[str, Any]]
+) -> str:
+    """Hash of model identity + full parameter list (order-sensitive)."""
+    payload = {
+        "model_class": _qualified_model_name(model_class),
+        "n": len(param_list),
+        "params": param_list,
+    }
+    return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
+
+
+def _params_match(saved: Any, requested: Dict[str, Any]) -> bool:
+    if not isinstance(saved, dict):
+        return False
+    return _stable_json(saved) == _stable_json(requested)
+
+
+def _is_cancelled_outcome(outcome: RunOutcome) -> bool:
+    """Never-run / fail_fast-cancelled slots must not block resume."""
+    return outcome.error_type == "Cancelled"
 
 
 def _run_single_simulation(
@@ -799,7 +832,10 @@ class ParallelRunner:
             checkpoint_path: Optional JSON path; completed outcomes are
                 written after each finish for crash-safe resume.
             resume: If True and ``checkpoint_path`` exists, skip indices
-                already present. Requires ``trust_checkpoint=True``.
+                already present **only when** the checkpoint workload
+                fingerprint and per-entry params match this run. Requires
+                ``trust_checkpoint=True``. Cancelled/never-run slots are not
+                treated as finished (they remain pending).
             trust_checkpoint: Explicit opt-in to read a checkpoint file.
                 Checkpoints are JSON (not pickle); still only load files you
                 control.
@@ -819,18 +855,47 @@ class ParallelRunner:
         if max_in_flight is not None:
             in_flight_cap = min(self.n_workers, int(max_in_flight))
         ckpt = Path(checkpoint_path) if checkpoint_path else None
+        workload_fp = _workload_fingerprint(self.model_class, param_list)
+        model_name = _qualified_model_name(self.model_class)
 
         if resume:
             if not trust_checkpoint:
                 raise ValueError(
                     "resume=True requires trust_checkpoint=True. "
                     "Only resume from checkpoint files you control "
-                    "(JSON schema v1; pickle is not used)."
+                    "(JSON schema; pickle is not used)."
                 )
             if ckpt is not None and ckpt.is_file():
-                for idx, outcome in self._load_checkpoint(ckpt).items():
-                    if 0 <= idx < total:
-                        outcomes[idx] = outcome
+                meta, loaded = self._load_checkpoint(ckpt)
+                saved_fp = meta.get("workload_fingerprint")
+                if saved_fp is not None and saved_fp != workload_fp:
+                    raise ValueError(
+                        "Checkpoint workload fingerprint mismatch: the saved "
+                        "run is for a different model and/or parameter list. "
+                        f"checkpoint={saved_fp!r} requested={workload_fp!r}. "
+                        "Use a matching param_list/model_class or a new checkpoint."
+                    )
+                saved_model = meta.get("model_class")
+                if saved_model is not None and saved_model != model_name:
+                    raise ValueError(
+                        f"Checkpoint model_class mismatch: "
+                        f"checkpoint={saved_model!r} requested={model_name!r}"
+                    )
+                for idx, outcome in loaded.items():
+                    if not (0 <= idx < total):
+                        continue
+                    # Cancelled / never-run slots stay pending for resume.
+                    if _is_cancelled_outcome(outcome):
+                        continue
+                    if not _params_match(outcome.params, param_list[idx]):
+                        raise ValueError(
+                            f"Checkpoint entry {idx} params do not match this "
+                            f"run (saved={outcome.params!r}, "
+                            f"requested={param_list[idx]!r})"
+                        )
+                    # Legacy checkpoints without a fingerprint still require
+                    # per-index param equality (checked above).
+                    outcomes[idx] = outcome
 
         pending_indices = [i for i, o in enumerate(outcomes) if o is None]
         stop_submitting = False
@@ -876,7 +941,13 @@ class ParallelRunner:
                     end="",
                 )
             if ckpt is not None:
-                self._save_checkpoint(ckpt, outcomes)
+                self._save_checkpoint(
+                    ckpt,
+                    outcomes,
+                    model_class=self.model_class,
+                    param_list=param_list,
+                    workload_fingerprint=workload_fp,
+                )
             if outcome.status != "success" and fail_fast:
                 stop_submitting = True
 
@@ -1049,7 +1120,13 @@ class ParallelRunner:
                 )
 
         if ckpt is not None:
-            self._save_checkpoint(ckpt, outcomes)
+            self._save_checkpoint(
+                ckpt,
+                outcomes,
+                model_class=self.model_class,
+                param_list=param_list,
+                workload_fingerprint=workload_fp,
+            )
 
         return [o for o in outcomes if o is not None]
 
@@ -1066,17 +1143,28 @@ class ParallelRunner:
 
     @staticmethod
     def _save_checkpoint(
-        path: Path, outcomes: List[Optional[RunOutcome]]
+        path: Path,
+        outcomes: List[Optional[RunOutcome]],
+        *,
+        model_class: Type,
+        param_list: List[Dict[str, Any]],
+        workload_fingerprint: str,
     ) -> None:
         """Write a JSON checkpoint (never pickle — see SECURITY.md).
 
         Uses a random exclusive temp name (not a predictable ``*.tmp`` path)
         so a pre-planted symlink cannot redirect the write outside the
         destination directory.
+
+        Never-run ``Cancelled`` outcomes are **omitted** so a later resume
+        treats those indices as pending work.
         """
         payload_outcomes: Dict[str, Any] = {}
         for i, o in enumerate(outcomes):
             if o is None:
+                continue
+            if _is_cancelled_outcome(o):
+                # Leave pending for resume — do not mark as finished work.
                 continue
             d = o.to_dict()
             d["result"] = _serialize_result(o.result)
@@ -1084,14 +1172,23 @@ class ParallelRunner:
         payload = {
             "schema_version": _CHECKPOINT_SCHEMA,
             "format": "ambr.ParallelRunner.checkpoint+json",
+            "workload_fingerprint": workload_fingerprint,
+            "model_class": _qualified_model_name(model_class),
+            "n_params": len(param_list),
             "outcomes": payload_outcomes,
         }
         text = (json.dumps(payload, indent=2, default=str) + "\n").encode("utf-8")
         _atomic_write_bytes(Path(path), text)
 
     @staticmethod
-    def _load_checkpoint(path: Path) -> Dict[int, RunOutcome]:
-        """Load a JSON checkpoint. Raises on unknown / unsafe formats."""
+    def _load_checkpoint(
+        path: Path,
+    ) -> Tuple[Dict[str, Any], Dict[int, RunOutcome]]:
+        """Load a JSON checkpoint. Raises on unknown / unsafe formats.
+
+        Returns ``(metadata, outcomes_by_index)``. Cancelled entries are not
+        restored (callers treat those indices as pending).
+        """
         try:
             raw_text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
@@ -1130,8 +1227,17 @@ class ParallelRunner:
             data["result"] = _deserialize_result(
                 data.get("result"), schema_version=int(version)
             )
-            out[int(k)] = RunOutcome.from_dict(data)
-        return out
+            outcome = RunOutcome.from_dict(data)
+            if _is_cancelled_outcome(outcome):
+                continue
+            out[int(k)] = outcome
+        meta = {
+            "schema_version": version,
+            "workload_fingerprint": payload.get("workload_fingerprint"),
+            "model_class": payload.get("model_class"),
+            "n_params": payload.get("n_params"),
+        }
+        return meta, out
 
 
 # =============================================================================

@@ -483,6 +483,79 @@ class TestParallelRunner:
         with pytest.raises(ValueError, match="JSON|pickle"):
             ParallelRunner._load_checkpoint(ckpt)
 
+    def test_resume_rejects_different_workload(self, tmp_path):
+        """Resume must not silently return results for different params."""
+        runner = ParallelRunner(MockModel, n_workers=1)
+        ckpt = tmp_path / "wl.json"
+        with patch("builtins.print"):
+            runner.run(
+                [{"steps": 1, "param": 1, "show_progress": False}],
+                show_progress=False,
+                checkpoint_path=ckpt,
+            )
+        with patch("builtins.print"):
+            with pytest.raises(ValueError, match="fingerprint|params|mismatch"):
+                runner.run(
+                    [{"steps": 1, "param": 999, "show_progress": False}],
+                    show_progress=False,
+                    checkpoint_path=ckpt,
+                    resume=True,
+                    trust_checkpoint=True,
+                )
+
+    def test_cancelled_slots_remain_pending_on_resume(self, tmp_path):
+        """fail_fast Cancelled indices must re-run on resume, not stay finished."""
+        runner = ParallelRunner(BoomModel, n_workers=1)
+        ckpt = tmp_path / "cancel.json"
+        params = [
+            {"steps": 1, "show_progress": False, "tag": 0},
+            {"steps": 1, "show_progress": False, "tag": 1},
+            {"steps": 1, "show_progress": False, "tag": 2},
+        ]
+        with patch("builtins.print"):
+            first = runner.run(
+                params,
+                show_progress=False,
+                fail_fast=True,
+                max_in_flight=1,
+                checkpoint_path=ckpt,
+            )
+        assert first[0].status == "failed"
+        # Later slots cancelled in-memory but must not be in checkpoint
+        text = ckpt.read_text(encoding="utf-8")
+        assert "Cancelled" not in text
+        payload = json.loads(text)
+        assert "1" not in payload["outcomes"]
+        assert "2" not in payload["outcomes"]
+
+        # Resume with a successful model for remaining work
+        runner2 = ParallelRunner(MockModel, n_workers=1)
+        # Workload fingerprint includes model_class — different model must fail
+        with pytest.raises(ValueError, match="fingerprint|model_class"):
+            runner2.run(
+                params,
+                show_progress=False,
+                checkpoint_path=ckpt,
+                resume=True,
+                trust_checkpoint=True,
+            )
+
+        # Same model: cancelled indices are pending and re-executed (still Boom)
+        with patch("builtins.print"):
+            second = runner.run(
+                params,
+                show_progress=False,
+                fail_fast=True,
+                max_in_flight=1,
+                checkpoint_path=ckpt,
+                resume=True,
+                trust_checkpoint=True,
+            )
+        # Index 0 was already failed in checkpoint — restored without re-run;
+        # 1 and 2 were pending (omitted Cancelled) so they execute again.
+        assert second[0].status == "failed"
+        assert second[0].error_type == "RuntimeError"
+
     def test_parallel_runner_hard_timeout_wall_clock(self):
         """timeout must terminate the worker, not wait for it to finish."""
         runner = ParallelRunner(SlowModel, n_workers=1)
@@ -662,8 +735,10 @@ class TestParallelRunner:
                 checkpoint_path=ckpt,
             )
         payload = json.loads(ckpt.read_text(encoding="utf-8"))
-        assert payload["schema_version"] == 2
-        # Frames use IPC kind under schema 2
+        assert payload["schema_version"] == 3
+        assert "workload_fingerprint" in payload
+        assert payload["model_class"].endswith("MockModel")
+        # Frames use IPC kind under schema 2+
         model = payload["outcomes"]["0"]["result"]["model"]
         if model is not None:
             assert model.get("_kind") == "polars_ipc_b64"
@@ -700,7 +775,7 @@ class TestParallelRunner:
             },
         }
         ckpt.write_text(json.dumps(legacy), encoding="utf-8")
-        loaded = ParallelRunner._load_checkpoint(ckpt)
+        _meta, loaded = ParallelRunner._load_checkpoint(ckpt)
         assert 0 in loaded
         assert loaded[0].status == "success"
         assert isinstance(loaded[0].result["model"], pl.DataFrame)
