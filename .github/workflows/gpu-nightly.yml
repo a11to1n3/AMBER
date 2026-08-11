@@ -1,9 +1,8 @@
-# GPU claim verification — runs when CUDA is available on the runner.
+# GPU claim verification — requires a real CUDA runner.
 #
-# Default GitHub-hosted runners have no NVIDIA GPU: the job soft-skips
-# (exit 0) so the workflow stays green. Wire a self-hosted runner with
-# labels [self-hosted, gpu] (or set repository variable GPU_RUNNER) for
-# real nightly checks. Locally on a CUDA host:
+# Missing CUDA is NOT VERIFIED (exit 1), never soft-green. Configure
+# repository variable GPU_RUNNER to self-hosted label(s) with NVIDIA + CuPy.
+# Locally:
 #   python scripts/run_gpu_claims.py --quick
 
 name: GPU claims (nightly / manual)
@@ -17,57 +16,128 @@ on:
     paths:
       - "src/ambr/gpu*.py"
       - "src/ambr/device_columns.py"
+      - "src/ambr/execution.py"
       - "scripts/run_gpu_claims.py"
       - ".github/workflows/gpu-nightly.yml"
       - "tests/test_gpu_backend.py"
       - "tests/test_gpu_ensemble.py"
 
+permissions:
+  contents: read
+
 jobs:
   gpu-claims:
     name: GPU claim smoke
-    # Prefer a self-hosted GPU runner when the repo defines GPU_RUNNER
-    # (e.g. "self-hosted"); otherwise use ubuntu-latest and soft-skip.
+    # Prefer a self-hosted CUDA runner. Falling back to ubuntu-latest without
+    # a GPU fails as NOT VERIFIED (never soft-skip green).
     runs-on: ${{ vars.GPU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
-      - name: Detect CUDA
+      - name: Require real CUDA (NOT VERIFIED if missing)
         id: cuda
         shell: bash
         run: |
-          if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
-            echo "has_cuda=true" >> "$GITHUB_OUTPUT"
-            nvidia-smi -L
-          else
-            echo "has_cuda=false" >> "$GITHUB_OUTPUT"
-            echo "No NVIDIA GPU on this runner — soft-skip (see scripts/run_gpu_claims.py)."
+          set -euo pipefail
+          mkdir -p gpu-evidence
+          {
+            echo "runner_name=${RUNNER_NAME:-unknown}"
+            echo "runner_os=${RUNNER_OS:-unknown}"
+            echo "gpu_runner_var=${GPU_RUNNER_VAR:-<unset>}"
+            echo "ambr_commit=${GITHUB_SHA}"
+            date -u +"timestamp_utc=%Y-%m-%dT%H:%M:%SZ"
+          } | tee gpu-evidence/runner.txt
+
+          if ! command -v nvidia-smi >/dev/null 2>&1; then
+            echo "NOT_VERIFIED" | tee gpu-evidence/status.txt
+            echo "::error::GPU nightly NOT VERIFIED: nvidia-smi not found. Set repository variable GPU_RUNNER to a self-hosted NVIDIA runner (never soft-green)."
+            exit 1
           fi
+          if ! nvidia-smi -L >/dev/null 2>&1; then
+            echo "NOT_VERIFIED" | tee gpu-evidence/status.txt
+            echo "::error::GPU nightly NOT VERIFIED: nvidia-smi -L failed."
+            exit 1
+          fi
+          nvidia-smi -L | tee gpu-evidence/nvidia-smi-L.txt
+          nvidia-smi | tee gpu-evidence/nvidia-smi.txt
+          echo "VERIFIED_HARDWARE" | tee gpu-evidence/status.txt
+        env:
+          GPU_RUNNER_VAR: ${{ vars.GPU_RUNNER }}
 
       - name: Install package + CuPy
-        if: steps.cuda.outputs.has_cuda == 'true'
         shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -e ".[dev,perf]"
-          # Prefer a widely available wheel; adjust on the self-hosted image if needed.
-          pip install "cupy-cuda12x" || pip install "cupy-cuda11x" || pip install "cupy"
+          if ! python -m pip install "cupy-cuda12x" \
+            && ! python -m pip install "cupy-cuda11x" \
+            && ! python -m pip install "cupy"; then
+            echo "NOT_VERIFIED" | tee gpu-evidence/status.txt
+            echo "::error::GPU nightly NOT VERIFIED: could not install CuPy."
+            exit 1
+          fi
+          python -c "import ambr as am; assert am.GPU_AVAILABLE, 'CuPy installed but GPU_AVAILABLE is False'"
 
-      - name: Run GPU claim script (quick)
-        if: steps.cuda.outputs.has_cuda == 'true'
+      - name: Collect hardware evidence
         shell: bash
         run: |
-          python -c "import ambr as am; assert am.GPU_AVAILABLE, 'CuPy installed but GPU_AVAILABLE is False'"
-          python scripts/run_gpu_claims.py --quick
+          set -euo pipefail
+          python - <<'PY' | tee gpu-evidence/environment.json
+          import json, os, platform, subprocess, sys
+          def sh(cmd):
+              try:
+                  return subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
+              except Exception as exc:
+                  return f"<failed: {exc}>"
+          nvidia = sh(["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader"])
+          try:
+              import cupy
+              cupy_ver = getattr(cupy, "__version__", str(cupy))
+          except Exception as exc:
+              cupy_ver = f"<import failed: {exc}>"
+          try:
+              import ambr
+              ambr_ver = getattr(ambr, "__version__", "?")
+              gpu_avail = bool(getattr(ambr, "GPU_AVAILABLE", False))
+          except Exception as exc:
+              ambr_ver = f"<import failed: {exc}>"
+              gpu_avail = False
+          print(json.dumps({
+              "gpu_model": nvidia.strip(),
+              "cupy": cupy_ver,
+              "python": sys.version,
+              "platform": platform.platform(),
+              "ambr_version": ambr_ver,
+              "ambr_commit": os.environ.get("GITHUB_SHA", ""),
+              "gpu_available": gpu_avail,
+          }, indent=2))
+          PY
 
-      - name: Soft-skip notice
-        if: steps.cuda.outputs.has_cuda != 'true'
+      - name: Run GPU claim script + GPU pytest
+        shell: bash
         run: |
-          echo "GPU CI soft-skipped (no CUDA). Configure a self-hosted GPU runner or a self-hosted CUDA schedule."
-          echo "Manual: python scripts/run_gpu_claims.py"
+          set -euo pipefail
+          {
+            echo "=== run_gpu_claims.py --quick ==="
+            python scripts/run_gpu_claims.py --quick
+            echo "=== pytest GPU modules ==="
+            python -m pytest tests/test_gpu_backend.py tests/test_gpu_ensemble.py \
+              -o addopts='-ra --strict-markers' --tb=short -q
+          } 2>&1 | tee gpu-evidence/test-output.txt
+
+      - name: Upload GPU hardware evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gpu-nightly-evidence
+          path: gpu-evidence/**
+          if-no-files-found: warn
+          retention-days: 30

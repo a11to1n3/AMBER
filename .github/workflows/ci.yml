@@ -54,15 +54,11 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        # Supported: 3.10–3.13 (hard-gated). 3.14 is not yet a declared
+        # support target — do not advertise until release wheel matrix covers it.
         python-version: ["3.10", "3.11", "3.12", "3.13"]
-        include:
-          # Track 3.14 early; allow soft failure until wheels are ubiquitous.
-          - os: ubuntu-latest
-            python-version: "3.14"
-            experimental: true
     env:
       MPLBACKEND: Agg
-    continue-on-error: ${{ matrix.experimental == true }}
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 

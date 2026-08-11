@@ -436,7 +436,7 @@ pip install 'ambr[advanced]'   # SMAC optimization
 
 ```python
 import ambr as am
-print(am.__version__)   # 0.4.7+
+print(am.__version__)   # 0.5.0+
 am.print_status()
 ```
 
