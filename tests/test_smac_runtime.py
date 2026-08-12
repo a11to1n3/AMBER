@@ -93,14 +93,109 @@ def test_smac_on_error_raise_after_smac_swallows():
 @pytest.mark.unit
 def test_search_exhausted_exact_type_only():
     class MyConfigurationExhaustedError(Exception):
+        """Must NOT match — only substring overlap with SMAC type name."""
+
+        pass
+
+    class ConfigurationDataExhaustedError(Exception):
         pass
 
     assert not _is_search_exhausted(MyConfigurationExhaustedError())
+    assert not _is_search_exhausted(
+        ConfigurationDataExhaustedError("objective data missing")
+    )
     try:
         from smac.main.exceptions import ConfigurationSpaceExhaustedException
     except ImportError:
         pytest.skip("SMAC exception type unavailable")
     assert _is_search_exhausted(ConfigurationSpaceExhaustedException())
+    # isinstance path
+    assert _is_search_exhausted(ConfigurationSpaceExhaustedException("x"))
+
+
+@pytest.mark.unit
+def test_error_side_channel_structured_fallback():
+    """When pickle.dumps(exc) fails, structured payload still raises."""
+    from ambr.optimization import (
+        RemoteObjectiveError,
+        _load_error_side_channel,
+        _write_first_error,
+    )
+
+    class _UnpicklableError(Exception):
+        def __getstate__(self):
+            raise TypeError("deliberately unpickleable")
+
+    path = Path(tempfile.mkdtemp(prefix="amber_err_")) / "first_error.pkl"
+    try:
+        _write_first_error(str(path), _UnpicklableError("objective data missing"))
+        assert path.is_file()
+        loaded = _load_error_side_channel(str(path))
+        assert isinstance(loaded, RemoteObjectiveError)
+        assert "objective data missing" in str(loaded)
+        assert "UnpicklableError" in str(loaded) or loaded.exception_type.endswith(
+            "UnpicklableError"
+        )
+    finally:
+        import shutil
+
+        shutil.rmtree(path.parent, ignore_errors=True)
+
+
+@pytest.mark.unit
+def test_on_error_raise_unpickleable_exception_still_raises():
+    """Local exception classes often fail pickle.dumps — must not return inf."""
+    from ambr.optimization import RemoteObjectiveError
+
+    class LocalUnpickleableError(Exception):
+        def __getstate__(self):
+            raise TypeError("deliberately unpickleable")
+
+    def boom(m):
+        raise LocalUnpickleableError("cannot cross process cleanly")
+
+    fixed = {"n_agents": 8, "steps": 1, "show_progress": False}
+    opt = SMACOptimizer(
+        _TinyModel,
+        _space(),
+        boom,
+        n_trials=2,
+        seed=0,
+        strategy="random",
+        fixed_params=fixed,
+        on_error="raise",
+    )
+    with pytest.raises((LocalUnpickleableError, RemoteObjectiveError)) as ei:
+        opt.optimize()
+    # Structured wrapper when pickle of the exception fails in the worker.
+    assert "cannot cross process cleanly" in str(ei.value)
+
+
+@pytest.mark.unit
+def test_bayesian_optimization_fixed_float_parameter():
+    """Scalar floats must be fixed_params, not degenerate float HPs."""
+    from ambr import ParameterSpace, bayesian_optimization
+
+    space = ParameterSpace(
+        {
+            "n_agents": [8, 12],
+            "fixed_float": 0.05,  # must not crash ConfigSpace
+            "steps": 2,
+            "seed": 0,
+            "show_progress": False,
+        }
+    )
+    results = bayesian_optimization(
+        _TinyModel,
+        space,
+        metric="s",
+        n_calls=3,
+        iterations=1,
+        minimize=True,
+        random_state=0,
+    )
+    assert results
+    assert results[0]["parameters"].get("fixed_float") == 0.05
 
 
 @pytest.mark.unit

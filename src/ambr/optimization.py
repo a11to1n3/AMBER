@@ -54,15 +54,48 @@ def _check_smac():
         )
 
 
+class RemoteObjectiveError(RuntimeError):
+    """Raised in the parent when a worker objective failed under ``on_error='raise'``.
+
+    Used when the original exception cannot be pickled across processes, or
+    when only a structured type/message/traceback payload is available.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        exception_type: str = "Exception",
+        traceback_text: str = "",
+    ):
+        super().__init__(message)
+        self.exception_type = exception_type
+        self.traceback_text = traceback_text or ""
+
+
 def _is_search_exhausted(exc: BaseException) -> bool:
     """Return True only for SMAC configuration-space exhaustion.
 
-    Matches SMAC's ``ConfigurationSpaceExhaustedException`` by **exact type
-    name** (message is often empty). Message markers remain a secondary
-    fallback for older SMAC builds that re-raise plain ``Exception`` with a
-    known exhaustion phrase. Arbitrary exception types whose names merely
-    contain both "configuration" and "exhausted" are **not** accepted.
+    Prefer ``isinstance`` against
+    ``smac.main.exceptions.ConfigurationSpaceExhaustedException``. Compatibility
+    fallbacks:
+
+    * exact type **name** ``ConfigurationSpaceExhaustedException`` (message
+      often empty across SMAC versions);
+    * known exhaustion **message** markers on any exception.
+
+    Types whose names merely contain the substrings "configuration" and
+    "exhausted" (e.g. ``ConfigurationDataExhaustedError``) are **not**
+    treated as search exhaustion.
     """
+    try:
+        from smac.main.exceptions import ConfigurationSpaceExhaustedException
+
+        if isinstance(exc, ConfigurationSpaceExhaustedException):
+            return True
+    except Exception:
+        pass
+    # Exact class name only — not a substring match on arbitrary types.
     if type(exc).__name__ == "ConfigurationSpaceExhaustedException":
         return True
     msg = str(exc).lower()
@@ -92,8 +125,25 @@ def _coerce_fidelity_budget(budget: Any, fidelity_type: Optional[str]) -> Any:
     return float(budget)
 
 
+def _error_payload(exc: BaseException) -> Dict[str, Any]:
+    """JSON-serializable fallback when the exception itself cannot be pickled."""
+    return {
+        "kind": "amber_remote_objective_error",
+        "exception_type": type(exc).__name__,
+        "message": str(exc),
+        "traceback": "".join(
+            _traceback_mod.format_exception(type(exc), exc, exc.__traceback__)
+        ),
+    }
+
+
 def _write_first_error(path: Optional[str], exc: BaseException) -> None:
-    """Best-effort side-channel for the first target failure (multi-process)."""
+    """Side-channel for the first target failure (multi-process safe).
+
+    Tries ``pickle.dumps(exc)`` first. If that fails (local exception class,
+    unpickleable attribute, …), write a structured JSON payload so the parent
+    can still raise under ``on_error='raise'`` instead of returning ``inf``.
+    """
     if not path:
         return
     try:
@@ -101,9 +151,54 @@ def _write_first_error(path: Optional[str], exc: BaseException) -> None:
         if p.exists():
             return
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(pickle.dumps(exc))
+        try:
+            p.write_bytes(pickle.dumps(exc, protocol=pickle.HIGHEST_PROTOCOL))
+            return
+        except Exception:
+            # Structured fallback — always raiseable in the parent.
+            p.write_text(
+                json.dumps(_error_payload(exc), default=str),
+                encoding="utf-8",
+            )
     except Exception:
         pass
+
+
+def _load_error_side_channel(path: Optional[str]) -> Optional[BaseException]:
+    """Load a pickled exception or structured remote-objective payload."""
+    if not path:
+        return None
+    p = Path(path)
+    if not p.is_file():
+        return None
+    raw = p.read_bytes()
+    # Prefer pickle (original exception type when serializable).
+    try:
+        obj = pickle.loads(raw)
+        if isinstance(obj, BaseException):
+            return obj
+    except Exception:
+        pass
+    # Structured JSON fallback.
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return RemoteObjectiveError(
+            "Remote SMAC objective failed (unreadable error side-channel)"
+        )
+    if not isinstance(payload, dict):
+        return RemoteObjectiveError(
+            "Remote SMAC objective failed (invalid error side-channel)"
+        )
+    et = str(payload.get("exception_type") or "Exception")
+    msg = str(payload.get("message") or "")
+    tb = str(payload.get("traceback") or "")
+    text = f"{et}: {msg}" if msg else et
+    if tb:
+        text = f"{text}\n\nRemote traceback:\n{tb}"
+    return RemoteObjectiveError(
+        text, exception_type=et, traceback_text=tb
+    )
 
 
 def _append_failure_jsonl(path: Optional[str], record: Dict[str, Any]) -> None:
@@ -403,10 +498,8 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
     from ConfigSpace import (
         ConfigurationSpace,
         UniformIntegerHyperparameter,
-        UniformFloatHyperparameter,
         CategoricalHyperparameter,
     )
-    import tempfile
     from smac import HyperparameterOptimizationFacade, Scenario
     from smac.acquisition.function import EI
     from smac.model.random_forest import RandomForest
@@ -442,9 +535,16 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
             # bool is a subclass of int — keep before the int branch.
             fixed_params[name] = value
         elif isinstance(value, (int, float, str)):
-            # Fixed scalar (incl. float) — not optimised. Degenerate float
-            # hyperparameters (lower==upper) crash SMAC/ConfigSpace.
-            fixed_params[name] = value
+            # Fixed scalar (incl. float) — not optimised. Equal-bound
+            # UniformFloatHyperparameter is rejected by ConfigSpace.
+            fixed_params[name] = (
+                float(value) if isinstance(value, float) else value
+            )
+        elif isinstance(value, (np.floating, np.integer)):
+            # NumPy scalars — still fixed constants, not search dimensions.
+            fixed_params[name] = (
+                float(value) if isinstance(value, np.floating) else int(value)
+            )
         else:
             raise TypeError(
                 f"Unsupported parameter type for {name!r}: {type(value)}"
@@ -530,16 +630,19 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
         try:
             smac.optimize()
         except Exception as exc:
-            if on_error == "raise" and Path(error_path).is_file():
-                raise pickle.loads(Path(error_path).read_bytes()) from exc
+            first = _load_error_side_channel(error_path)
+            if on_error == "raise" and first is not None:
+                raise first from exc
             # Only the documented "search exhausted" condition is non-fatal —
             # proceed with whatever SMAC evaluated so far (runhistory still has
             # the partial results). All other exceptions re-raise.
             if not _is_search_exhausted(exc):
                 raise
 
-        if on_error == "raise" and Path(error_path).is_file():
-            raise pickle.loads(Path(error_path).read_bytes())
+        if on_error == "raise":
+            first = _load_error_side_channel(error_path)
+            if first is not None:
+                raise first
 
         # --- collect history ---------------------------------------------------
         results: List[Dict[str, Any]] = []
@@ -912,16 +1015,7 @@ class SMACOptimizer:
             )
 
     def _load_first_error(self) -> Optional[BaseException]:
-        path = getattr(self, "_error_path", None)
-        if not path:
-            return None
-        p = Path(path)
-        if not p.is_file():
-            return None
-        try:
-            return pickle.loads(p.read_bytes())
-        except Exception:
-            return None
+        return _load_error_side_channel(getattr(self, "_error_path", None))
 
     def _load_failures_from_disk(self) -> List[Dict[str, Any]]:
         path = getattr(self, "_failures_path", None)

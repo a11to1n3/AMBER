@@ -27,8 +27,12 @@
   (bound methods captured non-picklable SMAC generators).
 - **SMAC temp dirs**: remove ``amber_smac_*`` / ``amber_bayes_*`` after
   ``optimize()`` unless ``AMBER_SMAC_KEEP_OUTPUT=1``.
-- **Search exhaustion**: match SMAC ``ConfigurationSpaceExhaustedException`` by
-  exact type name (not arbitrary "configuration"+"exhausted" names).
+- **Search exhaustion**: ``isinstance`` /
+  ``ConfigurationSpaceExhaustedException`` only (plus message markers); no
+  broad name-substring matching.
+- **on_error='raise' side-channel**: if the exception is not picklable, persist
+  a structured type/message/traceback payload and re-raise
+  ``RemoteObjectiveError`` (never silent ``best_cost=inf``).
 - **Docs / examples**: SMAC calibration scripts match the optimizer return
   shape; environment API uses ``grid_position`` / ``node_id``; ParallelRunner
   docs are spawn-safe (Sphinx fence fixed); OOP README/quickstart use
