@@ -6,7 +6,11 @@ Base Classes
    :undoc-members:
    :show-inheritance:
 
-The base module provides abstract base classes for creating custom models and agents.
+Low-level primitives used by AMBER internals. **For application models and
+agents, subclass** :class:`~ambr.model.Model` **and**
+:class:`~ambr.agent.Agent` **instead** (see :doc:`model` and :doc:`agent`).
+``BaseModel`` / ``BaseAgent`` do not implement the full simulation lifecycle
+or DataFrame-backed attribute sync.
 
 BaseModel
 ---------
@@ -15,23 +19,20 @@ BaseModel
    :members:
    :undoc-members:
 
-Abstract base class for all models. Inherit from this to create custom model types:
+Abstract foundation for models (parameters, RNG, bare DataFrames). User
+models should inherit from :class:`~ambr.model.Model`, which adds
+``run()``, reporters, environments, and agent management:
 
 .. code-block:: python
 
-   from ambr.base import BaseModel
+   import ambr as am
 
-   class CustomModel(BaseModel):
-       def __init__(self, parameters):
-           super().__init__(parameters)
-           # Custom initialization
-
+   class CustomModel(am.Model):
        def setup(self):
-           # Model setup logic
-           pass
+           self.add_agents(self.p.get("n_agents", 10), wealth=1)
 
        def step(self):
-           # Step logic
+           # Vectorized or OOP step logic
            pass
 
 BaseAgent
@@ -41,29 +42,29 @@ BaseAgent
    :members:
    :undoc-members:
 
-Abstract base class for all agents. Inherit from this to create custom agent types:
+Minimal agent shell (``model``, ``id``, ``p`` only). **Do not subclass this
+for normal simulations.** Creation always calls ``agent.setup()``, which
+``BaseAgent`` does not define, and attribute assignment is not synced to
+the population table. Use :class:`~ambr.agent.Agent`:
 
 .. code-block:: python
 
-   from ambr.base import BaseAgent
+   import ambr as am
 
-   class CustomAgent(BaseAgent):
-       def __init__(self, model, agent_id):
-           super().__init__(model, agent_id)
-           # Custom initialization
+   class CustomAgent(am.Agent):
+       def setup(self):
            self.custom_property = "value"
 
        def step(self):
-           # Agent behavior logic
            pass
 
-       def custom_method(self):
-           # Custom agent methods
-           return self.custom_property
+**What BaseAgent provides (only):**
 
-**Key Features:**
-
-* Automatic parameter access via ``self.p``
+* Parameter access via ``self.p``
 * Model reference via ``self.model``
-* Unique ID management
-* Integration with data collection system
+* Unique ``id``
+
+**What you get only from** :class:`~ambr.agent.Agent` **:**
+
+* Default ``setup()`` hook (safe no-op; override as needed)
+* Attribute writes queued into the columnar population DataFrame

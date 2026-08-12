@@ -7,5 +7,5 @@
 # Matplotlib is optional (ambr[viz]); do not re-add seaborn / scikit-optimize.
 
 polars>=0.20.0
-numpy>=1.20.0
+numpy>=1.21.0
 networkx>=2.5

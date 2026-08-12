@@ -7,7 +7,7 @@ Requirements
 AMBER requires Python 3.10 or higher and the following dependencies:
 
 * **polars** >= 0.20.0 - High-performance DataFrame library
-* **numpy** >= 1.20.0 - Numerical computing
+* **numpy** >= 1.21.0 - Numerical computing
 * **networkx** >= 2.5 - Graph and network analysis
 
 Optional plotting (``ambr[viz]``) pulls in **matplotlib** >= 3.3.0.
