@@ -115,6 +115,21 @@ class RetryThenSlowModel(am.Model):
             _Path(marker).write_text("retry completed\n", encoding="utf-8")
         self.record_model("param_val", self.p.get("param", 0))
 
+
+class Cancelled(Exception):
+    """User exception whose *name* collides with fail_fast cancellation."""
+
+
+class RaisesCancelled(am.Model):
+    """Raises an exception class named Cancelled — a real failure."""
+
+    def setup(self):
+        pass
+
+    def step(self):
+        raise Cancelled("user failure named Cancelled")
+
+
 @pytest.fixture
 def sample_positions():
     """Create sample 2D positions for testing."""
@@ -525,12 +540,16 @@ class TestParallelRunner:
                 checkpoint_path=ckpt,
             )
         assert first[0].status == "failed"
+        assert first[1].status == "cancelled"
+        assert first[2].status == "cancelled"
         # Later slots cancelled in-memory but must not be in checkpoint
         text = ckpt.read_text(encoding="utf-8")
-        assert "Cancelled" not in text
         payload = json.loads(text)
         assert "1" not in payload["outcomes"]
         assert "2" not in payload["outcomes"]
+        # Cancelled is a status, not an error_type string baked into the file
+        for entry in payload["outcomes"].values():
+            assert entry.get("status") != "cancelled"
 
         # Resume with a successful model for remaining work
         runner2 = ParallelRunner(MockModel, n_workers=1)
@@ -556,7 +575,7 @@ class TestParallelRunner:
                 trust_checkpoint=True,
             )
         # Index 0 was already failed in checkpoint — restored without re-run;
-        # 1 and 2 were pending (omitted Cancelled) so they execute again.
+        # 1 and 2 were pending (omitted cancelled) so they execute again.
         assert second[0].status == "failed"
         assert second[0].error_type == "RuntimeError"
 
@@ -600,8 +619,55 @@ class TestParallelRunner:
             )
         assert len(outcomes) == 3
         assert outcomes[0].status == "failed"
-        # Remaining slots marked cancelled / failed, not silent success
-        assert all(o.status in {"failed", "timeout"} for o in outcomes)
+        # Remaining slots marked cancelled, not silent success
+        assert all(o.status in {"failed", "timeout", "cancelled"} for o in outcomes)
+        assert any(o.status == "cancelled" for o in outcomes)
+
+    def test_child_conn_close_failure_still_registers_worker(self):
+        """child_conn.close() raising after start must not orphan the worker.
+
+        Regression: ``active.append`` used to run *after* ``child_conn.close()``.
+        If close raised, the process was live but missing from the cleanup
+        registry, so ``finally`` / fail_fast could not terminate it.
+
+        Inject via instance override on the Pipe child end (not Connection.close
+        class patch): Windows returns ``PipeConnection``, so class-patching
+        ``Connection.close`` never fires there. Restore the spawn context's
+        ``Pipe`` afterward — get_context("spawn") is cached process-wide.
+        """
+        import multiprocessing as mp
+
+        state = {"n": 0}
+        # ParallelRunner uses get_context("spawn"); that context object is cached.
+        ctx = mp.get_context("spawn")
+        real_pipe = ctx.Pipe
+
+        def flaky_pipe(duplex=True):
+            parent, child = real_pipe(duplex)
+            def boom_close():
+                state["n"] += 1
+                raise OSError("simulated child_conn.close failure")
+            # Instance attribute — works for Connection and PipeConnection.
+            child.close = boom_close
+            return parent, child
+
+        runner = ParallelRunner(MockModel, n_workers=1)
+        ctx.Pipe = flaky_pipe
+        try:
+            with patch("builtins.print"):
+                with pytest.raises(OSError, match="simulated child_conn.close"):
+                    runner.run(
+                        [{"steps": 1, "show_progress": False}],
+                        show_progress=False,
+                    )
+        finally:
+            ctx.Pipe = real_pipe
+        # Exception escaped run(), but finally must still terminate the worker
+        # that was registered before the failed close.
+        assert state["n"] >= 1
+        time.sleep(0.3)
+        live = [p for p in mp.active_children() if p.is_alive()]
+        assert live == [], f"orphaned workers after close failure: {live}"
 
     def test_retry_cannot_escape_fail_fast_cleanup(self, tmp_path):
         """A mid-scan retry must be in the live registry for fail_fast kill.
@@ -749,9 +815,9 @@ class TestParallelRunner:
         assert restored.schema["ts"] == df.schema["ts"]
         assert restored["flag"].to_list() == [1, 2]
 
-    def test_checkpoint_writer_emits_schema_2(self, tmp_path):
+    def test_checkpoint_writer_emits_schema_4(self, tmp_path):
         runner = ParallelRunner(MockModel, n_workers=1)
-        ckpt = tmp_path / "s2.json"
+        ckpt = tmp_path / "s4.json"
         with patch("builtins.print"):
             runner.run(
                 [{"steps": 1, "show_progress": False}],
@@ -759,10 +825,12 @@ class TestParallelRunner:
                 checkpoint_path=ckpt,
             )
         payload = json.loads(ckpt.read_text(encoding="utf-8"))
-        assert payload["schema_version"] == 3
+        assert payload["schema_version"] == 4
         assert "workload_fingerprint" in payload
         assert payload["model_class"].endswith("MockModel")
-        # Frames use IPC kind under schema 2+
+        assert "model_source_digest" in payload
+        assert payload["model_source_digest"]  # source available for test models
+        # Frames use IPC kind under schema 2+ (never under schema 1)
         model = payload["outcomes"]["0"]["result"]["model"]
         if model is not None:
             assert model.get("_kind") == "polars_ipc_b64"
@@ -817,6 +885,32 @@ class TestParallelRunner:
         with pytest.raises(CheckpointSerializationError, match="Arrow IPC|Object"):
             _serialize_frame(df)
 
+    def test_schema_1_accepts_historical_ipc_kind(self):
+        """Historical schema-1 writers emitted IPC; those checkpoints must load."""
+        import base64
+
+        import polars as pl
+        from ambr.performance import _deserialize_frame, _serialize_frame
+
+        df = pl.DataFrame({"x": [1, 2], "y": [3, 4]})
+        payload = _serialize_frame(df)
+        assert payload["_kind"] == "polars_ipc_b64"
+        # Same payload under schema_version=1 (historical hybrid)
+        restored = _deserialize_frame(payload, schema_version=1)
+        assert restored["x"].to_list() == [1, 2]
+        assert restored["y"].to_list() == [3, 4]
+        # Corrupt data still fails clearly
+        with pytest.raises(ValueError, match="polars_ipc_b64|decode"):
+            _deserialize_frame(
+                {
+                    "_kind": "polars_ipc_b64",
+                    "columns": ["x"],
+                    "dtypes": ["Int64"],
+                    "data": base64.b64encode(b"not-ipc").decode("ascii"),
+                },
+                schema_version=1,
+            )
+
     def test_schema_2_rejects_lossy_records_kind(self):
         from ambr.performance import _deserialize_frame
 
@@ -825,6 +919,229 @@ class TestParallelRunner:
                 {"_kind": "polars_records", "columns": ["x"], "rows": [{"x": 1}]},
                 schema_version=2,
             )
+
+    def test_schema_3_resume_uses_legacy_fingerprint(self, tmp_path):
+        """Schema-3 fingerprints (model+params only) must still resume under v4."""
+        import polars as pl
+        from ambr.performance import (
+            ParallelRunner,
+            _serialize_frame,
+            _workload_fingerprint_v3,
+        )
+
+        params = [{"steps": 1, "show_progress": False, "tag": "a"}]
+        fp_v3 = _workload_fingerprint_v3(MockModel, params)
+        success = {
+            "index": 0,
+            "status": "success",
+            "params": params[0],
+            "result": {
+                "params": params[0],
+                "info": {"steps": 1},
+                "model": _serialize_frame(pl.DataFrame({"t": [1], "v": [42]})),
+                "agents": None,
+            },
+            "error_type": None,
+            "error_message": None,
+            "traceback": None,
+            "attempts": 1,
+        }
+        ckpt = tmp_path / "schema3.json"
+        payload = {
+            "schema_version": 3,
+            "format": "ambr.ParallelRunner.checkpoint+json",
+            "workload_fingerprint": fp_v3,
+            "model_class": f"{MockModel.__module__}.{MockModel.__qualname__}",
+            "n_params": 1,
+            "outcomes": {"0": success},
+        }
+        ckpt.write_text(json.dumps(payload), encoding="utf-8")
+
+        runner = ParallelRunner(MockModel, n_workers=1)
+        with patch("builtins.print"):
+            outcomes = runner.run(
+                params,
+                show_progress=False,
+                checkpoint_path=ckpt,
+                resume=True,
+                trust_checkpoint=True,
+            )
+        assert outcomes[0].status == "success"
+        assert outcomes[0].result["model"]["v"].to_list() == [42]
+        # Next save rewrites as schema 4
+        rewritten = json.loads(ckpt.read_text(encoding="utf-8"))
+        assert rewritten["schema_version"] == 4
+
+    def test_identity_less_resume_rejected_by_default(self, tmp_path):
+        """Schema-1/2 without model_class/fingerprint must not silently restore."""
+        from ambr.performance import ParallelRunner
+
+        class ModelB(am.Model):
+            def setup(self):
+                pass
+
+            def step(self):
+                self.record_model("who", "B")
+
+        params = [{"steps": 1, "show_progress": False}]
+        ckpt = tmp_path / "legacy12.json"
+        legacy = {
+            "schema_version": 1,
+            "format": "ambr.ParallelRunner.checkpoint+json",
+            "outcomes": {
+                "0": {
+                    "index": 0,
+                    "status": "success",
+                    "params": params[0],
+                    "result": {
+                        "params": params[0],
+                        "info": {"steps": 1},
+                        "model": {
+                            "_kind": "polars_records",
+                            "columns": ["who"],
+                            "rows": [{"who": "A"}],
+                        },
+                        "agents": None,
+                    },
+                    "error_type": None,
+                    "error_message": None,
+                    "traceback": None,
+                    "attempts": 1,
+                }
+            },
+        }
+        ckpt.write_text(json.dumps(legacy), encoding="utf-8")
+
+        # Load still works for inspection/export
+        _meta, loaded = ParallelRunner._load_checkpoint(ckpt)
+        assert loaded[0].result["model"]["who"].to_list() == ["A"]
+
+        runner_b = ParallelRunner(ModelB, n_workers=1)
+        with patch("builtins.print"):
+            with pytest.raises(ValueError, match="workload identity|unverified"):
+                runner_b.run(
+                    params,
+                    show_progress=False,
+                    checkpoint_path=ckpt,
+                    resume=True,
+                    trust_checkpoint=True,
+                )
+
+        # Explicit unsafe opt-in restores by params only (documented migration).
+        with patch("builtins.print"):
+            outcomes = runner_b.run(
+                params,
+                show_progress=False,
+                checkpoint_path=ckpt,
+                resume=True,
+                trust_checkpoint=True,
+                allow_unverified_checkpoint=True,
+            )
+        assert outcomes[0].status == "success"
+        assert outcomes[0].result["model"]["who"].to_list() == ["A"]
+
+    def test_user_cancelled_exception_is_persisted(self, tmp_path):
+        """A model raising class Cancelled must not be treated as never-run."""
+        runner = ParallelRunner(RaisesCancelled, n_workers=1)
+        ckpt = tmp_path / "user_cancel.json"
+        with patch("builtins.print"):
+            first = runner.run(
+                [{"steps": 1, "show_progress": False}],
+                show_progress=False,
+                checkpoint_path=ckpt,
+            )
+        assert first[0].status == "failed"
+        assert first[0].error_type == "Cancelled"
+        payload = json.loads(ckpt.read_text(encoding="utf-8"))
+        assert "0" in payload["outcomes"]
+        assert payload["outcomes"]["0"]["status"] == "failed"
+        assert payload["outcomes"]["0"]["error_type"] == "Cancelled"
+
+        # Resume must restore the failed outcome, not re-run it away
+        with patch("builtins.print"):
+            second = runner.run(
+                [{"steps": 1, "show_progress": False}],
+                show_progress=False,
+                checkpoint_path=ckpt,
+                resume=True,
+                trust_checkpoint=True,
+            )
+        assert second[0].status == "failed"
+        assert second[0].error_type == "Cancelled"
+
+    def test_fingerprint_includes_model_source_digest(self):
+        """Different class bodies produce different source digests / fingerprints.
+
+        Reproduces the review case where two model definitions share a name
+        string: we force identical ``model_class`` in the identity payload and
+        still require the digest to diverge.
+        """
+        from ambr.performance import (
+            _model_source_digest,
+            _workload_fingerprint,
+            _workload_identity,
+        )
+
+        params = [{"steps": 1, "show_progress": False}]
+
+        class BodyA(am.Model):
+            def setup(self):
+                pass
+
+            def step(self):
+                self.record_model("v", 1)
+
+        class BodyB(am.Model):
+            def setup(self):
+                pass
+
+            def step(self):
+                self.record_model("v", 999)
+
+        d1 = _model_source_digest(BodyA)
+        d2 = _model_source_digest(BodyB)
+        assert d1 and d2 and d1 != d2
+
+        id_a = _workload_identity(BodyA, params)
+        id_b = _workload_identity(BodyB, params)
+        # Simulate same qualified name (review reproduction) — digests still differ.
+        id_a["model_class"] = "pkg.SameModel"
+        id_b["model_class"] = "pkg.SameModel"
+        assert id_a["model_source_digest"] != id_b["model_source_digest"]
+        from ambr.performance import _stable_json
+        import hashlib
+
+        fp_a = hashlib.sha256(_stable_json(id_a).encode("utf-8")).hexdigest()
+        fp_b = hashlib.sha256(_stable_json(id_b).encode("utf-8")).hexdigest()
+        assert fp_a != fp_b
+        # Sanity: normal fingerprints (with real class names) also differ.
+        assert _workload_fingerprint(BodyA, params) != _workload_fingerprint(
+            BodyB, params
+        )
+
+    def test_workload_revision_invalidates_resume(self, tmp_path):
+        """Caller-supplied workload_revision is part of the fingerprint."""
+        from ambr.performance import _workload_fingerprint
+
+        params = [{"steps": 1, "show_progress": False}]
+        a = _workload_fingerprint(MockModel, params, workload_revision="v1")
+        b = _workload_fingerprint(MockModel, params, workload_revision="v2")
+        assert a != b
+
+        ckpt = tmp_path / "rev.json"
+        runner_v1 = ParallelRunner(MockModel, n_workers=1, workload_revision="v1")
+        with patch("builtins.print"):
+            runner_v1.run(params, show_progress=False, checkpoint_path=ckpt)
+        runner_v2 = ParallelRunner(MockModel, n_workers=1, workload_revision="v2")
+        with patch("builtins.print"):
+            with pytest.raises(ValueError, match="fingerprint"):
+                runner_v2.run(
+                    params,
+                    show_progress=False,
+                    checkpoint_path=ckpt,
+                    resume=True,
+                    trust_checkpoint=True,
+                )
 
     def test_checkpoint_symlink_tmp_cannot_escape(self, tmp_path):
         """Predictable *.json.tmp plant must not redirect checkpoint writes."""

@@ -414,7 +414,7 @@ def fast_random_walk_step(
 # =============================================================================
 
 
-RunStatus = Literal["success", "failed", "timeout"]
+RunStatus = Literal["success", "failed", "timeout", "cancelled"]
 
 
 @dataclass
@@ -426,12 +426,13 @@ class RunOutcome:
     index:
         Position in the original ``param_list``.
     status:
-        ``success``, ``failed``, or ``timeout``.
+        ``success``, ``failed``, ``timeout``, or ``cancelled`` (never-run /
+        fail_fast-cancelled slots — not user exception names).
     params:
         Parameter dict used for this run.
     result:
         On success: mapping with ``model`` / ``agents`` / ``info`` (and
-        ``params``). ``None`` on failure/timeout.
+        ``params``). ``None`` on failure/timeout/cancel.
     error_type / error_message / traceback:
         Populated when ``status`` is not ``success``.
     attempts:
@@ -452,9 +453,18 @@ class RunOutcome:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RunOutcome":
+        status = data["status"]
+        # Legacy checkpoints wrote fail_fast slots as status=failed +
+        # error_type="Cancelled". Normalize on load.
+        if (
+            status == "failed"
+            and data.get("error_type") == "Cancelled"
+            and not data.get("traceback")
+        ):
+            status = "cancelled"
         return cls(
             index=int(data["index"]),
-            status=data["status"],  # type: ignore[arg-type]
+            status=status,  # type: ignore[arg-type]
             params=dict(data.get("params") or {}),
             result=data.get("result"),
             error_type=data.get("error_type"),
@@ -464,10 +474,13 @@ class RunOutcome:
         )
 
 
-# Current writer schema (Arrow IPC frames + workload fingerprint).
-# Schema 1 was lossy record JSON; schema 2 added IPC frames.
-_CHECKPOINT_SCHEMA = 3
-_LEGACY_CHECKPOINT_SCHEMAS = frozenset({1, 2})
+# Current writer schema (Arrow IPC frames + revision-aware fingerprint).
+# Schema 1: lossy record JSON frames.
+# Schema 2: Arrow IPC frames (polars_ipc_b64).
+# Schema 3: + workload fingerprint / model_class metadata.
+# Schema 4: + code-revision fields in fingerprint; cancelled status.
+_CHECKPOINT_SCHEMA = 4
+_LEGACY_CHECKPOINT_SCHEMAS = frozenset({1, 2, 3})
 
 
 class CheckpointSerializationError(ValueError):
@@ -477,10 +490,14 @@ class CheckpointSerializationError(ValueError):
 def _serialize_frame(df: Any) -> Optional[Dict[str, Any]]:
     """Type-preserving encoding of a Polars frame (Arrow IPC + base64).
 
-    Record-based JSON (schema 1) loses dtypes. Schema 2 uses Arrow IPC so
+    Record-based JSON (schema 1) loses dtypes. Schema 2+ uses Arrow IPC so
     UInt8 / Datetime / Categorical round-trip. Encoding failures raise
     :class:`CheckpointSerializationError` instead of silently storing
     ``repr(df)`` (which reloads as a string and destroys frame structure).
+
+    Writers always emit this under :data:`_CHECKPOINT_SCHEMA` (not schema 1)
+    so legacy schema-1-only readers reject the file instead of treating the
+    payload dict as a DataFrame.
     """
     if df is None:
         return None
@@ -520,7 +537,10 @@ def _deserialize_frame(payload: Any, *, schema_version: int) -> Any:
         )
     kind = payload.get("_kind")
     if kind == "polars_ipc_b64":
-        # Preferred for schema 2; also accepted if found under legacy files.
+        # Canonical representation for schema 2+. Early schema-1 writers
+        # (historical intermediate commits) also emitted IPC while still
+        # labeling schema_version=1 — accept that hybrid so real checkpoints
+        # remain readable. Schema 1 may also use polars_records (lossy).
         import polars as pl
 
         try:
@@ -640,16 +660,132 @@ def _stable_json(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, default=str, separators=(",", ":"))
 
 
-def _workload_fingerprint(
-    model_class: Type, param_list: List[Dict[str, Any]]
+def _ambr_version_string() -> Optional[str]:
+    try:
+        from . import __version__ as ver
+
+        return str(ver) if ver is not None else None
+    except Exception:
+        return None
+
+
+def _ambr_revision_string() -> Optional[str]:
+    """AMBER package revision (env / build stamp — never CWD git)."""
+    try:
+        from .provenance import _ambr_git_revision
+
+        return _ambr_git_revision()
+    except Exception:
+        return None
+
+
+def _application_revision_string() -> Optional[str]:
+    """Caller application revision (``AMBER_APP_REVISION``)."""
+    try:
+        from .provenance import _application_revision
+
+        return _application_revision()
+    except Exception:
+        return None
+
+
+def _model_source_digest(model_class: Type) -> Optional[str]:
+    """SHA-256 of the model class source, when available.
+
+    Interactive / C-extension classes without source return ``None``; callers
+    should then supply :paramref:`ParallelRunner.workload_revision` or set
+    ``AMBER_APP_REVISION`` / ``AMBER_WORKLOAD_REVISION`` so code edits still
+    invalidate fingerprints.
+    """
+    try:
+        import inspect
+
+        src = inspect.getsource(model_class)
+    except (OSError, TypeError):
+        return None
+    return hashlib.sha256(src.encode("utf-8")).hexdigest()
+
+
+def _resolve_workload_revision(
+    explicit: Optional[str] = None,
+) -> Optional[str]:
+    """Explicit arg > ``AMBER_WORKLOAD_REVISION`` > ``AMBER_APP_REVISION``."""
+    if explicit is not None:
+        text = str(explicit).strip()
+        return text or None
+    env = os.environ.get("AMBER_WORKLOAD_REVISION")
+    if env is not None and env.strip():
+        return env.strip()
+    return _application_revision_string()
+
+
+def _workload_identity(
+    model_class: Type,
+    param_list: List[Dict[str, Any]],
+    *,
+    workload_revision: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Fields that identify a ParallelRunner workload for resume safety."""
+    return {
+        "model_class": _qualified_model_name(model_class),
+        "n": len(param_list),
+        "params": param_list,
+        "ambr_version": _ambr_version_string(),
+        "ambr_revision": _ambr_revision_string(),
+        "model_source_digest": _model_source_digest(model_class),
+        "workload_revision": _resolve_workload_revision(workload_revision),
+    }
+
+
+def _workload_fingerprint_v3(
+    model_class: Type,
+    param_list: List[Dict[str, Any]],
 ) -> str:
-    """Hash of model identity + full parameter list (order-sensitive)."""
+    """Schema-3 fingerprint: model class name + param list only.
+
+    Schema 3 writers hashed only these fields. Resume must recompute with the
+    same algorithm or every otherwise-identical schema-3 checkpoint fails.
+    """
     payload = {
         "model_class": _qualified_model_name(model_class),
         "n": len(param_list),
         "params": param_list,
     }
     return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
+
+
+def _workload_fingerprint(
+    model_class: Type,
+    param_list: List[Dict[str, Any]],
+    *,
+    workload_revision: Optional[str] = None,
+) -> str:
+    """Hash of model identity, params, and code-revision inputs (schema 4+).
+
+    Includes AMBER version/revision, a source digest of ``model_class`` when
+    available, and an optional caller-supplied workload revision so editing
+    model code or the library between a partial run and resume invalidates
+    the fingerprint instead of mixing old outcomes with new code.
+    """
+    payload = _workload_identity(
+        model_class, param_list, workload_revision=workload_revision
+    )
+    return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
+
+
+def _expected_workload_fingerprint(
+    model_class: Type,
+    param_list: List[Dict[str, Any]],
+    *,
+    schema_version: int,
+    workload_revision: Optional[str] = None,
+) -> str:
+    """Fingerprint the current run would have under ``schema_version``."""
+    if int(schema_version) <= 3:
+        return _workload_fingerprint_v3(model_class, param_list)
+    return _workload_fingerprint(
+        model_class, param_list, workload_revision=workload_revision
+    )
 
 
 def _params_match(saved: Any, requested: Dict[str, Any]) -> bool:
@@ -659,8 +795,12 @@ def _params_match(saved: Any, requested: Dict[str, Any]) -> bool:
 
 
 def _is_cancelled_outcome(outcome: RunOutcome) -> bool:
-    """Never-run / fail_fast-cancelled slots must not block resume."""
-    return outcome.error_type == "Cancelled"
+    """Never-run / fail_fast-cancelled slots must not block resume.
+
+    Identified by ``status == "cancelled"`` only — never by matching a user
+    exception class named ``Cancelled`` (those are real ``failed`` outcomes).
+    """
+    return outcome.status == "cancelled"
 
 
 def _run_single_simulation(
@@ -787,7 +927,13 @@ class ParallelRunner:
                 print(o.index, o.result["info"]["run_uuid"])
     """
 
-    def __init__(self, model_class: Type, n_workers: int = None):
+    def __init__(
+        self,
+        model_class: Type,
+        n_workers: int = None,
+        *,
+        workload_revision: Optional[str] = None,
+    ):
         """
         Initialize parallel runner.
 
@@ -795,12 +941,19 @@ class ParallelRunner:
             model_class: Model class to instantiate
             n_workers: Maximum concurrent worker processes (default: CPU count).
                 Must be ``>= 1``.
+            workload_revision: Optional caller-supplied code revision string
+                folded into the checkpoint workload fingerprint. Use when the
+                model class source is unavailable (interactive defs) or when
+                application code outside ``model_class`` affects results.
+                Falls back to ``AMBER_WORKLOAD_REVISION`` then
+                ``AMBER_APP_REVISION`` when omitted.
         """
         self.model_class = model_class
         n = n_workers if n_workers is not None else mp.cpu_count()
         if int(n) < 1:
             raise ValueError(f"n_workers must be >= 1, got {n_workers!r}")
         self.n_workers = int(n)
+        self.workload_revision = workload_revision
 
     def run(
         self,
@@ -814,6 +967,7 @@ class ParallelRunner:
         checkpoint_path: Optional[Union[str, Path]] = None,
         resume: bool = False,
         trust_checkpoint: bool = False,
+        allow_unverified_checkpoint: bool = False,
     ) -> List[RunOutcome]:
         """Run simulations in parallel; return :class:`RunOutcome` in input order.
 
@@ -839,6 +993,13 @@ class ParallelRunner:
             trust_checkpoint: Explicit opt-in to read a checkpoint file.
                 Checkpoints are JSON (not pickle); still only load files you
                 control.
+            allow_unverified_checkpoint: Opt into resuming schema-1/2
+                checkpoints that lack workload identity (no fingerprint /
+                ``model_class``). Default ``False`` — those files are still
+                loadable via :meth:`_load_checkpoint` for inspection/export,
+                but resume refuses them to prevent silent cross-model
+                restore when only per-index params match. Prefer re-running
+                once to rewrite as schema 4.
 
         Returns:
             ``len(param_list)`` outcomes in the same order as ``param_list``.
@@ -855,8 +1016,17 @@ class ParallelRunner:
         if max_in_flight is not None:
             in_flight_cap = min(self.n_workers, int(max_in_flight))
         ckpt = Path(checkpoint_path) if checkpoint_path else None
-        workload_fp = _workload_fingerprint(self.model_class, param_list)
-        model_name = _qualified_model_name(self.model_class)
+        workload_fp = _workload_fingerprint(
+            self.model_class,
+            param_list,
+            workload_revision=self.workload_revision,
+        )
+        identity = _workload_identity(
+            self.model_class,
+            param_list,
+            workload_revision=self.workload_revision,
+        )
+        model_name = identity["model_class"]
 
         if resume:
             if not trust_checkpoint:
@@ -867,20 +1037,56 @@ class ParallelRunner:
                 )
             if ckpt is not None and ckpt.is_file():
                 meta, loaded = self._load_checkpoint(ckpt)
+                schema_ver = int(meta.get("schema_version") or 0)
                 saved_fp = meta.get("workload_fingerprint")
-                if saved_fp is not None and saved_fp != workload_fp:
-                    raise ValueError(
-                        "Checkpoint workload fingerprint mismatch: the saved "
-                        "run is for a different model and/or parameter list. "
-                        f"checkpoint={saved_fp!r} requested={workload_fp!r}. "
-                        "Use a matching param_list/model_class or a new checkpoint."
-                    )
                 saved_model = meta.get("model_class")
-                if saved_model is not None and saved_model != model_name:
+                # Schema 1/2 had no workload identity. Resume must not accept
+                # params-only matches (cross-model restore). Load remains ok.
+                identity_less = (
+                    schema_ver < 3
+                    or (saved_fp is None and saved_model is None)
+                )
+                if identity_less and not allow_unverified_checkpoint:
                     raise ValueError(
-                        f"Checkpoint model_class mismatch: "
-                        f"checkpoint={saved_model!r} requested={model_name!r}"
+                        "Checkpoint lacks workload identity "
+                        f"(schema_version={schema_ver}, no fingerprint/"
+                        "model_class). Resume is refused by default to prevent "
+                        "silent cross-model restore. Re-run without resume to "
+                        "rewrite as schema 4, inspect via _load_checkpoint, or "
+                        "pass allow_unverified_checkpoint=True for an unsafe "
+                        "params-only migration."
                     )
+                if not identity_less:
+                    expected_fp = _expected_workload_fingerprint(
+                        self.model_class,
+                        param_list,
+                        schema_version=schema_ver,
+                        workload_revision=self.workload_revision,
+                    )
+                    if saved_fp is None:
+                        raise ValueError(
+                            "Checkpoint schema "
+                            f"{schema_ver} is missing workload_fingerprint. "
+                            "Refuse resume; re-run without resume or use a "
+                            "complete checkpoint."
+                        )
+                    if saved_fp != expected_fp:
+                        raise ValueError(
+                            "Checkpoint workload fingerprint mismatch: the "
+                            "saved run is for a different model, parameter "
+                            "list, and/or code revision. "
+                            f"checkpoint={saved_fp!r} "
+                            f"requested={expected_fp!r} "
+                            f"(validated as schema {schema_ver}). "
+                            "Use a matching param_list/model_class or a new "
+                            "checkpoint."
+                        )
+                    if saved_model is not None and saved_model != model_name:
+                        raise ValueError(
+                            f"Checkpoint model_class mismatch: "
+                            f"checkpoint={saved_model!r} "
+                            f"requested={model_name!r}"
+                        )
                 for idx, outcome in loaded.items():
                     if not (0 <= idx < total):
                         continue
@@ -893,8 +1099,6 @@ class ParallelRunner:
                             f"run (saved={outcome.params!r}, "
                             f"requested={param_list[idx]!r})"
                         )
-                    # Legacy checkpoints without a fingerprint still require
-                    # per-index param equality (checked above).
                     outcomes[idx] = outcome
 
         pending_indices = [i for i, o in enumerate(outcomes) if o is None]
@@ -911,15 +1115,22 @@ class ParallelRunner:
         idx_iter = iter(pending_indices)
 
         def _start_worker(i: int, attempt: int) -> None:
-            """Spawn one worker and register it in ``active`` immediately."""
+            """Spawn one worker and register it in ``active`` immediately.
+
+            Registration happens **before** parent-side ``child_conn.close()``
+            so a close failure cannot leave a live process outside the
+            fail_fast / ``finally`` cleanup set.
+            """
             parent_conn, child_conn = ctx.Pipe(duplex=False)
             proc = ctx.Process(
                 target=_process_worker,
                 args=(child_conn, i, param_list[i], self.model_class),
             )
             proc.start()
-            child_conn.close()  # only child writes
+            # Register before any post-start cleanup on the parent pipe end so
+            # fail_fast / finally always see this process even if close raises.
             active.append((proc, parent_conn, i, attempt, time.monotonic()))
+            child_conn.close()  # only child writes
 
         def _submit_one() -> bool:
             if stop_submitting:
@@ -947,8 +1158,10 @@ class ParallelRunner:
                     model_class=self.model_class,
                     param_list=param_list,
                     workload_fingerprint=workload_fp,
+                    workload_identity=identity,
                 )
-            if outcome.status != "success" and fail_fast:
+            # Cancelled slots are not execution failures for fail_fast.
+            if outcome.status not in ("success", "cancelled") and fail_fast:
                 stop_submitting = True
 
         def _kill_all_live(*, cancel_unfinished: bool) -> None:
@@ -962,9 +1175,9 @@ class ParallelRunner:
                 if cancel_unfinished and outcomes[i] is None:
                     outcomes[i] = RunOutcome(
                         index=i,
-                        status="failed",
+                        status="cancelled",
                         params=dict(param_list[i]),
-                        error_type="Cancelled",
+                        error_type=None,
                         error_message="Cancelled (fail_fast)",
                         attempts=attempt,
                     )
@@ -1113,9 +1326,9 @@ class ParallelRunner:
             if o is None:
                 outcomes[i] = RunOutcome(
                     index=i,
-                    status="failed",
+                    status="cancelled",
                     params=dict(param_list[i]),
-                    error_type="Cancelled",
+                    error_type=None,
                     error_message="Not run (fail_fast or cancelled)",
                 )
 
@@ -1126,6 +1339,7 @@ class ParallelRunner:
                 model_class=self.model_class,
                 param_list=param_list,
                 workload_fingerprint=workload_fp,
+                workload_identity=identity,
             )
 
         return [o for o in outcomes if o is not None]
@@ -1149,6 +1363,7 @@ class ParallelRunner:
         model_class: Type,
         param_list: List[Dict[str, Any]],
         workload_fingerprint: str,
+        workload_identity: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Write a JSON checkpoint (never pickle — see SECURITY.md).
 
@@ -1156,9 +1371,14 @@ class ParallelRunner:
         so a pre-planted symlink cannot redirect the write outside the
         destination directory.
 
-        Never-run ``Cancelled`` outcomes are **omitted** so a later resume
-        treats those indices as pending work.
+        Never-run ``status=cancelled`` outcomes are **omitted** so a later
+        resume treats those indices as pending work. User failures whose
+        exception class is named ``Cancelled`` use ``status=failed`` and are
+        persisted normally.
         """
+        identity = workload_identity or _workload_identity(
+            model_class, param_list
+        )
         payload_outcomes: Dict[str, Any] = {}
         for i, o in enumerate(outcomes):
             if o is None:
@@ -1173,8 +1393,12 @@ class ParallelRunner:
             "schema_version": _CHECKPOINT_SCHEMA,
             "format": "ambr.ParallelRunner.checkpoint+json",
             "workload_fingerprint": workload_fingerprint,
-            "model_class": _qualified_model_name(model_class),
+            "model_class": identity["model_class"],
             "n_params": len(param_list),
+            "ambr_version": identity.get("ambr_version"),
+            "ambr_revision": identity.get("ambr_revision"),
+            "model_source_digest": identity.get("model_source_digest"),
+            "workload_revision": identity.get("workload_revision"),
             "outcomes": payload_outcomes,
         }
         text = (json.dumps(payload, indent=2, default=str) + "\n").encode("utf-8")
@@ -1236,6 +1460,10 @@ class ParallelRunner:
             "workload_fingerprint": payload.get("workload_fingerprint"),
             "model_class": payload.get("model_class"),
             "n_params": payload.get("n_params"),
+            "ambr_version": payload.get("ambr_version"),
+            "ambr_revision": payload.get("ambr_revision"),
+            "model_source_digest": payload.get("model_source_digest"),
+            "workload_revision": payload.get("workload_revision"),
         }
         return meta, out
 
