@@ -76,18 +76,20 @@ class RemoteObjectiveError(RuntimeError):
 def _is_search_exhausted(exc: BaseException) -> bool:
     """Return True only for SMAC configuration-space exhaustion.
 
-    Prefer ``isinstance`` against
-    ``smac.main.exceptions.ConfigurationSpaceExhaustedException``. Compatibility
-    fallbacks:
+    Matching rules (narrow — no substring matching on arbitrary type names):
 
-    * exact type **name** ``ConfigurationSpaceExhaustedException`` (message
-      often empty across SMAC versions);
-    * known exhaustion **message** markers on any exception.
+    1. ``isinstance(exc, smac.main.exceptions.ConfigurationSpaceExhaustedException)``
+       when SMAC is importable.
+    2. Compatibility: exact class name
+       ``type(exc).__name__ == "ConfigurationSpaceExhaustedException"``
+       (covers re-exports / empty-message instances).
+    3. Compatibility: plain ``Exception`` (or subclass that is *not* a custom
+       misnamed type) whose message contains a known SMAC exhaustion phrase.
 
-    Types whose names merely contain the substrings "configuration" and
-    "exhausted" (e.g. ``ConfigurationDataExhaustedError``) are **not**
-    treated as search exhaustion.
+    Explicitly **not** matched: e.g. ``ConfigurationDataExhaustedError`` —
+    names that merely contain both "configuration" and "exhausted".
     """
+    # 1) Canonical SMAC type
     try:
         from smac.main.exceptions import ConfigurationSpaceExhaustedException
 
@@ -95,11 +97,20 @@ def _is_search_exhausted(exc: BaseException) -> bool:
             return True
     except Exception:
         pass
-    # Exact class name only — not a substring match on arbitrary types.
+
+    # 2) Exact class name only (no "configuration"+"exhausted" substring pair)
     if type(exc).__name__ == "ConfigurationSpaceExhaustedException":
         return True
-    msg = str(exc).lower()
-    return any(marker in msg for marker in _SEARCH_EXHAUSTED_MARKERS)
+
+    # 3) Message markers — only for generic Exception base (not custom
+    #    domain errors that happen to mention "exhausted").
+    if type(exc) is Exception or type(exc).__name__ in (
+        "RuntimeError",
+        "StopIteration",
+    ):
+        msg = str(exc).lower()
+        return any(marker in msg for marker in _SEARCH_EXHAUSTED_MARKERS)
+    return False
 
 
 def _safe_exc_message(exc: BaseException) -> str:

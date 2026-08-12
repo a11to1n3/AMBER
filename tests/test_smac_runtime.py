@@ -205,9 +205,18 @@ def test_search_exhausted_exact_type_only():
     class ConfigurationDataExhaustedError(Exception):
         pass
 
+    # Broad name-substring matching must stay False (review reproduction).
     assert not _is_search_exhausted(MyConfigurationExhaustedError())
     assert not _is_search_exhausted(
         ConfigurationDataExhaustedError("objective data missing")
+    )
+    assert not _is_search_exhausted(
+        ConfigurationDataExhaustedError("configuration space exhausted")
+    )
+    # Message markers only for generic Exception / RuntimeError, not custom types
+    assert _is_search_exhausted(Exception("configuration space exhausted"))
+    assert not _is_search_exhausted(
+        ValueError("configuration space exhausted")  # not a SMAC type
     )
     try:
         from smac.main.exceptions import ConfigurationSpaceExhaustedException
