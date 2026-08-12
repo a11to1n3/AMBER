@@ -21,7 +21,12 @@
   ``add_edge`` / ``remove_edge``; missing ``node_id`` column no longer crashes
   (unplaced agent → empty/0); use ``as_node=True`` for graph-node ids.
 - **SMAC on_error='raise'**: re-raise target/objective exceptions after SMAC
-  returns (SMAC swallows crashes into CRASHED/inf trials).
+  returns (SMAC swallows crashes into CRASHED/inf trials); multi-process via
+  pickle side-channel under the run directory.
+- **SMACOptimizer ``n_workers>1``**: pickle-safe module-level trial target
+  (bound methods captured non-picklable SMAC generators).
+- **SMAC temp dirs**: remove ``amber_smac_*`` / ``amber_bayes_*`` after
+  ``optimize()`` unless ``AMBER_SMAC_KEEP_OUTPUT=1``.
 - **Search exhaustion**: match SMAC ``ConfigurationSpaceExhaustedException`` by
   exact type name (not arbitrary "configuration"+"exhausted" names).
 - **Docs / examples**: SMAC calibration scripts match the optimizer return

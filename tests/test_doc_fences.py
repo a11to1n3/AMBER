@@ -210,12 +210,9 @@ def _run_code(code: str, timeout: float = 90.0) -> None:
                 cwd=str(ROOT),
             )
         finally:
-            try:
-                for p in Path(tmpdir).iterdir():
-                    p.unlink()
-                Path(tmpdir).rmdir()
-            except OSError:
-                pass
+            import shutil
+
+            shutil.rmtree(tmpdir, ignore_errors=True)
     else:
         fd, path = tempfile.mkstemp(suffix=".py")
         try:
