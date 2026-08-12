@@ -1,5 +1,4 @@
 from typing import Type, Dict, Any, List, Callable, Optional, Literal
-from functools import partial
 from pathlib import Path
 import json
 import os
@@ -102,6 +101,27 @@ def _is_search_exhausted(exc: BaseException) -> bool:
     return any(marker in msg for marker in _SEARCH_EXHAUSTED_MARKERS)
 
 
+def _safe_exc_message(exc: BaseException) -> str:
+    """Best-effort message even when ``str(exc)`` / ``repr(exc)`` raise."""
+    try:
+        return str(exc)
+    except Exception:
+        pass
+    try:
+        return repr(exc)
+    except Exception:
+        return f"<unprintable {type(exc).__name__}>"
+
+
+def _safe_exc_traceback(exc: BaseException) -> str:
+    try:
+        return "".join(
+            _traceback_mod.format_exception(type(exc), exc, exc.__traceback__)
+        )
+    except Exception:
+        return ""
+
+
 def _failure_record(
     configuration: Dict[str, Any],
     exc: BaseException,
@@ -110,10 +130,8 @@ def _failure_record(
     return {
         "configuration": dict(configuration),
         "exception_type": type(exc).__name__,
-        "message": str(exc),
-        "traceback": "".join(
-            _traceback_mod.format_exception(type(exc), exc, exc.__traceback__)
-        ),
+        "message": _safe_exc_message(exc),
+        "traceback": _safe_exc_traceback(exc),
     }
 
 
@@ -130,10 +148,8 @@ def _error_payload(exc: BaseException) -> Dict[str, Any]:
     return {
         "kind": "amber_remote_objective_error",
         "exception_type": type(exc).__name__,
-        "message": str(exc),
-        "traceback": "".join(
-            _traceback_mod.format_exception(type(exc), exc, exc.__traceback__)
-        ),
+        "message": _safe_exc_message(exc),
+        "traceback": _safe_exc_traceback(exc),
     }
 
 
@@ -143,6 +159,7 @@ def _write_first_error(path: Optional[str], exc: BaseException) -> None:
     Tries ``pickle.dumps(exc)`` first. If that fails (local exception class,
     unpickleable attribute, …), write a structured JSON payload so the parent
     can still raise under ``on_error='raise'`` instead of returning ``inf``.
+    Even when ``str(exc)`` fails, a minimal JSON marker is written.
     """
     if not path:
         return
@@ -155,11 +172,30 @@ def _write_first_error(path: Optional[str], exc: BaseException) -> None:
             p.write_bytes(pickle.dumps(exc, protocol=pickle.HIGHEST_PROTOCOL))
             return
         except Exception:
-            # Structured fallback — always raiseable in the parent.
+            pass
+        try:
             p.write_text(
                 json.dumps(_error_payload(exc), default=str),
                 encoding="utf-8",
             )
+            return
+        except Exception:
+            pass
+        # Last resort — never leave the parent without a raise signal.
+        try:
+            p.write_text(
+                json.dumps(
+                    {
+                        "kind": "amber_remote_objective_error",
+                        "exception_type": type(exc).__name__,
+                        "message": "<unprintable exception>",
+                        "traceback": "",
+                    }
+                ),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -227,12 +263,7 @@ def _smac_trial_target(
     error_path: Optional[str] = None,
     failures_path: Optional[str] = None,
 ) -> float:
-    """Module-level SMAC target — pickle-safe for ``n_workers > 1``.
-
-    Must not close over a ``SMACOptimizer`` instance (the facade holds
-    non-picklable generators). Bound methods of the optimizer therefore cannot
-    be the target function under multi-process SMAC.
-    """
+    """Module-level SMAC target body (pickle-safe context, not the public sig)."""
     params = dict(fixed_params or {})
     params.update(dict(config))
     if budget is not None and fidelity_name is not None:
@@ -257,6 +288,91 @@ def _smac_trial_target(
         _append_failure_jsonl(failures_path, _failure_record(params, err))
         return _PENALTY_COST
     return float(value)
+
+
+class _SMACTrialEvaluator:
+    """Pickle-safe SMAC target with a clean ``(config, seed[, budget])`` signature.
+
+    ``functools.partial`` leaks keyword-only parameters into
+    ``inspect.signature``, which triggers SMAC's "argument X is not set"
+    warnings. This callable class exposes only the arguments SMAC actually
+    injects. SMAC also fingerprints ``target.__code__`` (not
+    ``target.__call__.__code__``), so we proxy that attribute.
+    """
+
+    __slots__ = (
+        "model_type",
+        "objective",
+        "fixed_params",
+        "fidelity_name",
+        "fidelity_type",
+        "on_error",
+        "error_path",
+        "failures_path",
+        "use_budget",
+    )
+
+    def __init__(
+        self,
+        *,
+        model_type: Type[Model],
+        objective: Callable[[Model], float],
+        fixed_params: Dict[str, Any],
+        fidelity_name: Optional[str],
+        fidelity_type: Optional[str],
+        on_error: str,
+        error_path: Optional[str],
+        failures_path: Optional[str],
+        use_budget: bool,
+    ):
+        self.model_type = model_type
+        self.objective = objective
+        self.fixed_params = fixed_params
+        self.fidelity_name = fidelity_name
+        self.fidelity_type = fidelity_type
+        self.on_error = on_error
+        self.error_path = error_path
+        self.failures_path = failures_path
+        self.use_budget = bool(use_budget)
+
+    @property
+    def __code__(self):
+        # SMAC TargetFunctionRunner.meta reads target.__code__.co_code
+        return type(self).__call__.__code__
+
+    def __call__(self, config, seed: int = 0, budget=None) -> float:
+        return _smac_trial_target(
+            config,
+            seed,
+            budget,
+            model_type=self.model_type,
+            objective=self.objective,
+            fixed_params=self.fixed_params,
+            fidelity_name=self.fidelity_name,
+            fidelity_type=self.fidelity_type,
+            on_error=self.on_error,
+            error_path=self.error_path,
+            failures_path=self.failures_path,
+        )
+
+
+class _SMACTrialEvaluatorSF(_SMACTrialEvaluator):
+    """Single-fidelity target: only ``(config, seed)`` — no budget warning."""
+
+    def __call__(self, config, seed: int = 0) -> float:  # type: ignore[override]
+        return _smac_trial_target(
+            config,
+            seed,
+            None,
+            model_type=self.model_type,
+            objective=self.objective,
+            fixed_params=self.fixed_params,
+            fidelity_name=self.fidelity_name,
+            fidelity_type=self.fidelity_type,
+            on_error=self.on_error,
+            error_path=self.error_path,
+            failures_path=self.failures_path,
+        )
 
 
 def _extract_metric_value(model_data: Any, metric: str) -> float:
@@ -898,24 +1014,23 @@ class SMACOptimizer:
                 "Supported: 'random_forest'."
             )
 
-        want_random = bool(use_random_search) or strategy == 'random'
+        want_random = bool(use_random_search) or strategy == "random"
         want_mf = bool(use_multi_fidelity)
+        # Validate strategy before allocating temp dirs / starting Dask.
+        if want_mf:
+            facade_kind = "mf"
+        elif want_random:
+            facade_kind = "random"
+        elif strategy == "algorithm_configuration":
+            facade_kind = "ac"
+        elif strategy == "bayesian":
+            facade_kind = "bayesian"
+        else:
+            raise ValueError(
+                f"Unknown strategy: {strategy!r}. "
+                "Supported: 'bayesian', 'random', 'algorithm_configuration'."
+            )
 
-        # Unique SMAC run directory — never reuse cwd smac3_output/ (stale
-        # runhistory would silently skip re-evaluation under a new objective).
-        self._output_dir = tempfile.mkdtemp(prefix="amber_smac_")
-        self._error_path = str(Path(self._output_dir) / "first_error.pkl")
-        self._failures_path = (
-            str(Path(self._output_dir) / "failures.jsonl")
-            if on_error == "penalize"
-            else None
-        )
-        scenario_kwargs: Dict[str, Any] = {
-            "n_trials": n_trials,
-            "n_workers": n_workers,
-            "seed": seed,
-            "output_directory": self._output_dir,
-        }
         if want_mf:
             if not param_space.fidelity_parameters:
                 raise ValueError(
@@ -923,7 +1038,6 @@ class SMACOptimizer:
                     "added with is_fidelity=True (numeric bounds become "
                     "min_budget/max_budget for Successive Halving)."
                 )
-            # First fidelity parameter defines the budget axis.
             fname, fparam = next(iter(param_space.fidelity_parameters.items()))
             if fparam.get("bounds") is None:
                 raise ValueError(
@@ -934,85 +1048,107 @@ class SMACOptimizer:
                 raise ValueError(
                     f"Fidelity parameter {fname!r} bounds must satisfy min < max"
                 )
-            # Integer fidelity types use integer budgets end-to-end.
             if fparam.get("type") == "int":
                 lo, hi = int(lo), int(hi)
-            scenario_kwargs["min_budget"] = lo
-            scenario_kwargs["max_budget"] = hi
             self._fidelity_name = fname
             self._fidelity_type = fparam.get("type")
-
-        self.scenario = Scenario(self.configspace, **scenario_kwargs)
-
-        # Pickle-safe target for multi-process SMAC (n_workers > 1). A bound
-        # method would pickle ``self`` including the facade's generators.
-        target = partial(
-            _smac_trial_target,
-            model_type=self.model_type,
-            objective=self.objective,
-            fixed_params=self.fixed_params,
-            fidelity_name=self._fidelity_name,
-            fidelity_type=self._fidelity_type,
-            on_error=self.on_error,
-            error_path=self._error_path,
-            failures_path=self._failures_path,
-        )
-
-        # Initialize appropriate SMAC facade
-        if want_mf:
-            self.smac = MultiFidelityFacade(
-                scenario=self.scenario,
-                target_function=target,
-                acquisition_function=acq_func,
-                model=model,
-                initial_design=initial_design_cls(
-                    scenario=self.scenario,
-                    n_configs=min(10, n_trials)
-                ),
-                intensifier=SuccessiveHalving(
-                    scenario=self.scenario,
-                    incumbent_selection="highest_budget",
-                    max_incumbents=1
-                )
-            )
-        elif want_random:
-            self.smac = RandomFacade(
-                scenario=self.scenario,
-                target_function=target,
-            )
-        elif strategy == 'algorithm_configuration':
-            self.smac = AlgorithmConfigurationFacade(
-                scenario=self.scenario,
-                target_function=target,
-                acquisition_function=acq_func,
-                model=model,
-                initial_design=initial_design_cls(
-                    scenario=self.scenario,
-                    n_configs=min(10, n_trials)
-                )
-            )
-        elif strategy == 'bayesian':
-            self.smac = HyperparameterOptimizationFacade(
-                scenario=self.scenario,
-                target_function=target,
-                acquisition_function=acq_func,
-                model=model,
-                initial_design=initial_design_cls(
-                    scenario=self.scenario,
-                    n_configs=min(10, n_trials)
-                ),
-                acquisition_maximizer=LocalAndSortedRandomSearch(
-                    configspace=self.configspace,
-                    acquisition_function=acq_func,
-                    challengers=1000,
-                    local_search_iterations=10
-                )
-            )
+            mf_budgets = (lo, hi)
         else:
-            raise ValueError(
-                f"Unknown strategy: {strategy!r}. "
-                "Supported: 'bayesian', 'random', 'algorithm_configuration'."
+            mf_budgets = None
+
+        # Unique SMAC run directory — created only after validation so failed
+        # constructors do not leak amber_smac_* directories.
+        self._output_dir = tempfile.mkdtemp(prefix="amber_smac_")
+        self._error_path = str(Path(self._output_dir) / "first_error.pkl")
+        self._failures_path = (
+            str(Path(self._output_dir) / "failures.jsonl")
+            if on_error == "penalize"
+            else None
+        )
+        try:
+            scenario_kwargs: Dict[str, Any] = {
+                "n_trials": n_trials,
+                "n_workers": n_workers,
+                "seed": seed,
+                "output_directory": self._output_dir,
+            }
+            if mf_budgets is not None:
+                scenario_kwargs["min_budget"] = mf_budgets[0]
+                scenario_kwargs["max_budget"] = mf_budgets[1]
+
+            self.scenario = Scenario(self.configspace, **scenario_kwargs)
+
+            # Clean (config, seed[, budget]) signature — no partial kwargs.
+            eval_kwargs = dict(
+                model_type=self.model_type,
+                objective=self.objective,
+                fixed_params=self.fixed_params,
+                fidelity_name=self._fidelity_name,
+                fidelity_type=self._fidelity_type,
+                on_error=self.on_error,
+                error_path=self._error_path,
+                failures_path=self._failures_path,
+                use_budget=want_mf,
             )
+            target: Any = (
+                _SMACTrialEvaluator(**eval_kwargs)
+                if want_mf
+                else _SMACTrialEvaluatorSF(**eval_kwargs)
+            )
+
+            if facade_kind == "mf":
+                self.smac = MultiFidelityFacade(
+                    scenario=self.scenario,
+                    target_function=target,
+                    acquisition_function=acq_func,
+                    model=model,
+                    initial_design=initial_design_cls(
+                        scenario=self.scenario,
+                        n_configs=min(10, n_trials),
+                    ),
+                    intensifier=SuccessiveHalving(
+                        scenario=self.scenario,
+                        incumbent_selection="highest_budget",
+                        max_incumbents=1,
+                    ),
+                )
+            elif facade_kind == "random":
+                self.smac = RandomFacade(
+                    scenario=self.scenario,
+                    target_function=target,
+                )
+            elif facade_kind == "ac":
+                self.smac = AlgorithmConfigurationFacade(
+                    scenario=self.scenario,
+                    target_function=target,
+                    acquisition_function=acq_func,
+                    model=model,
+                    initial_design=initial_design_cls(
+                        scenario=self.scenario,
+                        n_configs=min(10, n_trials),
+                    ),
+                )
+            else:
+                self.smac = HyperparameterOptimizationFacade(
+                    scenario=self.scenario,
+                    target_function=target,
+                    acquisition_function=acq_func,
+                    model=model,
+                    initial_design=initial_design_cls(
+                        scenario=self.scenario,
+                        n_configs=min(10, n_trials),
+                    ),
+                    acquisition_maximizer=LocalAndSortedRandomSearch(
+                        configspace=self.configspace,
+                        acquisition_function=acq_func,
+                        challengers=1000,
+                        local_search_iterations=10,
+                    ),
+                )
+        except Exception:
+            # Constructor failed after temp dir allocation — do not leak.
+            self._cleanup_output_dir()
+            raise
 
     def _load_first_error(self) -> Optional[BaseException]:
         return _load_error_side_channel(getattr(self, "_error_path", None))
@@ -1046,6 +1182,62 @@ class SMACOptimizer:
         if out:
             shutil.rmtree(out, ignore_errors=True)
 
+    def _shutdown_parallel_resources(self) -> None:
+        """Close SMAC's Dask client/workers when ``n_workers > 1``.
+
+        SMAC's ``DaskParallelRunner`` only closes the client in ``__del__``,
+        which leaves nannies/workers alive until GC. Explicitly close after
+        optimize so process trees do not accumulate.
+        """
+        smac = getattr(self, "smac", None)
+        if smac is None:
+            return
+        # SMAC stores the runner as ``_runner`` on the facade.
+        runner = getattr(smac, "_runner", None) or getattr(smac, "runner", None)
+        if runner is None:
+            return
+        # Prefer public close(force=True) on DaskParallelRunner.
+        close = getattr(runner, "close", None)
+        if callable(close):
+            try:
+                close(force=True)
+            except TypeError:
+                try:
+                    close()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        client = getattr(runner, "_client", None) or getattr(runner, "client", None)
+        if client is not None:
+            # Local clusters started by DaskParallelRunner need an explicit
+            # cluster shutdown; client.close() alone may leave nannies.
+            cluster = getattr(client, "cluster", None)
+            try:
+                if cluster is not None:
+                    cluster.close(timeout=5)
+            except TypeError:
+                try:
+                    cluster.close()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            try:
+                client.close(timeout=5)
+            except TypeError:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            try:
+                # Extra belt-and-suspenders for older dask versions.
+                if hasattr(client, "shutdown"):
+                    client.shutdown()
+            except Exception:
+                pass
     def optimize(self) -> Dict[str, Any]:
         """Run the optimization.
 
@@ -1123,6 +1315,7 @@ class SMACOptimizer:
                 out['failures'] = list(self.failures)
             return out
         finally:
+            self._shutdown_parallel_resources()
             self._cleanup_output_dir()
 
 class MultiObjectiveSMAC:

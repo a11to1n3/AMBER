@@ -23,10 +23,12 @@
 - **SMAC on_error='raise'**: re-raise target/objective exceptions after SMAC
   returns (SMAC swallows crashes into CRASHED/inf trials); multi-process via
   pickle side-channel under the run directory.
-- **SMACOptimizer ``n_workers>1``**: pickle-safe module-level trial target
-  (bound methods captured non-picklable SMAC generators).
-- **SMAC temp dirs**: remove ``amber_smac_*`` / ``amber_bayes_*`` after
-  ``optimize()`` unless ``AMBER_SMAC_KEEP_OUTPUT=1``.
+- **SMACOptimizer ``n_workers>1``**: pickle-safe trial evaluator with a clean
+  ``(config, seed)`` signature (no partial-arg SMAC warnings); explicitly
+  close Dask client/cluster after ``optimize()`` so workers do not linger.
+- **SMAC temp dirs**: create ``amber_smac_*`` only after constructor
+  validation; remove after ``optimize()`` / failed construction unless
+  ``AMBER_SMAC_KEEP_OUTPUT=1``.
 - **Search exhaustion**: ``isinstance`` /
   ``ConfigurationSpaceExhaustedException`` only (plus message markers); no
   broad name-substring matching.

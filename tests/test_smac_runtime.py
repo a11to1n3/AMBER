@@ -74,6 +74,107 @@ def test_smac_optimizer_unique_output_and_cleanup():
 
 
 @pytest.mark.unit
+def test_constructor_validation_does_not_leak_temp_dir():
+    before = {p for p in Path(tempfile.gettempdir()).glob("amber_smac_*")}
+    with pytest.raises(ValueError, match="Unknown strategy"):
+        SMACOptimizer(
+            _TinyModel,
+            _space(),
+            _const_obj,
+            n_trials=2,
+            seed=0,
+            strategy="not_a_real_strategy",
+            fixed_params={"n_agents": 4, "steps": 1, "show_progress": False},
+        )
+    after = {p for p in Path(tempfile.gettempdir()).glob("amber_smac_*")}
+    assert after <= before
+
+
+@pytest.mark.unit
+def test_n_workers_2_shuts_down_dask_and_no_target_arg_warnings(caplog):
+    """n_workers>1 must close Dask and not spam partial-signature warnings."""
+    import logging
+
+    fixed = {"n_agents": 8, "steps": 1, "show_progress": False}
+    with caplog.at_level(logging.WARNING, logger="smac"):
+        opt = SMACOptimizer(
+            _TinyModel,
+            _space(),
+            _const_obj,
+            n_trials=4,
+            seed=0,
+            strategy="random",
+            n_workers=2,
+            fixed_params=fixed,
+        )
+        result = opt.optimize()
+    assert result["n_evaluations"] >= 1
+    # No leftover "argument X is not set by SMAC" warnings from partial kwargs
+    arg_warns = [
+        r.message
+        for r in caplog.records
+        if "is not set by SMAC" in str(r.message)
+    ]
+    assert arg_warns == [], arg_warns
+    # Dask client must not remain as default after optimize
+    try:
+        from dask.distributed import get_client
+
+        try:
+            client = get_client(timeout="0.5s")
+        except Exception:
+            client = None
+        assert client is None or getattr(client, "status", None) in (
+            "closed",
+            "closing",
+            None,
+        )
+    except ImportError:
+        pass
+    # No runaway multiprocessing children from SMAC workers
+    import multiprocessing as mp
+    import time
+
+    time.sleep(0.5)
+    live = [p for p in mp.active_children() if p.is_alive()]
+    # Allow unrelated children; SMAC dask workers should be gone
+    assert live == [] or all(
+        "dask" not in (p.name or "").lower() for p in live
+    )
+
+
+@pytest.mark.unit
+def test_write_error_when_str_and_pickle_fail():
+    """Even pathological exceptions must leave a raiseable side-channel."""
+    from ambr.optimization import (
+        RemoteObjectiveError,
+        _load_error_side_channel,
+        _write_first_error,
+    )
+
+    class _EvilError(Exception):
+        def __getstate__(self):
+            raise TypeError("no pickle")
+
+        def __str__(self):
+            raise RuntimeError("no str")
+
+        def __repr__(self):
+            raise RuntimeError("no repr")
+
+    path = Path(tempfile.mkdtemp(prefix="amber_err_")) / "first_error.pkl"
+    try:
+        _write_first_error(str(path), _EvilError())
+        assert path.is_file()
+        loaded = _load_error_side_channel(str(path))
+        assert isinstance(loaded, RemoteObjectiveError)
+        assert "EvilError" in str(loaded) or "unprintable" in str(loaded).lower()
+    finally:
+        import shutil
+
+        shutil.rmtree(path.parent, ignore_errors=True)
+
+@pytest.mark.unit
 def test_smac_on_error_raise_after_smac_swallows():
     fixed = {"n_agents": 8, "steps": 1, "show_progress": False}
     opt = SMACOptimizer(
