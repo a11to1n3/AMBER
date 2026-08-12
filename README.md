@@ -93,8 +93,9 @@ checks presence of the label, not the evidence content) and
 `contract="off"` — see [`docs/going_faster.rst`](https://ambr.readthedocs.io/en/latest/going_faster.html).
 
 Default CI has no CUDA. Optional **GPU claims** workflow
-(`.github/workflows/gpu-nightly.yml`) soft-skips without a GPU and runs
-`scripts/run_gpu_claims.py --quick` on self-hosted CUDA runners.
+(`.github/workflows/gpu-nightly.yml`) **hard-fails as NOT VERIFIED** without
+a GPU (never soft-green) and runs `scripts/run_gpu_claims.py --quick` on
+self-hosted CUDA runners (`GPU_RUNNER` repository variable).
 
 ## 🚀 Quick Start
 
@@ -118,14 +119,16 @@ class WealthAgent(am.Agent):
 class WealthModel(am.Model):
     def setup(self):
         self.agents = am.AgentList(self, self.p.n, WealthAgent)
-    def step(self):
+    def step_oop(self):
+        # Explicit OOP lane (default mode is vectorized)
         self.agents.transfer()
     def update(self):
         self.record_model('total', int(self.agents.wealth.sum()))
 
-results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).run()
+results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).cpu(mode="oop").run()
 print(results.model)      # also results['model']
 print(results.agents.head())
+print(results.info.get("mode"), results.info.get("execution_lane"))
 ```
 
 **Vectorized (columnar; best at large N):**

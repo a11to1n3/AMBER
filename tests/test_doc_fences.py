@@ -1,8 +1,18 @@
-"""CI smoke: execute self-contained Python fences from README and key docs.
+"""CI smoke: execute **self-contained** Python fences from selected docs.
+
+This suite is a **regression smoke**, not a proof that every tutorial or
+example script is end-to-end runnable:
+
+* Only the paths in ``DOC_PATHS`` are scanned (not all of ``docs/``).
+* Fences on ``FRAGMENT_ALLOWLIST`` are syntax-checked only (multi-cell
+  continuations, incomplete recipes).
+* ``HEAVY_ALLOWLIST`` fences are syntax-only unless ``AMBER_DOC_FENCE_FULL=1``.
+* Full calibration scripts under ``examples/smac_*.py`` and multi-cell
+  tutorial programs are **not** executed here — run those scripts (or
+  ``scripts/run_gpu_claims.py`` for GPU) separately.
 
 Intentional API fragments (method bodies, incomplete context) are allowlisted.
-Large-N samples are scaled down in CI so the matrix stays fast; full-scale GPU
-claims are verified with ``scripts/run_gpu_claims.py`` on a CUDA host.
+Large-N samples are scaled down in CI so the matrix stays fast.
 """
 
 from __future__ import annotations
@@ -28,12 +38,15 @@ DOC_PATHS = [
     "docs/going_faster.rst",
     "docs/index.rst",
     "docs/api/agent.rst",
+    "docs/api/base.rst",
     "docs/api/contract.rst",
     "docs/api/environments.rst",
+    "docs/api/experiment.rst",
     "docs/api/gpu.rst",
     "docs/api/gpu_ensemble.rst",
     "docs/api/model.rst",
     "docs/api/optimization.rst",
+    "docs/api/performance.rst",
     "docs/api/results.rst",
 ]
 
@@ -50,6 +63,8 @@ FRAGMENT_ALLOWLIST = {
     "docs/quickstart.rst:3",
     "docs/going_faster.rst:0",  # step body fragment in RST
     "docs/api/agent.rst:2",
+    "docs/api/base.rst:0",  # class sketch without run()
+    "docs/api/base.rst:1",  # Agent sketch without model shell
     "docs/api/sequences.rst:0",
     "docs/api/sequences.rst:1",
     # Tutorial multi-cell continuations (need prior class definitions).
@@ -58,6 +73,8 @@ FRAGMENT_ALLOWLIST = {
     "docs/tutorial.rst:5",  # plots AnalyticalWealthModel + plt
     "docs/tutorial.rst:7",  # random_search needs prior model+space
     "docs/tutorial.rst:9",  # experiment_results from prior fence
+    # ParallelRunner fence is executed via spawn-safe module import (see
+    # _run_code); not allowlisted.
 }
 
 # Fences that are complete but too heavy for every CI matrix cell.
@@ -164,28 +181,58 @@ def _run_code(code: str, timeout: float = 90.0) -> None:
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
     }
-    # Write as real UTF-8 bytes (NamedTemporaryFile text mode uses locale encoding
-    # on Windows and can mangle non-ASCII into cp1252, then SyntaxError on \x97).
     body = "# -*- coding: utf-8 -*-\n" + code
-    fd, path = tempfile.mkstemp(suffix=".py")
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(body.encode("utf-8"))
-        proc = subprocess.run(
-            [sys.executable, "-X", "utf8", path],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            env=env,
-            cwd=str(ROOT),
-        )
-    finally:
+
+    # ParallelRunner uses spawn: the model class must be importable by name.
+    # Running a one-shot temp script as __main__ fails child import. For fences
+    # that use ParallelRunner, write a real module on PYTHONPATH and call main().
+    if "ParallelRunner" in code:
+        tmpdir = tempfile.mkdtemp(prefix="amber_doc_fence_")
         try:
-            os.unlink(path)
-        except OSError:
-            pass
+            mod_path = Path(tmpdir) / "amber_doc_parallel_demo.py"
+            mod_path.write_text(body, encoding="utf-8")
+            env["PYTHONPATH"] = tmpdir + os.pathsep + env["PYTHONPATH"]
+            runner = (
+                "import amber_doc_parallel_demo as m\n"
+                "if hasattr(m, 'main'):\n"
+                "    m.main()\n"
+                "else:\n"
+                "    raise SystemExit('ParallelRunner fence must define main()')\n"
+            )
+            proc = subprocess.run(
+                [sys.executable, "-X", "utf8", "-c", runner],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                env=env,
+                cwd=str(ROOT),
+            )
+        finally:
+            import shutil
+
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    else:
+        fd, path = tempfile.mkstemp(suffix=".py")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(body.encode("utf-8"))
+            proc = subprocess.run(
+                [sys.executable, "-X", "utf8", path],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                env=env,
+                cwd=str(ROOT),
+            )
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
     if proc.returncode != 0:
         raise AssertionError(
             f"exit={proc.returncode}\n"

@@ -130,13 +130,18 @@ def run_simple_optimization():
     param_space = create_simple_parameter_space()
     print("✓ Parameter space created")
 
-    # Step 2: Create optimizer
+    # Step 2: Create optimizer (fixed_params: non-search model knobs)
     optimizer = am.SMACOptimizer(
         model_type=SimpleWealthModel,
         param_space=param_space,
         objective=simple_objective,
         n_trials=20,  # Small number for quick demo
-        seed=42
+        seed=42,
+        fixed_params={
+            "n_agents": 100,
+            "steps": 50,
+            "show_progress": False,
+        },
     )
     print("✓ Optimizer created")
 
@@ -158,22 +163,21 @@ def analyze_simple_results(optimizer, results):
     """Analyze and visualize the simple optimization results."""
     print("\n📊 Analysis:")
 
-    # Get optimization history
+    # History columns: search-space knobs + cost/objective, time, trial
     history = results['history']
-
-    # Show improvement over time
-    objectives = history['objective'].to_list()
-    print(f"Started with objective: {objectives[0]:.4f}")
-    print(f"Ended with objective: {min(objectives):.4f}")
+    objectives = history['cost'].to_list()  # same as history['objective']
+    print(f"n_evaluations: {results['n_evaluations']}")
+    print(f"Started with cost: {objectives[0]:.4f}")
+    print(f"Ended with best cost: {min(objectives):.4f}")
     print(f"Improvement: {objectives[0] - min(objectives):.4f}")
 
-    # Test the best configuration
-    best_params = results['best_config'].copy()
-    best_params.update({
-        'n_agents': 100,  # Fixed parameter
-        'steps': 50,      # Fixed parameter
-        'show_progress': False
-    })
+    # Test the best configuration (merge fixed params used during search)
+    best_params = {
+        "n_agents": 100,
+        "steps": 50,
+        "show_progress": False,
+        **results["best_config"],
+    }
 
     print(f"\n🧪 Testing best configuration...")
     model = SimpleWealthModel(best_params)
@@ -191,7 +195,7 @@ def analyze_simple_results(optimizer, results):
     plt.plot(objectives, 'b-o', markersize=4)
     plt.axhline(y=min(objectives), color='r', linestyle='--', alpha=0.7)
     plt.xlabel('Trial')
-    plt.ylabel('Objective Value')
+    plt.ylabel('Cost (objective)')
     plt.title('Optimization Progress')
     plt.grid(True, alpha=0.3)
 
@@ -207,11 +211,9 @@ def analyze_simple_results(optimizer, results):
     plt.legend()
     plt.grid(True, alpha=0.3)
 
-    # Plot 3: Final wealth distribution
+    # Plot 3: Final wealth distribution (results.agents is end-of-run state)
     plt.subplot(1, 3, 3)
-    final_wealth = model_results['agents'].filter(
-        model_results['agents']['step'] == model_results['agents']['step'].max()
-    )['wealth'].to_list()
+    final_wealth = model_results.agents['wealth'].to_list()
 
     plt.hist(final_wealth, bins=15, alpha=0.7, edgecolor='black', color='lightblue')
     plt.xlabel('Wealth')
@@ -231,27 +233,30 @@ def compare_with_random_search():
 
     param_space = create_simple_parameter_space()
 
-    # SMAC optimization (already done above, but let's do a fresh one)
+    fixed = {"n_agents": 100, "steps": 50, "show_progress": False}
+
+    # SMAC Bayesian vs RandomFacade (strategy='random')
     smac_optimizer = am.SMACOptimizer(
         model_type=SimpleWealthModel,
         param_space=param_space,
         objective=simple_objective,
         n_trials=20,
         seed=42,
-        strategy='bayesian'
+        strategy="bayesian",
+        fixed_params=fixed,
     )
 
     smac_results = smac_optimizer.optimize()
     smac_best = smac_results['best_objective']
 
-    # Random search for comparison
     random_optimizer = am.SMACOptimizer(
         model_type=SimpleWealthModel,
         param_space=param_space,
         objective=simple_objective,
         n_trials=20,
         seed=42,
-        strategy='random'  # Use random search instead
+        strategy="random",  # RandomFacade (not Bayesian)
+        fixed_params=fixed,
     )
 
     random_results = random_optimizer.optimize()
@@ -270,15 +275,15 @@ def compare_with_random_search():
     plt = _require_matplotlib()
     plt.figure(figsize=(10, 4))
 
-    # Plot optimization curves
+    # Plot optimization curves (history uses cost; objective is an alias)
     plt.subplot(1, 2, 1)
-    smac_objectives = smac_results['history']['objective'].to_list()
-    random_objectives = random_results['history']['objective'].to_list()
+    smac_objectives = smac_results['history']['cost'].to_list()
+    random_objectives = random_results['history']['cost'].to_list()
 
     plt.plot(smac_objectives, 'b-o', label='SMAC (Bayesian)', markersize=4)
     plt.plot(random_objectives, 'r-s', label='Random Search', markersize=4)
     plt.xlabel('Trial')
-    plt.ylabel('Objective Value')
+    plt.ylabel('Cost (objective)')
     plt.title('SMAC vs Random Search')
     plt.legend()
     plt.grid(True, alpha=0.3)
@@ -300,7 +305,7 @@ def compare_with_random_search():
     plt.ylabel('Transfer Fraction')
     plt.title('Parameter Space Exploration')
     plt.legend()
-    plt.colorbar(label='Objective Value')
+    plt.colorbar(label='Cost')
     plt.grid(True, alpha=0.3)
 
     plt.tight_layout()

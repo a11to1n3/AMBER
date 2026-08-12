@@ -202,24 +202,22 @@ def run_smac_optimization():
     # Create parameter space
     param_space = create_parameter_space()
 
-    # Create SMAC optimizer
+    # Create SMAC optimizer — fixed_params are merged into every trial
     optimizer = am.SMACOptimizer(
         model_type=WealthTransferModel,
         param_space=param_space,
         objective=objective_function,
         n_trials=50,
         seed=42,
-        strategy='bayesian',  # Use Bayesian optimization
-        acquisition_function='ei',  # Expected Improvement
-        initial_design='latin_hypercube',  # Latin Hypercube Sampling
-        surrogate_model='random_forest'  # Random Forest surrogate
+        strategy="bayesian",
+        acquisition_function="ei",
+        initial_design="latin_hypercube",
+        surrogate_model="random_forest",
+        fixed_params={
+            "steps": 100,
+            "show_progress": False,
+        },
     )
-
-    # Add fixed parameters that don't need optimization
-    fixed_params = {
-        'steps': 100,
-        'show_progress': False
-    }
 
     # Run optimization
     print("Starting optimization...")
@@ -243,12 +241,11 @@ def analyze_optimization_results(optimizer, results):
     """Analyze and visualize optimization results."""
     print("\n📊 Analyzing Optimization Results...")
 
-    # Get optimization history
+    # Get optimization history (cost == objective; trial index for x-axis)
     history = results['history']
-
-    # Extract data for plotting
-    objectives = history['objective'].to_list()
-    configs = history.drop(['objective', 'trial']).to_dict('records')
+    objectives = history['cost'].to_list()
+    drop_cols = [c for c in ('cost', 'objective', 'time', 'trial') if c in history.columns]
+    configs = history.drop(drop_cols).to_dicts()
 
     # Create visualization
     plt = _require_matplotlib()
@@ -284,8 +281,11 @@ def analyze_optimization_results(optimizer, results):
     axes[1, 1].set_title('Best Configuration Dynamics')
 
     # Run best configuration for detailed analysis
-    best_params = results['best_config'].copy()
-    best_params.update({'steps': 100, 'show_progress': False})
+    best_params = {
+        "steps": 100,
+        "show_progress": False,
+        **results["best_config"],
+    }
 
     model = WealthTransferModel(best_params)
     model_results = model.run()
@@ -302,11 +302,9 @@ def analyze_optimization_results(optimizer, results):
     axes[1, 1].legend()
     axes[1, 1].grid(True, alpha=0.3)
 
-    # Plot 6: Final wealth distribution
+    # Plot 6: Final wealth distribution (end-of-run agent table)
     axes[1, 2].set_title('Final Wealth Distribution')
-    final_wealth = model_results['agents'].filter(
-        model_results['agents']['step'] == model_results['agents']['step'].max()
-    )['wealth'].to_list()
+    final_wealth = model_results.agents['wealth'].to_list()
 
     axes[1, 2].hist(final_wealth, bins=20, alpha=0.7, edgecolor='black', color='skyblue')
     axes[1, 2].set_xlabel('Wealth')
@@ -336,6 +334,7 @@ def compare_optimization_strategies():
     param_space = create_parameter_space()
     strategies = ['bayesian', 'random']
     acquisition_functions = ['ei', 'lcb', 'pi']
+    fixed = {"steps": 100, "show_progress": False}
 
     comparison_results = {}
 
@@ -355,21 +354,23 @@ def compare_optimization_strategies():
                     seed=42,
                     strategy=strategy,
                     acquisition_function=acq_func,
-                    surrogate_model='random_forest'
+                    surrogate_model="random_forest",
+                    fixed_params=fixed,
                 )
 
                 results = optimizer.optimize()
                 comparison_results[f'{strategy}_{acq_func}'] = results['best_objective']
                 print(f"    Best objective: {results['best_objective']:.6f}")
 
-        else:  # random strategy
+        else:  # random strategy → RandomFacade
             optimizer = am.SMACOptimizer(
                 model_type=WealthTransferModel,
                 param_space=param_space,
                 objective=objective_function,
                 n_trials=20,
                 seed=42,
-                strategy=strategy
+                strategy=strategy,
+                fixed_params=fixed,
             )
 
             results = optimizer.optimize()
@@ -418,8 +419,9 @@ def demonstrate_parameter_importance():
         objective=objective_function,
         n_trials=100,
         seed=42,
-        strategy='bayesian',
-        acquisition_function='ei'
+        strategy="bayesian",
+        acquisition_function="ei",
+        fixed_params={"steps": 100, "show_progress": False},
     )
 
     results = optimizer.optimize()
@@ -431,7 +433,7 @@ def demonstrate_parameter_importance():
 
     for param in param_names:
         param_values = history[param].to_list()
-        objectives = history['objective'].to_list()
+        objectives = history['cost'].to_list()
 
         # Calculate correlation coefficient
         correlation = np.corrcoef(param_values, objectives)[0, 1]

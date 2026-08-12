@@ -124,3 +124,33 @@ Same return shape as ``grid_search``:
    )
    best = results[0]
    print(best['parameters'], best['objective'])
+
+SMACOptimizer (advanced)
+------------------------
+
+.. autoclass:: ambr.SMACOptimizer
+   :members:
+   :undoc-members:
+
+Requires ``pip install 'ambr[advanced]'`` (SMAC + ConfigSpace).
+
+**Supported options (0.5.x):**
+
+* ``strategy``: ``bayesian`` (default), ``random`` (RandomFacade),
+  ``algorithm_configuration``
+* ``use_random_search=True`` — same as ``strategy='random'``
+* ``acquisition_function``: ``ei``, ``lcb``, ``pi``, ``eips``, ``ts``
+* ``surrogate_model``: ``random_forest`` only
+* ``fixed_params``: merged into every trial (e.g. ``n_agents``, ``steps``)
+* multi-fidelity: ``use_multi_fidelity=True`` plus a fidelity parameter
+  (``is_fidelity=True`` with numeric bounds → SMAC min/max budget)
+
+**Not supported:** ``gaussian_process``, ``random_forest_with_instances``,
+``acquisition_function='log_ei'`` (raise ``ValueError``).
+
+``optimize()`` returns ``best_config``, ``best_cost`` / ``best_objective``,
+``n_evaluations``, and ``history`` (Polars: search columns + ``cost``,
+``objective``, ``time``, ``trial``).
+
+Full scripts: ``examples/smac_calibration_simple.py``,
+``examples/smac_calibration_basic.py``.

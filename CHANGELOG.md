@@ -4,6 +4,44 @@
 
 ### Fixed
 
+- **SMACOptimizer contract (0.5.x)**: ``strategy='random'`` selects RandomFacade;
+  ``fixed_params`` merge into every trial; ``optimize()`` returns
+  ``n_evaluations`` and history columns ``cost`` / ``objective`` / ``time`` /
+  ``trial``; multi-fidelity Scenario gets ``min_budget``/``max_budget`` from
+  fidelity parameter bounds; unsupported options (``log_ei``, GP /
+  ``random_forest_with_instances``) raise clear ``ValueError``.
+- **SMACOptimizer isolation**: each instance uses a unique temp
+  ``output_directory`` (no silent reuse of cwd ``smac3_output/``).
+- **Multi-fidelity budgets**: fidelity params are budget-only (not CS samples);
+  integer fidelities coerce SH rungs to ``int``; history reports evaluated budget.
+- **bayesian_optimization**: fixed floats go to ``fixed_params`` (degenerate
+  float HPs no longer crash ConfigSpace/SMAC).
+- **NetworkEnvironment identity**: agent-first resolution for
+  ``get_neighbors`` / ``get_distance`` / ``get_degree`` / ``get_clustering`` /
+  ``add_edge`` / ``remove_edge``; missing ``node_id`` column no longer crashes
+  (unplaced agent → empty/0); use ``as_node=True`` for graph-node ids.
+- **SMAC on_error='raise'**: re-raise target/objective exceptions after SMAC
+  returns (SMAC swallows crashes into CRASHED/inf trials); multi-process via
+  pickle side-channel under the run directory.
+- **SMACOptimizer ``n_workers>1``**: pickle-safe trial evaluator with a clean
+  ``(config, seed)`` signature (no partial-arg SMAC warnings); explicitly
+  close Dask client/cluster after ``optimize()`` so workers do not linger.
+- **SMAC temp dirs**: create ``amber_smac_*`` only after constructor
+  validation; remove after ``optimize()`` / failed construction unless
+  ``AMBER_SMAC_KEEP_OUTPUT=1``.
+- **Search exhaustion**: ``isinstance`` /
+  ``ConfigurationSpaceExhaustedException`` only (plus message markers); no
+  broad name-substring matching.
+- **on_error='raise' side-channel**: if the exception is not picklable, persist
+  a structured type/message/traceback payload and re-raise
+  ``RemoteObjectiveError`` (never silent ``best_cost=inf``).
+- **Docs / examples**: SMAC calibration scripts match the optimizer return
+  shape; environment API uses ``grid_position`` / ``node_id``; ParallelRunner
+  docs are spawn-safe (Sphinx fence fixed); OOP README/quickstart use
+  ``step_oop`` + ``cpu(mode="oop")``; Sample/Experiment contracts document zip
+  sampling and ``info`` as a dict; BaseAgent/BaseModel no longer presented as
+  user bases; GPU CI described as hard NOT VERIFIED (not soft-skip).
+
 - **Windows RunResults I/O**: exclusive payload writes use ``O_BINARY`` so LF
   is not expanded to CRLF (SHA-256 checksums stay stable on Windows CI).
 - **GPU nightly**: no longer runs on every path-push (would fail red without

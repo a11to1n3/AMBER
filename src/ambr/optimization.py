@@ -1,4 +1,11 @@
 from typing import Type, Dict, Any, List, Callable, Optional, Literal
+from pathlib import Path
+import json
+import os
+import pickle
+import secrets
+import shutil
+import tempfile
 import polars as pl
 import numpy as np
 import itertools
@@ -47,15 +54,84 @@ def _check_smac():
         )
 
 
-def _is_search_exhausted(exc: BaseException) -> bool:
-    """Return True only for the documented SMAC 'search exhausted' condition.
+class RemoteObjectiveError(RuntimeError):
+    """Raised in the parent when a worker objective failed under ``on_error='raise'``.
 
-    Broad ``except Exception: pass`` is intentionally *not* used: real target
-    failures, import errors, and programmer bugs must surface. Exhaustion is
-    identified by message markers (SMAC versions differ in exception type).
+    Used when the original exception cannot be pickled across processes, or
+    when only a structured type/message/traceback payload is available.
     """
-    msg = str(exc).lower()
-    return any(marker in msg for marker in _SEARCH_EXHAUSTED_MARKERS)
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        exception_type: str = "Exception",
+        traceback_text: str = "",
+    ):
+        super().__init__(message)
+        self.exception_type = exception_type
+        self.traceback_text = traceback_text or ""
+
+
+def _is_search_exhausted(exc: BaseException) -> bool:
+    """Return True only for SMAC configuration-space exhaustion.
+
+    Matching rules (narrow — no substring matching on arbitrary type names):
+
+    1. ``isinstance(exc, smac.main.exceptions.ConfigurationSpaceExhaustedException)``
+       when SMAC is importable.
+    2. Compatibility: exact class name
+       ``type(exc).__name__ == "ConfigurationSpaceExhaustedException"``
+       (covers re-exports / empty-message instances).
+    3. Compatibility: plain ``Exception`` (or subclass that is *not* a custom
+       misnamed type) whose message contains a known SMAC exhaustion phrase.
+
+    Explicitly **not** matched: e.g. ``ConfigurationDataExhaustedError`` —
+    names that merely contain both "configuration" and "exhausted".
+    """
+    # 1) Canonical SMAC type
+    try:
+        from smac.main.exceptions import ConfigurationSpaceExhaustedException
+
+        if isinstance(exc, ConfigurationSpaceExhaustedException):
+            return True
+    except Exception:
+        pass
+
+    # 2) Exact class name only (no "configuration"+"exhausted" substring pair)
+    if type(exc).__name__ == "ConfigurationSpaceExhaustedException":
+        return True
+
+    # 3) Message markers — only for generic Exception base (not custom
+    #    domain errors that happen to mention "exhausted").
+    if type(exc) is Exception or type(exc).__name__ in (
+        "RuntimeError",
+        "StopIteration",
+    ):
+        msg = str(exc).lower()
+        return any(marker in msg for marker in _SEARCH_EXHAUSTED_MARKERS)
+    return False
+
+
+def _safe_exc_message(exc: BaseException) -> str:
+    """Best-effort message even when ``str(exc)`` / ``repr(exc)`` raise."""
+    try:
+        return str(exc)
+    except Exception:
+        pass
+    try:
+        return repr(exc)
+    except Exception:
+        return f"<unprintable {type(exc).__name__}>"
+
+
+def _safe_exc_traceback(exc: BaseException) -> str:
+    try:
+        return "".join(
+            _traceback_mod.format_exception(type(exc), exc, exc.__traceback__)
+        )
+    except Exception:
+        return ""
 
 
 def _failure_record(
@@ -66,11 +142,299 @@ def _failure_record(
     return {
         "configuration": dict(configuration),
         "exception_type": type(exc).__name__,
-        "message": str(exc),
-        "traceback": "".join(
-            _traceback_mod.format_exception(type(exc), exc, exc.__traceback__)
-        ),
+        "message": _safe_exc_message(exc),
+        "traceback": _safe_exc_traceback(exc),
     }
+
+
+def _coerce_fidelity_budget(budget: Any, fidelity_type: Optional[str]) -> Any:
+    if budget is None:
+        return None
+    if fidelity_type == "int":
+        return int(round(float(budget)))
+    return float(budget)
+
+
+def _error_payload(exc: BaseException) -> Dict[str, Any]:
+    """JSON-serializable fallback when the exception itself cannot be pickled."""
+    return {
+        "kind": "amber_remote_objective_error",
+        "exception_type": type(exc).__name__,
+        "message": _safe_exc_message(exc),
+        "traceback": _safe_exc_traceback(exc),
+    }
+
+
+def _error_json_path(path: str) -> Path:
+    """Sibling structured-JSON path for ``first_error`` side-channel."""
+    p = Path(path)
+    # Support both ``foo.pkl`` → ``foo.json`` and bare paths → ``.json`` suffix.
+    if p.suffix:
+        return p.with_suffix(".json")
+    return Path(str(p) + ".json")
+
+
+def _write_first_error(path: Optional[str], exc: BaseException) -> None:
+    """Side-channel for the first target failure (multi-process safe).
+
+    Always writes a structured JSON sibling (type / message / traceback) so the
+    parent can raise even when:
+
+    * ``pickle.dumps(exc)`` fails, or
+    * pickle succeeds but the parent cannot unpickle the class, or
+    * ``str(exc)`` / ``repr(exc)`` fail.
+
+    Pickle of the original exception is best-effort only.
+    """
+    if not path:
+        return
+    try:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        jp = _error_json_path(path)
+        # Structured payload first — this is the reliable raise signal.
+        if not jp.exists():
+            try:
+                jp.write_text(
+                    json.dumps(_error_payload(exc), default=str),
+                    encoding="utf-8",
+                )
+            except Exception:
+                try:
+                    jp.write_text(
+                        json.dumps(
+                            {
+                                "kind": "amber_remote_objective_error",
+                                "exception_type": type(exc).__name__,
+                                "message": "<unprintable exception>",
+                                "traceback": "",
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    pass
+        # Best-effort pickle of the original exception (same-process re-raise).
+        if not p.exists():
+            try:
+                p.write_bytes(
+                    pickle.dumps(exc, protocol=pickle.HIGHEST_PROTOCOL)
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _payload_to_remote_error(payload: Dict[str, Any]) -> RemoteObjectiveError:
+    et = str(payload.get("exception_type") or "Exception")
+    msg = str(payload.get("message") or "")
+    tb = str(payload.get("traceback") or "")
+    text = f"{et}: {msg}" if msg else et
+    if tb:
+        text = f"{text}\n\nRemote traceback:\n{tb}"
+    return RemoteObjectiveError(text, exception_type=et, traceback_text=tb)
+
+
+def _load_error_side_channel(path: Optional[str]) -> Optional[BaseException]:
+    """Load a pickled exception and/or structured remote-objective payload.
+
+    Preference order:
+
+    1. Structured JSON sibling (always raiseable, survives unpickleable classes)
+    2. Pickle of the original exception (when loadable)
+    3. Structured JSON written to the primary path
+    4. ``RemoteObjectiveError`` if a side-channel file existed but was unreadable
+    """
+    if not path:
+        return None
+    p = Path(path)
+    jp = _error_json_path(path)
+    saw_file = p.is_file() or jp.is_file()
+
+    # Prefer structured JSON — never depends on exception class pickling.
+    if jp.is_file():
+        try:
+            payload = json.loads(jp.read_text(encoding="utf-8"))
+            if isinstance(payload, dict) and payload.get("kind") == (
+                "amber_remote_objective_error"
+            ):
+                return _payload_to_remote_error(payload)
+            if isinstance(payload, dict):
+                return _payload_to_remote_error(payload)
+        except Exception:
+            pass
+
+    if p.is_file():
+        raw = p.read_bytes()
+        # Primary path may itself be JSON (older writers / last-resort marker).
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+            if isinstance(payload, dict):
+                return _payload_to_remote_error(payload)
+        except Exception:
+            pass
+        try:
+            obj = pickle.loads(raw)
+            if isinstance(obj, BaseException):
+                return obj
+        except Exception:
+            # Pickle present but not loadable (local class in worker) — still
+            # signal failure rather than returning None → silent inf.
+            return RemoteObjectiveError(
+                "Remote SMAC objective failed (exception not unpickleable in "
+                "parent process; structured side-channel missing or corrupt)"
+            )
+
+    if saw_file:
+        return RemoteObjectiveError(
+            "Remote SMAC objective failed (unreadable error side-channel)"
+        )
+    return None
+
+
+def _append_failure_jsonl(path: Optional[str], record: Dict[str, Any]) -> None:
+    if not path:
+        return
+    try:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, default=str) + "\n")
+    except Exception:
+        pass
+
+
+def _smac_trial_target(
+    config,
+    seed: int = 0,
+    budget=None,
+    *,
+    model_type: Type[Model],
+    objective: Callable[[Model], float],
+    fixed_params: Dict[str, Any],
+    fidelity_name: Optional[str],
+    fidelity_type: Optional[str],
+    on_error: str,
+    error_path: Optional[str] = None,
+    failures_path: Optional[str] = None,
+) -> float:
+    """Module-level SMAC target body (pickle-safe context, not the public sig).
+
+    The entire trial evaluation is covered by ``on_error`` handling:
+
+    * model construction (``model_type(params)``)
+    * model run
+    * objective evaluation / validation (including non-finite returns)
+
+    Leaving construction outside the try used to let SMAC mark the trial
+    CRASHED with ``cost=inf`` while ``on_error='penalize'`` recorded nothing
+    (``best_cost=inf``, ``failures=[]``).
+    """
+    params = dict(fixed_params or {})
+    params.update(dict(config))
+    if budget is not None and fidelity_name is not None:
+        params[fidelity_name] = _coerce_fidelity_budget(budget, fidelity_type)
+    params.setdefault("seed", seed)
+    params.setdefault("show_progress", False)
+    try:
+        model = model_type(params)
+        model.results = model.run()
+        value = objective(model)
+        if value is None or not np.isfinite(value):
+            raise ValueError(f"Objective returned non-finite value: {value!r}")
+        return float(value)
+    except Exception as exc:
+        if on_error == "raise":
+            _write_first_error(error_path, exc)
+            raise
+        _append_failure_jsonl(failures_path, _failure_record(params, exc))
+        return _PENALTY_COST
+
+
+class _SMACTrialEvaluator:
+    """Pickle-safe SMAC target with a clean ``(config, seed[, budget])`` signature.
+
+    ``functools.partial`` leaks keyword-only parameters into
+    ``inspect.signature``, which triggers SMAC's "argument X is not set"
+    warnings. This callable class exposes only the arguments SMAC actually
+    injects. SMAC also fingerprints ``target.__code__`` (not
+    ``target.__call__.__code__``), so we proxy that attribute.
+    """
+
+    __slots__ = (
+        "model_type",
+        "objective",
+        "fixed_params",
+        "fidelity_name",
+        "fidelity_type",
+        "on_error",
+        "error_path",
+        "failures_path",
+        "use_budget",
+    )
+
+    def __init__(
+        self,
+        *,
+        model_type: Type[Model],
+        objective: Callable[[Model], float],
+        fixed_params: Dict[str, Any],
+        fidelity_name: Optional[str],
+        fidelity_type: Optional[str],
+        on_error: str,
+        error_path: Optional[str],
+        failures_path: Optional[str],
+        use_budget: bool,
+    ):
+        self.model_type = model_type
+        self.objective = objective
+        self.fixed_params = fixed_params
+        self.fidelity_name = fidelity_name
+        self.fidelity_type = fidelity_type
+        self.on_error = on_error
+        self.error_path = error_path
+        self.failures_path = failures_path
+        self.use_budget = bool(use_budget)
+
+    @property
+    def __code__(self):
+        # SMAC TargetFunctionRunner.meta reads target.__code__.co_code
+        return type(self).__call__.__code__
+
+    def __call__(self, config, seed: int = 0, budget=None) -> float:
+        return _smac_trial_target(
+            config,
+            seed,
+            budget,
+            model_type=self.model_type,
+            objective=self.objective,
+            fixed_params=self.fixed_params,
+            fidelity_name=self.fidelity_name,
+            fidelity_type=self.fidelity_type,
+            on_error=self.on_error,
+            error_path=self.error_path,
+            failures_path=self.failures_path,
+        )
+
+
+class _SMACTrialEvaluatorSF(_SMACTrialEvaluator):
+    """Single-fidelity target: only ``(config, seed)`` — no budget warning."""
+
+    def __call__(self, config, seed: int = 0) -> float:  # type: ignore[override]
+        return _smac_trial_target(
+            config,
+            seed,
+            None,
+            model_type=self.model_type,
+            objective=self.objective,
+            fixed_params=self.fixed_params,
+            fidelity_name=self.fidelity_name,
+            fidelity_type=self.fidelity_type,
+            on_error=self.on_error,
+            error_path=self.error_path,
+            failures_path=self.failures_path,
+        )
 
 
 def _extract_metric_value(model_data: Any, metric: str) -> float:
@@ -312,10 +676,8 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
     from ConfigSpace import (
         ConfigurationSpace,
         UniformIntegerHyperparameter,
-        UniformFloatHyperparameter,
         CategoricalHyperparameter,
     )
-    import tempfile
     from smac import HyperparameterOptimizationFacade, Scenario
     from smac.acquisition.function import EI
     from smac.model.random_forest import RandomForest
@@ -347,17 +709,20 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
                 default_value=value.start,
             )
             cs.add(hp)
-        elif isinstance(value, float):
-            hp = UniformFloatHyperparameter(
-                name=name,
-                lower=value,
-                upper=value,
-                default_value=value,
-            )
-            cs.add(hp)
-        elif isinstance(value, (int, str, bool)):
-            # Fixed scalar — not optimised; stored separately.
+        elif isinstance(value, bool):
+            # bool is a subclass of int — keep before the int branch.
             fixed_params[name] = value
+        elif isinstance(value, (int, float, str)):
+            # Fixed scalar (incl. float) — not optimised. Equal-bound
+            # UniformFloatHyperparameter is rejected by ConfigSpace.
+            fixed_params[name] = (
+                float(value) if isinstance(value, float) else value
+            )
+        elif isinstance(value, (np.floating, np.integer)):
+            # NumPy scalars — still fixed constants, not search dimensions.
+            fixed_params[name] = (
+                float(value) if isinstance(value, np.floating) else int(value)
+            )
         else:
             raise TypeError(
                 f"Unsupported parameter type for {name!r}: {type(value)}"
@@ -365,7 +730,11 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
 
     # --- scenario & SMAC facade --------------------------------------------
     # Use a temporary output directory so each call starts fresh.
-    tmp_dir = tempfile.mkdtemp(prefix='amber_bayes_')
+    tmp_dir = tempfile.mkdtemp(prefix="amber_bayes_")
+    error_path = str(Path(tmp_dir) / "first_error.pkl")
+    failures_path = (
+        str(Path(tmp_dir) / "failures.jsonl") if on_error == "penalize" else None
+    )
     scenario = Scenario(
         cs,
         n_trials=n_calls,
@@ -402,11 +771,24 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
             )
         except Exception as exc:
             if on_error == "raise":
+                _write_first_error(error_path, exc)
                 raise
             key = tuple(sorted(params.items()))
-            failure_by_params[key] = _failure_record(params, exc)
+            rec = _failure_record(params, exc)
+            failure_by_params[key] = rec
+            _append_failure_jsonl(failures_path, rec)
             # SMAC minimises; a large positive cost is "worst" for both
             # minimize and maximize (maximize path negates successful objs).
+            return _PENALTY_COST
+        if obj is None or not np.isfinite(obj):
+            exc = ValueError(f"Objective returned non-finite value: {obj!r}")
+            if on_error == "raise":
+                _write_first_error(error_path, exc)
+                raise exc
+            key = tuple(sorted(params.items()))
+            rec = _failure_record(params, exc)
+            failure_by_params[key] = rec
+            _append_failure_jsonl(failures_path, rec)
             return _PENALTY_COST
         # SMAC always minimises; if the user wants to maximise, negate
         return -obj if not minimize else obj
@@ -423,36 +805,52 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
     )
 
     try:
-        smac.optimize()
-    except Exception as exc:
-        # Only the documented "search exhausted" condition is non-fatal —
-        # proceed with whatever SMAC evaluated so far (runhistory still has
-        # the partial results). All other exceptions re-raise.
-        if not _is_search_exhausted(exc):
-            raise
-
-    # --- collect history ---------------------------------------------------
-    results: List[Dict[str, Any]] = []
-    for config in smac.runhistory.get_configs():
         try:
-            cost = smac.runhistory.get_cost(config)
-        except KeyError:
-            cost = float('inf')
-        params = _resolve_params(config)
-        entry: Dict[str, Any] = {
-            'parameters': params,
-            'objective': -cost if not minimize else cost,
-        }
-        fail = failure_by_params.get(tuple(sorted(params.items())))
-        if fail is not None:
-            entry['failure'] = fail
-            # Keep penalized objectives as worst-sorted even after the
-            # maximize-path negation of a large positive cost.
-            entry['objective'] = -_PENALTY_COST if not minimize else _PENALTY_COST
-        results.append(entry)
+            smac.optimize()
+        except Exception as exc:
+            first = _load_error_side_channel(error_path)
+            if on_error == "raise" and first is not None:
+                raise first from exc
+            # Only the documented "search exhausted" condition is non-fatal —
+            # proceed with whatever SMAC evaluated so far (runhistory still has
+            # the partial results). All other exceptions re-raise.
+            if not _is_search_exhausted(exc):
+                raise
 
-    results.sort(key=lambda x: x['objective'], reverse=not minimize)
-    return results
+        if on_error == "raise":
+            first = _load_error_side_channel(error_path)
+            if first is not None:
+                raise first
+
+        # --- collect history ---------------------------------------------------
+        results: List[Dict[str, Any]] = []
+        for config in smac.runhistory.get_configs():
+            try:
+                cost = smac.runhistory.get_cost(config)
+            except KeyError:
+                cost = float('inf')
+            params = _resolve_params(config)
+            entry: Dict[str, Any] = {
+                'parameters': params,
+                'objective': -cost if not minimize else cost,
+            }
+            fail = failure_by_params.get(tuple(sorted(params.items())))
+            if fail is not None:
+                entry['failure'] = fail
+                # Keep penalized objectives as worst-sorted even after the
+                # maximize-path negation of a large positive cost.
+                entry['objective'] = -_PENALTY_COST if not minimize else _PENALTY_COST
+            results.append(entry)
+
+        results.sort(key=lambda x: x['objective'], reverse=not minimize)
+        return results
+    finally:
+        if os.environ.get("AMBER_SMAC_KEEP_OUTPUT", "").strip() not in (
+            "1",
+            "true",
+            "yes",
+        ):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 # Advanced SMAC-based ParameterSpace for complex optimization
@@ -531,34 +929,26 @@ class SMACParameterSpace:
                 )
             cs.add_hyperparameter(hp)
 
-        # Add fidelity parameters
-        for name, param in self.fidelity_parameters.items():
-            if param['type'] == 'float':
-                hp = UniformFloatHyperparameter(
-                    name=name,
-                    lower=param['bounds'][0],
-                    upper=param['bounds'][1],
-                    default_value=param['default']
-                )
-            elif param['type'] == 'int':
-                hp = UniformIntegerHyperparameter(
-                    name=name,
-                    lower=param['bounds'][0],
-                    upper=param['bounds'][1],
-                    default_value=param['default']
-                )
-            else:  # categorical
-                hp = CategoricalHyperparameter(
-                    name=name,
-                    choices=param['choices'],
-                    default_value=param['default']
-                )
-            cs.add_hyperparameter(hp)
-
+        # Fidelity parameters are *not* searchable hyperparameters. Their
+        # bounds define SMAC multi-fidelity min_budget/max_budget only; the
+        # budget is injected into the trial via the target-function argument.
+        # Adding them to the configspace caused independent samples that
+        # disagreed with the Successive Halving budget actually evaluated.
         return cs
 
 class SMACOptimizer:
-    """Optimize model parameters using SMAC with various strategies."""
+    """Optimize model parameters using SMAC (supported options for AMBER 0.5.x).
+
+    Supported strategies: ``bayesian`` (default), ``random``,
+    ``algorithm_configuration``. ``strategy='random'`` and
+    ``use_random_search=True`` both select SMAC's :class:`RandomFacade`.
+
+    Supported acquisition functions: ``ei``, ``lcb``, ``pi``, ``eips``, ``ts``
+    (Thompson sampling). Surrogate models: ``random_forest`` only.
+
+    Non-search parameters (e.g. ``n_agents``, ``steps``) belong in
+    ``fixed_params`` — they are merged into every trial.
+    """
 
     def __init__(self, model_type: Type[Model],
                  param_space: SMACParameterSpace,
@@ -572,6 +962,7 @@ class SMACOptimizer:
                  surrogate_model: str = 'random_forest',
                  use_multi_fidelity: bool = False,
                  use_random_search: bool = False,
+                 fixed_params: Optional[Dict[str, Any]] = None,
                  on_error: Literal["raise", "penalize"] = "raise"):
         """Initialize the optimizer.
 
@@ -582,12 +973,18 @@ class SMACOptimizer:
             n_trials: Number of optimization trials
             n_workers: Number of parallel workers
             seed: Random seed
-            strategy: Optimization strategy ('bayesian', 'random', 'algorithm_configuration')
-            acquisition_function: Acquisition function ('ei', 'lcb', 'pi', 'eips', 'log_ei')
-            initial_design: Initial design strategy ('latin_hypercube', 'random', 'sobol')
-            surrogate_model: Surrogate model type ('random_forest', 'gaussian_process', 'random_forest_with_instances')
-            use_multi_fidelity: Whether to use multi-fidelity optimization
-            use_random_search: Whether to use random search
+            strategy: ``'bayesian'``, ``'random'``, or ``'algorithm_configuration'``
+            acquisition_function: ``'ei'``, ``'lcb'``, ``'pi'``, ``'eips'``, or
+                ``'ts'`` (Thompson sampling). ``'log_ei'`` is **not** supported.
+            initial_design: ``'latin_hypercube'``, ``'random'``, or ``'sobol'``
+            surrogate_model: Only ``'random_forest'`` is supported. GP and
+                ``random_forest_with_instances`` raise ``ValueError``.
+            use_multi_fidelity: If True, requires fidelity parameters on
+                ``param_space`` (``is_fidelity=True``) with numeric bounds used
+                as SMAC ``min_budget`` / ``max_budget`` for Successive Halving.
+            use_random_search: Alias for ``strategy='random'`` (RandomFacade)
+            fixed_params: Merged into every trial (e.g. ``n_agents``, ``steps``,
+                ``show_progress``). Overridden by search-space keys of the same name.
             on_error: ``'raise'`` (default) propagates evaluation failures;
                 ``'penalize'`` maps them to a large finite cost and records a
                 structured failure entry on ``self.failures``.
@@ -598,12 +995,21 @@ class SMACOptimizer:
             raise ValueError(
                 f"on_error must be 'raise' or 'penalize', got {on_error!r}"
             )
-        from smac import HyperparameterOptimizationFacade, Scenario, MultiFidelityFacade, RandomFacade, AlgorithmConfigurationFacade
+        from smac import (
+            HyperparameterOptimizationFacade,
+            Scenario,
+            MultiFidelityFacade,
+            RandomFacade,
+            AlgorithmConfigurationFacade,
+        )
         from smac.model.random_forest import RandomForest
-        from smac.model.gaussian_process import GaussianProcess
         from smac.acquisition.function import EI, LCB, PI, EIPS, TS
         from smac.acquisition.maximizer import LocalAndSortedRandomSearch
-        from smac.initial_design import LatinHypercubeInitialDesign, RandomInitialDesign, SobolInitialDesign
+        from smac.initial_design import (
+            LatinHypercubeInitialDesign,
+            RandomInitialDesign,
+            SobolInitialDesign,
+        )
         from smac.intensifier import SuccessiveHalving
 
         self.model_type = model_type
@@ -613,22 +1019,25 @@ class SMACOptimizer:
         self.n_workers = n_workers
         self.seed = seed
         self.on_error = on_error
+        self.fixed_params: Dict[str, Any] = dict(fixed_params or {})
         self.failures: List[Dict[str, Any]] = []
+        self._fidelity_name: Optional[str] = None
+        self._fidelity_type: Optional[str] = None
 
         # Initialize SMAC components
         self.configspace = param_space.get_configspace()
 
-        # Select initial design
+        # Select initial design class
         if initial_design == 'latin_hypercube':
-            initial_design = LatinHypercubeInitialDesign
+            initial_design_cls = LatinHypercubeInitialDesign
         elif initial_design == 'random':
-            initial_design = RandomInitialDesign
+            initial_design_cls = RandomInitialDesign
         elif initial_design == 'sobol':
-            initial_design = SobolInitialDesign
+            initial_design_cls = SobolInitialDesign
         else:
             raise ValueError(f"Unknown initial design: {initial_design}")
 
-        # Select acquisition function
+        # Select acquisition function (supported set only)
         if acquisition_function == 'ei':
             acq_func = EI()
         elif acquisition_function == 'lcb':
@@ -637,171 +1046,418 @@ class SMACOptimizer:
             acq_func = PI()
         elif acquisition_function == 'eips':
             acq_func = EIPS()
-        elif acquisition_function == 'log_ei':
+        elif acquisition_function == 'ts':
             acq_func = TS()
+        elif acquisition_function == 'log_ei':
+            raise ValueError(
+                "acquisition_function='log_ei' is not supported (it previously "
+                "mis-mapped to Thompson sampling). Use 'ei' or 'ts'."
+            )
         else:
-            raise ValueError(f"Unknown acquisition function: {acquisition_function}")
+            raise ValueError(
+                f"Unknown acquisition function: {acquisition_function!r}. "
+                "Supported: 'ei', 'lcb', 'pi', 'eips', 'ts'."
+            )
 
-        # Select surrogate model. SMAC 2.x surrogate models require the
-        # configuration space as their first argument.
+        # Surrogate model — only RandomForest is wired for SMAC 2.x here.
         if surrogate_model == 'random_forest':
             model = RandomForest(self.configspace)
-        elif surrogate_model == 'gaussian_process':
-            model = GaussianProcess(self.configspace)
+        elif surrogate_model in (
+            'gaussian_process',
+            'random_forest_with_instances',
+        ):
+            raise ValueError(
+                f"surrogate_model={surrogate_model!r} is not supported in this "
+                "AMBER release. Use surrogate_model='random_forest' (default)."
+            )
         else:
-            raise ValueError(f"Unknown model type: {surrogate_model}")
+            raise ValueError(
+                f"Unknown model type: {surrogate_model!r}. "
+                "Supported: 'random_forest'."
+            )
 
-        # Create scenario
-        self.scenario = Scenario(
-            self.configspace,
-            n_trials=n_trials,
-            n_workers=n_workers,
-            seed=seed
-        )
+        want_random = bool(use_random_search) or strategy == "random"
+        want_mf = bool(use_multi_fidelity)
+        # Validate strategy before allocating temp dirs / starting Dask.
+        if want_mf:
+            facade_kind = "mf"
+        elif want_random:
+            facade_kind = "random"
+        elif strategy == "algorithm_configuration":
+            facade_kind = "ac"
+        elif strategy == "bayesian":
+            facade_kind = "bayesian"
+        else:
+            raise ValueError(
+                f"Unknown strategy: {strategy!r}. "
+                "Supported: 'bayesian', 'random', 'algorithm_configuration'."
+            )
 
-        # Initialize appropriate SMAC facade
-        if use_multi_fidelity:
+        if want_mf:
             if not param_space.fidelity_parameters:
-                raise ValueError("No fidelity parameters defined for multi-fidelity optimization")
-            self.smac = MultiFidelityFacade(
-                scenario=self.scenario,
-                target_function=self._evaluate_config,
-                acquisition_function=acq_func,
-                model=model,
-                initial_design=initial_design(
-                    scenario=self.scenario,
-                    n_configs=min(10, n_trials)
-                ),
-                intensifier=SuccessiveHalving(
-                    scenario=self.scenario,
-                    incumbent_selection="highest_budget",
-                    max_incumbents=1
-                )
-            )
-        elif use_random_search:
-            self.smac = RandomFacade(
-                scenario=self.scenario,
-                target_function=self._evaluate_config
-            )
-        elif strategy == 'algorithm_configuration':
-            self.smac = AlgorithmConfigurationFacade(
-                scenario=self.scenario,
-                target_function=self._evaluate_config,
-                acquisition_function=acq_func,
-                model=model,
-                initial_design=initial_design(
-                    scenario=self.scenario,
-                    n_configs=min(10, n_trials)
-                )
-            )
-        else:  # bayesian
-            self.smac = HyperparameterOptimizationFacade(
-                scenario=self.scenario,
-                target_function=self._evaluate_config,
-                acquisition_function=acq_func,
-                model=model,
-                initial_design=initial_design(
-                    scenario=self.scenario,
-                    n_configs=min(10, n_trials)
-                ),
-                acquisition_maximizer=LocalAndSortedRandomSearch(
-                    configspace=self.configspace,
-                    acquisition_function=acq_func,
-                    challengers=1000,
-                    local_search_iterations=10
-                )
-            )
-
-    def _evaluate_config(self, config, seed: int = 0, budget=None) -> float:
-        """Evaluate a parameter configuration (SMAC 2.x target function).
-
-        SMAC passes a ``Configuration`` plus a per-trial ``seed`` (and an
-        optional ``budget`` for multi-fidelity); both are accepted so SMAC's
-        ``TargetFunctionRunner`` can bind them. The seed is injected into the
-        model parameters so each trial is reproducible.
-
-        Args:
-            config: SMAC ``Configuration`` (dict-like) of parameter values
-            seed: per-trial seed supplied by SMAC
-            budget: optional fidelity budget (unused in the single-fidelity path)
-
-        Returns:
-            Objective value
-        """
-        params = dict(config)
-        params.setdefault('seed', seed)
-        params.setdefault('show_progress', False)
-        model = self.model_type(params)
-        # Store results on the model so a Callable[[Model], float] objective can
-        # read ``model.results`` (Model.run returns the dict but does not assign
-        # it). With on_error='penalize', map a failed / degenerate evaluation to
-        # a large finite cost and keep a structured failure record.
-        try:
-            model.results = model.run()
-            value = self.objective(model)
-        except Exception as exc:
-            if self.on_error == "raise":
-                raise
-            self.failures.append(_failure_record(params, exc))
-            return _PENALTY_COST
-        if value is None or not np.isfinite(value):
-            if self.on_error == "raise":
                 raise ValueError(
-                    f"Objective returned non-finite value: {value!r}"
+                    "use_multi_fidelity=True requires at least one parameter "
+                    "added with is_fidelity=True (numeric bounds become "
+                    "min_budget/max_budget for Successive Halving)."
                 )
-            self.failures.append(
-                _failure_record(
-                    params,
-                    ValueError(f"Objective returned non-finite value: {value!r}"),
+            fname, fparam = next(iter(param_space.fidelity_parameters.items()))
+            if fparam.get("bounds") is None:
+                raise ValueError(
+                    f"Fidelity parameter {fname!r} must have numeric bounds"
                 )
-            )
-            return _PENALTY_COST
-        return float(value)
+            lo, hi = fparam["bounds"]
+            if lo is None or hi is None or float(lo) >= float(hi):
+                raise ValueError(
+                    f"Fidelity parameter {fname!r} bounds must satisfy min < max"
+                )
+            if fparam.get("type") == "int":
+                lo, hi = int(lo), int(hi)
+            self._fidelity_name = fname
+            self._fidelity_type = fparam.get("type")
+            mf_budgets = (lo, hi)
+        else:
+            mf_budgets = None
 
+        # Unique SMAC run directory — created only after validation so failed
+        # constructors do not leak amber_smac_* directories.
+        self._output_dir = tempfile.mkdtemp(prefix="amber_smac_")
+        # Error side-channel lives *outside* the SMAC output directory so it
+        # survives SMAC/Dask touching that tree. Use a path that does **not**
+        # pre-create an empty file (empty files would look like a failed
+        # side-channel and spuriously raise after a successful run).
+        self._error_path = str(
+            Path(tempfile.gettempdir())
+            / f"amber_smac_err_{os.getpid()}_{secrets.token_hex(8)}.pkl"
+        )
+        # Failures JSONL also lives outside the SMAC output tree so Dask/SMAC
+        # churn cannot drop penalize records before the parent reloads them.
+        self._failures_path = (
+            str(
+                Path(tempfile.gettempdir())
+                / f"amber_smac_fail_{os.getpid()}_{secrets.token_hex(8)}.jsonl"
+            )
+            if on_error == "penalize"
+            else None
+        )
+        try:
+            scenario_kwargs: Dict[str, Any] = {
+                "n_trials": n_trials,
+                "n_workers": n_workers,
+                "seed": seed,
+                "output_directory": self._output_dir,
+            }
+            if mf_budgets is not None:
+                scenario_kwargs["min_budget"] = mf_budgets[0]
+                scenario_kwargs["max_budget"] = mf_budgets[1]
+
+            self.scenario = Scenario(self.configspace, **scenario_kwargs)
+
+            # Clean (config, seed[, budget]) signature — no partial kwargs.
+            eval_kwargs = dict(
+                model_type=self.model_type,
+                objective=self.objective,
+                fixed_params=self.fixed_params,
+                fidelity_name=self._fidelity_name,
+                fidelity_type=self._fidelity_type,
+                on_error=self.on_error,
+                error_path=self._error_path,
+                failures_path=self._failures_path,
+                use_budget=want_mf,
+            )
+            target: Any = (
+                _SMACTrialEvaluator(**eval_kwargs)
+                if want_mf
+                else _SMACTrialEvaluatorSF(**eval_kwargs)
+            )
+
+            if facade_kind == "mf":
+                self.smac = MultiFidelityFacade(
+                    scenario=self.scenario,
+                    target_function=target,
+                    acquisition_function=acq_func,
+                    model=model,
+                    initial_design=initial_design_cls(
+                        scenario=self.scenario,
+                        n_configs=min(10, n_trials),
+                    ),
+                    intensifier=SuccessiveHalving(
+                        scenario=self.scenario,
+                        incumbent_selection="highest_budget",
+                        max_incumbents=1,
+                    ),
+                )
+            elif facade_kind == "random":
+                self.smac = RandomFacade(
+                    scenario=self.scenario,
+                    target_function=target,
+                )
+            elif facade_kind == "ac":
+                self.smac = AlgorithmConfigurationFacade(
+                    scenario=self.scenario,
+                    target_function=target,
+                    acquisition_function=acq_func,
+                    model=model,
+                    initial_design=initial_design_cls(
+                        scenario=self.scenario,
+                        n_configs=min(10, n_trials),
+                    ),
+                )
+            else:
+                self.smac = HyperparameterOptimizationFacade(
+                    scenario=self.scenario,
+                    target_function=target,
+                    acquisition_function=acq_func,
+                    model=model,
+                    initial_design=initial_design_cls(
+                        scenario=self.scenario,
+                        n_configs=min(10, n_trials),
+                    ),
+                    acquisition_maximizer=LocalAndSortedRandomSearch(
+                        configspace=self.configspace,
+                        acquisition_function=acq_func,
+                        challengers=1000,
+                        local_search_iterations=10,
+                    ),
+                )
+        except Exception:
+            # Constructor failed after temp dir allocation — do not leak.
+            self._cleanup_output_dir()
+            raise
+
+    def _load_first_error(self) -> Optional[BaseException]:
+        return _load_error_side_channel(getattr(self, "_error_path", None))
+
+    def _load_failures_from_disk(self) -> List[Dict[str, Any]]:
+        path = getattr(self, "_failures_path", None)
+        if not path:
+            return []
+        p = Path(path)
+        if not p.is_file():
+            return []
+        out: List[Dict[str, Any]] = []
+        try:
+            for line in p.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line:
+                    out.append(json.loads(line))
+        except Exception:
+            pass
+        return out
+
+    def _cleanup_output_dir(self) -> None:
+        """Remove temp SMAC directory unless AMBER_SMAC_KEEP_OUTPUT is set."""
+        if os.environ.get("AMBER_SMAC_KEEP_OUTPUT", "").strip() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            return
+        out = getattr(self, "_output_dir", None)
+        if out:
+            shutil.rmtree(out, ignore_errors=True)
+        # Side-channel files (outside output dir)
+        err = getattr(self, "_error_path", None)
+        if err:
+            try:
+                Path(err).unlink(missing_ok=True)
+            except TypeError:
+                try:
+                    if Path(err).is_file():
+                        Path(err).unlink()
+                except OSError:
+                    pass
+            except OSError:
+                pass
+            try:
+                _error_json_path(err).unlink(missing_ok=True)
+            except TypeError:
+                try:
+                    jp = _error_json_path(err)
+                    if jp.is_file():
+                        jp.unlink()
+                except OSError:
+                    pass
+            except OSError:
+                pass
+        fail = getattr(self, "_failures_path", None)
+        if fail:
+            try:
+                Path(fail).unlink(missing_ok=True)
+            except TypeError:
+                try:
+                    if Path(fail).is_file():
+                        Path(fail).unlink()
+                except OSError:
+                    pass
+            except OSError:
+                pass
+
+    def _shutdown_parallel_resources(self) -> None:
+        """Close SMAC's Dask client/workers when ``n_workers > 1``.
+
+        SMAC's ``DaskParallelRunner`` only closes the client in ``__del__``,
+        which leaves nannies/workers alive until GC. Explicitly close after
+        optimize so process trees do not accumulate.
+        """
+        smac = getattr(self, "smac", None)
+        if smac is None:
+            return
+        # SMAC stores the runner as ``_runner`` on the facade.
+        runner = getattr(smac, "_runner", None) or getattr(smac, "runner", None)
+        if runner is None:
+            return
+        # Prefer public close(force=True) on DaskParallelRunner.
+        close = getattr(runner, "close", None)
+        if callable(close):
+            try:
+                close(force=True)
+            except TypeError:
+                try:
+                    close()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        client = getattr(runner, "_client", None) or getattr(runner, "client", None)
+        if client is not None:
+            # Local clusters started by DaskParallelRunner need an explicit
+            # cluster shutdown; client.close() alone may leave nannies.
+            cluster = getattr(client, "cluster", None)
+            try:
+                if cluster is not None:
+                    cluster.close(timeout=5)
+            except TypeError:
+                try:
+                    cluster.close()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            try:
+                client.close(timeout=5)
+            except TypeError:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            try:
+                # Extra belt-and-suspenders for older dask versions.
+                if hasattr(client, "shutdown"):
+                    client.shutdown()
+            except Exception:
+                pass
     def optimize(self) -> Dict[str, Any]:
         """Run the optimization.
 
         Returns:
-            Dictionary containing best configuration and results. When
-            ``on_error='penalize'``, also includes ``failures`` (list of
-            structured failure records).
+            Dict with:
+
+            * ``best_config`` — incumbent hyperparameters (search space only)
+            * ``best_cost`` / ``best_objective`` — minimized cost (aliases)
+            * ``n_evaluations`` — number of history rows
+            * ``history`` — Polars frame: search-space columns plus ``cost``,
+              ``objective`` (same as cost), ``time``, ``trial``
+            * ``failures`` — only when ``on_error='penalize'``
+
+        When ``on_error='raise'`` (default), the first target/objective
+        exception is re-raised after SMAC returns (SMAC itself swallows
+        target crashes into CRASHED/inf trials). Works for ``n_workers>1`` via
+        a pickle side-channel under the run directory.
         """
-        # Run optimization; only documented search-exhaustion is non-fatal.
         try:
-            incumbent = self.smac.optimize()
-        except Exception as exc:
-            if not _is_search_exhausted(exc):
-                raise
-            incumbent = None
-
-        # Convert the run history to a DataFrame (SMAC 2.x RunHistory is a
-        # Mapping of TrialKey -> TrialValue; access configs via get_config).
-        history = self.smac.runhistory
-        data = []
-        for trial_key, trial_value in history.items():
-            config = history.get_config(trial_key.config_id)
-            data.append({
-                **dict(config),
-                'cost': trial_value.cost,
-                'time': getattr(trial_value, 'time', 0.0),
-            })
-        history_df = pl.DataFrame(data) if data else pl.DataFrame()
-
-        best_cost = None
-        if incumbent is not None:
+            # Run optimization; only documented search-exhaustion is non-fatal.
             try:
-                best_cost = history.get_cost(incumbent)
-            except KeyError:
-                best_cost = None
-        out: Dict[str, Any] = {
-            'best_config': dict(incumbent) if incumbent is not None else {},
-            'best_cost': best_cost,
-            'best_objective': best_cost,  # alias for callers expecting this key
-            'history': history_df,
-        }
-        if self.on_error == "penalize":
-            out['failures'] = list(self.failures)
-        return out
+                incumbent = self.smac.optimize()
+            except Exception as exc:
+                first = self._load_first_error()
+                if self.on_error == "raise" and first is not None:
+                    raise first from exc
+                if not _is_search_exhausted(exc):
+                    raise
+                incumbent = None
+
+            if self.on_error == "raise":
+                first = self._load_first_error()
+                if first is not None:
+                    raise first
+
+            # Convert the run history to a DataFrame (SMAC 2.x RunHistory is a
+            # Mapping of TrialKey -> TrialValue; access configs via get_config).
+            history = self.smac.runhistory
+            data = []
+            crashed = False
+            for trial_i, (trial_key, trial_value) in enumerate(history.items()):
+                config = history.get_config(trial_key.config_id)
+                cost = trial_value.cost
+                status = getattr(trial_value, "status", None)
+                status_name = (
+                    getattr(status, "name", None) or str(status or "")
+                ).upper()
+                if status_name == "CRASHED" or (
+                    isinstance(cost, (int, float)) and not np.isfinite(float(cost))
+                ):
+                    crashed = True
+                row: Dict[str, Any] = {
+                    **dict(config),
+                    'cost': cost,
+                    'objective': cost,  # alias — SMAC minimizes cost
+                    'time': getattr(trial_value, 'time', 0.0),
+                    'trial': trial_i,
+                }
+                # Multi-fidelity: report the budget actually used.
+                if self._fidelity_name is not None:
+                    budget = getattr(trial_key, "budget", None)
+                    if budget is not None:
+                        row[self._fidelity_name] = _coerce_fidelity_budget(
+                            budget, self._fidelity_type
+                        )
+                data.append(row)
+
+            # Last line of defense: never return silent inf under raise mode.
+            if self.on_error == "raise":
+                first = self._load_first_error()
+                if first is not None:
+                    raise first
+                if crashed or (
+                    incumbent is None
+                    and data
+                    and all(
+                        not np.isfinite(float(r["cost"]))
+                        if isinstance(r.get("cost"), (int, float))
+                        else True
+                        for r in data
+                    )
+                ):
+                    raise RemoteObjectiveError(
+                        "SMAC trial(s) crashed under on_error='raise' but the "
+                        "original exception was not recoverable in the parent "
+                        "(unpickleable worker exception or missing side-channel)."
+                    )
+
+            history_df = pl.DataFrame(data) if data else pl.DataFrame()
+
+            best_cost = None
+            if incumbent is not None:
+                try:
+                    best_cost = history.get_cost(incumbent)
+                except KeyError:
+                    best_cost = None
+            out: Dict[str, Any] = {
+                'best_config': dict(incumbent) if incumbent is not None else {},
+                'best_cost': best_cost,
+                'best_objective': best_cost,
+                'n_evaluations': len(data),
+                'history': history_df,
+            }
+            if self.on_error == "penalize":
+                self.failures = self._load_failures_from_disk()
+                out['failures'] = list(self.failures)
+            return out
+        finally:
+            self._shutdown_parallel_resources()
+            self._cleanup_output_dir()
 
 class MultiObjectiveSMAC:
     """Multi-objective optimization by running one SMAC search per objective.
