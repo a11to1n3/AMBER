@@ -319,31 +319,37 @@ def _smac_trial_target(
     error_path: Optional[str] = None,
     failures_path: Optional[str] = None,
 ) -> float:
-    """Module-level SMAC target body (pickle-safe context, not the public sig)."""
+    """Module-level SMAC target body (pickle-safe context, not the public sig).
+
+    The entire trial evaluation is covered by ``on_error`` handling:
+
+    * model construction (``model_type(params)``)
+    * model run
+    * objective evaluation / validation (including non-finite returns)
+
+    Leaving construction outside the try used to let SMAC mark the trial
+    CRASHED with ``cost=inf`` while ``on_error='penalize'`` recorded nothing
+    (``best_cost=inf``, ``failures=[]``).
+    """
     params = dict(fixed_params or {})
     params.update(dict(config))
     if budget is not None and fidelity_name is not None:
         params[fidelity_name] = _coerce_fidelity_budget(budget, fidelity_type)
     params.setdefault("seed", seed)
     params.setdefault("show_progress", False)
-    model = model_type(params)
     try:
+        model = model_type(params)
         model.results = model.run()
         value = objective(model)
+        if value is None or not np.isfinite(value):
+            raise ValueError(f"Objective returned non-finite value: {value!r}")
+        return float(value)
     except Exception as exc:
         if on_error == "raise":
             _write_first_error(error_path, exc)
             raise
         _append_failure_jsonl(failures_path, _failure_record(params, exc))
         return _PENALTY_COST
-    if value is None or not np.isfinite(value):
-        err = ValueError(f"Objective returned non-finite value: {value!r}")
-        if on_error == "raise":
-            _write_first_error(error_path, err)
-            raise err
-        _append_failure_jsonl(failures_path, _failure_record(params, err))
-        return _PENALTY_COST
-    return float(value)
 
 
 class _SMACTrialEvaluator:
@@ -1123,8 +1129,13 @@ class SMACOptimizer:
             Path(tempfile.gettempdir())
             / f"amber_smac_err_{os.getpid()}_{secrets.token_hex(8)}.pkl"
         )
+        # Failures JSONL also lives outside the SMAC output tree so Dask/SMAC
+        # churn cannot drop penalize records before the parent reloads them.
         self._failures_path = (
-            str(Path(self._output_dir) / "failures.jsonl")
+            str(
+                Path(tempfile.gettempdir())
+                / f"amber_smac_fail_{os.getpid()}_{secrets.token_hex(8)}.jsonl"
+            )
             if on_error == "penalize"
             else None
         )
@@ -1244,7 +1255,7 @@ class SMACOptimizer:
         out = getattr(self, "_output_dir", None)
         if out:
             shutil.rmtree(out, ignore_errors=True)
-        # Error side-channel files (outside output dir)
+        # Side-channel files (outside output dir)
         err = getattr(self, "_error_path", None)
         if err:
             try:
@@ -1264,6 +1275,18 @@ class SMACOptimizer:
                     jp = _error_json_path(err)
                     if jp.is_file():
                         jp.unlink()
+                except OSError:
+                    pass
+            except OSError:
+                pass
+        fail = getattr(self, "_failures_path", None)
+        if fail:
+            try:
+                Path(fail).unlink(missing_ok=True)
+            except TypeError:
+                try:
+                    if Path(fail).is_file():
+                        Path(fail).unlink()
                 except OSError:
                     pass
             except OSError:

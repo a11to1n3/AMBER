@@ -12,6 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import ambr as am
@@ -192,6 +193,111 @@ def test_smac_on_error_raise_after_smac_swallows():
         on_error="raise",
     )
     with pytest.raises(RuntimeError, match="smac runtime boom"):
+        opt.optimize()
+
+
+class _BoomConstructModel(am.Model):
+    """Fails in __init__ — must be covered by on_error='penalize'."""
+
+    def __init__(self, params):
+        raise RuntimeError("model construction failed")
+
+    def setup(self):
+        pass
+
+    def step(self):
+        pass
+
+
+def _invalid_objective(model: am.Model) -> float:
+    raise ValueError("objective validation failed: metric missing")
+
+
+def _nonfinite_objective(model: am.Model) -> float:
+    return float("nan")
+
+
+@pytest.mark.unit
+def test_on_error_penalize_records_model_construction_failures():
+    """Construction errors must not yield best_cost=inf with failures=[]."""
+    from ambr.optimization import _PENALTY_COST
+
+    fixed = {"n_agents": 4, "steps": 1, "show_progress": False}
+    opt = SMACOptimizer(
+        _BoomConstructModel,
+        _space(),
+        _const_obj,
+        n_trials=3,
+        seed=0,
+        strategy="random",
+        fixed_params=fixed,
+        on_error="penalize",
+    )
+    out = opt.optimize()
+    assert out["failures"], "expected structured failure records"
+    assert all(
+        "construction failed" in f.get("message", "")
+        or f.get("exception_type") == "RuntimeError"
+        for f in out["failures"]
+    )
+    assert out["best_cost"] is not None
+    assert np.isfinite(float(out["best_cost"]))
+    assert float(out["best_cost"]) == float(_PENALTY_COST)
+    costs = [float(c) for c in out["history"]["cost"]]
+    assert costs and all(c == float(_PENALTY_COST) for c in costs)
+
+
+@pytest.mark.unit
+def test_on_error_penalize_records_objective_validation_failures():
+    """Objective-side exceptions and non-finite returns must be penalized."""
+    from ambr.optimization import _PENALTY_COST
+
+    fixed = {"n_agents": 4, "steps": 1, "show_progress": False}
+    opt = SMACOptimizer(
+        _TinyModel,
+        _space(),
+        _invalid_objective,
+        n_trials=2,
+        seed=0,
+        strategy="random",
+        fixed_params=fixed,
+        on_error="penalize",
+    )
+    out = opt.optimize()
+    assert len(out["failures"]) >= 1
+    assert any("objective validation failed" in f.get("message", "") for f in out["failures"])
+    assert float(out["best_cost"]) == float(_PENALTY_COST)
+
+    opt2 = SMACOptimizer(
+        _TinyModel,
+        _space(),
+        _nonfinite_objective,
+        n_trials=2,
+        seed=1,
+        strategy="random",
+        fixed_params=fixed,
+        on_error="penalize",
+    )
+    out2 = opt2.optimize()
+    assert len(out2["failures"]) >= 1
+    assert any("non-finite" in f.get("message", "").lower() for f in out2["failures"])
+    assert float(out2["best_cost"]) == float(_PENALTY_COST)
+
+
+@pytest.mark.unit
+def test_on_error_raise_propagates_model_construction_failure():
+    fixed = {"n_agents": 4, "steps": 1, "show_progress": False}
+    opt = SMACOptimizer(
+        _BoomConstructModel,
+        _space(),
+        _const_obj,
+        n_trials=2,
+        seed=0,
+        strategy="random",
+        fixed_params=fixed,
+        on_error="raise",
+    )
+    with pytest.raises(RuntimeError, match="model construction failed"):
         opt.optimize()
 
 
