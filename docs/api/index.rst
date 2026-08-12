@@ -48,10 +48,9 @@ Quick Reference
 
 **Core Classes:**
 
-* :class:`ambr.Model` - Base class for all agent-based models
-* :class:`ambr.Agent` - Individual agent with behaviors and properties
-* :class:`ambr.BaseAgent` - Abstract base class for custom agents
-* :class:`ambr.BaseModel` - Abstract base class for custom models
+* :class:`ambr.Model` - Base class for user models (``setup`` / ``step`` / ``run``)
+* :class:`ambr.Agent` - User-facing agent (``setup``, DataFrame-synced attributes)
+* :class:`ambr.BaseModel` / :class:`ambr.BaseAgent` - Low-level primitives (prefer ``Model`` / ``Agent``)
 * :class:`ambr.Population` - SoA memory manager for high-performance state handling
 * :class:`ambr.RunResults` - Dict-like ``model.run()`` result with attribute access
 

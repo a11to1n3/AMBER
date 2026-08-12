@@ -50,12 +50,14 @@ operations — no per-agent loop.
    results = model.cpu(mode="vectorized").run()
    # Vectorized lane on GPU:  model.gpu().run()  (NVIDIA + CuPy)
 
-   # Examine results
+   # Examine results — results.agents is the end-of-run agent table (one row
+   # per living agent). The ``step`` column is each agent's *creation* step
+   # (when it was added), not observation history. Do not filter on
+   # ``step == max(step)`` to get "final state": that drops agents born
+   # earlier who are still alive. For per-step agent history, declare
+   # ``agent_reporters`` and use ``results.agent_vars`` (time column ``t``).
    print("Final wealth distribution:")
-   final_wealth = results['agents'].filter(
-       results['agents']['step'] == results['agents']['step'].max()
-   )
-   print(final_wealth.select(['id', 'wealth']).head(10))
+   print(results.agents.select(['id', 'wealth']).head(10))
 
 Part 2: Adding Spatial Structure
 ---------------------------------
@@ -110,12 +112,9 @@ Now let's enhance our model with a grid environment where agents can only intera
    })
    results = spatial_model.run()
 
-   # End-of-run agent table (step column present when agent history is kept)
-   agents = results['agents']
-   if 'step' in agents.columns:
-       final_data = agents.filter(agents['step'] == agents['step'].max())
-   else:
-       final_data = agents
+   # End-of-run agent table (one row per living agent). ``step`` is creation
+   # step, not time-series history — use the full table for final state.
+   final_data = results.agents
    print(final_data.select(['id', 'x', 'y', 'wealth']).head())
 
    # Optional plot — requires a NumPy-compatible matplotlib:
@@ -176,7 +175,12 @@ Let's add comprehensive data collection to track model-level metrics.
 
 **Step 2: Analyze Results**
 
+Plotting needs matplotlib (optional extra: ``pip install 'ambr[viz]'`` or
+``pip install 'matplotlib>=3.8'``).
+
 .. code-block:: python
+
+   import matplotlib.pyplot as plt
 
    # Run analytical model
    model = AnalyticalWealthModel({
@@ -189,28 +193,27 @@ Let's add comprehensive data collection to track model-level metrics.
    # Create comprehensive analysis plots
    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
-   # Plot 1: Mean wealth over time
-   axes[0,0].plot(results['model']['mean_wealth'])
+   # Plot 1: Mean wealth over time (model-level series from record_model)
+   axes[0,0].plot(results.model['mean_wealth'])
    axes[0,0].set_title('Mean Wealth Over Time')
    axes[0,0].set_xlabel('Time Step')
    axes[0,0].set_ylabel('Mean Wealth')
 
    # Plot 2: Wealth inequality (Gini coefficient)
-   axes[0,1].plot(results['model']['gini_coefficient'])
+   axes[0,1].plot(results.model['gini_coefficient'])
    axes[0,1].set_title('Wealth Inequality (Gini Coefficient)')
    axes[0,1].set_xlabel('Time Step')
    axes[0,1].set_ylabel('Gini Coefficient')
 
    # Plot 3: Wealth standard deviation
-   axes[1,0].plot(results['model']['wealth_std'])
+   axes[1,0].plot(results.model['wealth_std'])
    axes[1,0].set_title('Wealth Standard Deviation')
    axes[1,0].set_xlabel('Time Step')
    axes[1,0].set_ylabel('Standard Deviation')
 
-   # Plot 4: Final wealth distribution histogram
-   final_wealth = results['agents'].filter(
-       results['agents']['step'] == results['agents']['step'].max()
-   )['wealth']
+   # Plot 4: Final wealth histogram — results.agents is end-of-run state
+   # (not a time series; ``step`` would mean birth step, not t).
+   final_wealth = results.agents['wealth']
    axes[1,1].hist(final_wealth, bins=20, alpha=0.7)
    axes[1,1].set_title('Final Wealth Distribution')
    axes[1,1].set_xlabel('Wealth')
