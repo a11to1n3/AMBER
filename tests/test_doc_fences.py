@@ -1,8 +1,18 @@
-"""CI smoke: execute self-contained Python fences from README and key docs.
+"""CI smoke: execute **self-contained** Python fences from selected docs.
+
+This suite is a **regression smoke**, not a proof that every tutorial or
+example script is end-to-end runnable:
+
+* Only the paths in ``DOC_PATHS`` are scanned (not all of ``docs/``).
+* Fences on ``FRAGMENT_ALLOWLIST`` are syntax-checked only (multi-cell
+  continuations, incomplete recipes).
+* ``HEAVY_ALLOWLIST`` fences are syntax-only unless ``AMBER_DOC_FENCE_FULL=1``.
+* Full calibration scripts under ``examples/smac_*.py`` and multi-cell
+  tutorial programs are **not** executed here — run those scripts (or
+  ``scripts/run_gpu_claims.py`` for GPU) separately.
 
 Intentional API fragments (method bodies, incomplete context) are allowlisted.
-Large-N samples are scaled down in CI so the matrix stays fast; full-scale GPU
-claims are verified with ``scripts/run_gpu_claims.py`` on a CUDA host.
+Large-N samples are scaled down in CI so the matrix stays fast.
 """
 
 from __future__ import annotations
@@ -28,12 +38,15 @@ DOC_PATHS = [
     "docs/going_faster.rst",
     "docs/index.rst",
     "docs/api/agent.rst",
+    "docs/api/base.rst",
     "docs/api/contract.rst",
     "docs/api/environments.rst",
+    "docs/api/experiment.rst",
     "docs/api/gpu.rst",
     "docs/api/gpu_ensemble.rst",
     "docs/api/model.rst",
     "docs/api/optimization.rst",
+    "docs/api/performance.rst",
     "docs/api/results.rst",
 ]
 
@@ -50,6 +63,8 @@ FRAGMENT_ALLOWLIST = {
     "docs/quickstart.rst:3",
     "docs/going_faster.rst:0",  # step body fragment in RST
     "docs/api/agent.rst:2",
+    "docs/api/base.rst:0",  # class sketch without run()
+    "docs/api/base.rst:1",  # Agent sketch without model shell
     "docs/api/sequences.rst:0",
     "docs/api/sequences.rst:1",
     # Tutorial multi-cell continuations (need prior class definitions).
@@ -58,6 +73,9 @@ FRAGMENT_ALLOWLIST = {
     "docs/tutorial.rst:5",  # plots AnalyticalWealthModel + plt
     "docs/tutorial.rst:7",  # random_search needs prior model+space
     "docs/tutorial.rst:9",  # experiment_results from prior fence
+    # ParallelRunner fence is spawn-safe as a *file*, but executing the fence
+    # body via a temp script still defines MyModel in __main__ → spawn fail.
+    "docs/api/performance.rst:0",
 }
 
 # Fences that are complete but too heavy for every CI matrix cell.

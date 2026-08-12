@@ -4,6 +4,19 @@
 
 ### Fixed
 
+- **SMACOptimizer contract (0.5.x)**: ``strategy='random'`` selects RandomFacade;
+  ``fixed_params`` merge into every trial; ``optimize()`` returns
+  ``n_evaluations`` and history columns ``cost`` / ``objective`` / ``time`` /
+  ``trial``; multi-fidelity Scenario gets ``min_budget``/``max_budget`` from
+  fidelity parameter bounds; unsupported options (``log_ei``, GP /
+  ``random_forest_with_instances``) raise clear ``ValueError``.
+- **Docs / examples**: SMAC calibration scripts match the optimizer return
+  shape; environment API uses ``grid_position`` / ``node_id``; ParallelRunner
+  docs are spawn-safe; OOP quickstart uses ``step_oop`` + ``cpu(mode="oop")``;
+  Sample/Experiment contracts document zip sampling and ``info`` as a dict;
+  BaseAgent/BaseModel no longer presented as user bases; doc-fence suite
+  documents its smoke (not full-script) scope.
+
 - **Windows RunResults I/O**: exclusive payload writes use ``O_BINARY`` so LF
   is not expanded to CRLF (SHA-256 checksums stay stable on Windows CI).
 - **GPU nightly**: no longer runs on every path-push (would fail red without

@@ -42,13 +42,41 @@ on the calling process. Use:
 * :class:`~ambr.experiment.Experiment` — sequential parameter sweep (one process)
 * :class:`~ambr.gpu_ensemble.GPUEnsembleRunner` — many short runs as one ``(B, N)`` GPU/CPU batch
 
-Example::
+**Spawn-safe usage.** ``ParallelRunner`` always uses
+``multiprocessing`` **spawn**. The model class must be **importable**
+(module-level, not defined in ``__main__`` interactively without a module
+path). In scripts and notebooks, guard the entry point with
+``if __name__ == "__main__":``. Inspect failures via
+:class:`~ambr.performance.RunOutcome` (``status``, ``error_type``,
+``error_message``).
 
+Example (module-level model + ``__main__`` guard — required for spawn)::
+
+.. code-block:: python
+
+   import ambr as am
    from ambr import ParallelRunner
 
-   runner = ParallelRunner(MyModel, n_workers=4)
-   outs = runner.run([
-       {"steps": 20, "seed": s, "show_progress": False} for s in range(8)
-   ])
+   class MyModel(am.Model):
+       def setup(self):
+           self.add_agents(int(self.p.get("n_agents", 20)), wealth=1)
+
+       def step_vectorized(self):
+           pass
+
+   def main():
+       runner = ParallelRunner(MyModel, n_workers=2)
+       outs = runner.run([
+           {"n_agents": 20, "steps": 5, "seed": s, "show_progress": False}
+           for s in range(4)
+       ])
+       for o in outs:
+           if o.status == "success":
+               print(o.index, o.result["info"].get("run_uuid"))
+           else:
+               print(o.index, o.status, o.error_type, o.error_message)
+
+   if __name__ == "__main__":
+       main()
 
 .. autofunction:: ambr.performance.check_performance_deps

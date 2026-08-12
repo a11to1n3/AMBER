@@ -53,15 +53,18 @@ Lane A — AgentPy-shaped (intuitive first model)
        def setup(self):
            self.agents = am.AgentList(self, self.p.n, WealthAgent)
 
-       def step(self):
+       def step_oop(self):
+           # Explicit OOP lane — called only under cpu(mode="oop")
            self.agents.transfer()  # call the method on every agent
 
        def update(self):
            self.record_model('total', int(self.agents.wealth.sum()))
 
-   results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).run()
+   # mode="oop" so provenance reports execution_lane cpu/oop (not vectorized)
+   results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).cpu(mode="oop").run()
    print(results.model)     # or results['model']
    print(results.agents.head())
+   print(results.info.get("mode"), results.info.get("execution_lane"))
 
 Lane B — vectorized (fast path at scale)
 ----------------------------------------

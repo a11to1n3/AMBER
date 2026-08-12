@@ -17,7 +17,9 @@ Grid Environment
 
 The GridEnvironment provides a 2D grid-based space where agents can be positioned and move around.
 
-**Usage:**
+**Usage:** Placement uses the ``grid_position`` column via
+:meth:`~ambr.GridEnvironment.add_agent_from_id` (not bare ``x`` / ``y``).
+See also :doc:`../environments_schelling`.
 
 .. code-block:: python
 
@@ -26,10 +28,12 @@ The GridEnvironment provides a 2D grid-based space where agents can be positione
    class GridDemo(am.Model):
        def setup(self):
            self.grid = am.GridEnvironment(self, size=(10, 10))
-           self.add_agents(5, x=0, y=0)
-           # place first agent at a random cell
-           pos = self.grid.random_position()
-           self.agents.at[self.agents.ids.to_list()[0]].set(x=pos[0], y=pos[1])
+           # Create population first, then place on the grid.
+           self.add_agents(5)
+           empty = self.grid.empty_positions()
+           for i, aid in enumerate(self.agents.ids.to_list()):
+               self.grid.add_agent_from_id(aid, empty[i])
+           pos = empty[0]
            print("neighbors of", pos, ":", self.grid.get_neighbors(pos))
 
    GridDemo({"steps": 1, "seed": 0, "show_progress": False}).run()
@@ -69,7 +73,9 @@ Network Environment
 
 The NetworkEnvironment provides graph-based topology for agent interactions.
 
-**Usage:**
+**Usage:** Agents store placement in ``node_id``. Create the population
+**before** the network so the environment can attach that column, then assign
+``node_id`` for each agent.
 
 .. code-block:: python
 
@@ -78,9 +84,17 @@ The NetworkEnvironment provides graph-based topology for agent interactions.
 
    class NetDemo(am.Model):
        def setup(self):
-           G = nx.erdos_renyi_graph(20, 0.2, seed=0)
+           # Population first so NetworkEnvironment can attach node_id.
+           self.add_agents(5)
+           G = nx.path_graph(5)  # connected so node neighbors are non-empty
            self.network = am.NetworkEnvironment(self, G)
-           self.add_agents(5, node=0)
-           print("neighbors of 0:", self.network.get_neighbors(0))
+           nodes = list(G.nodes())
+           for i, aid in enumerate(self.agents.ids.to_list()):
+               self.agents.at[aid].set(node_id=nodes[i % len(nodes)])
+           # Graph-node neighbors of node 0, then agent-id neighbors of agent 0:
+           print("node 0 neighbors:", self.network.get_neighbors(0))
+           print("agent 0 neighbors:", self.network.get_neighbors(
+               self.agents.ids.to_list()[0]
+           ))
 
    NetDemo({"steps": 1, "seed": 0, "show_progress": False}).run()

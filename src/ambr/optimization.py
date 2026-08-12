@@ -558,7 +558,18 @@ class SMACParameterSpace:
         return cs
 
 class SMACOptimizer:
-    """Optimize model parameters using SMAC with various strategies."""
+    """Optimize model parameters using SMAC (supported options for AMBER 0.5.x).
+
+    Supported strategies: ``bayesian`` (default), ``random``,
+    ``algorithm_configuration``. ``strategy='random'`` and
+    ``use_random_search=True`` both select SMAC's :class:`RandomFacade`.
+
+    Supported acquisition functions: ``ei``, ``lcb``, ``pi``, ``eips``, ``ts``
+    (Thompson sampling). Surrogate models: ``random_forest`` only.
+
+    Non-search parameters (e.g. ``n_agents``, ``steps``) belong in
+    ``fixed_params`` — they are merged into every trial.
+    """
 
     def __init__(self, model_type: Type[Model],
                  param_space: SMACParameterSpace,
@@ -572,6 +583,7 @@ class SMACOptimizer:
                  surrogate_model: str = 'random_forest',
                  use_multi_fidelity: bool = False,
                  use_random_search: bool = False,
+                 fixed_params: Optional[Dict[str, Any]] = None,
                  on_error: Literal["raise", "penalize"] = "raise"):
         """Initialize the optimizer.
 
@@ -582,12 +594,18 @@ class SMACOptimizer:
             n_trials: Number of optimization trials
             n_workers: Number of parallel workers
             seed: Random seed
-            strategy: Optimization strategy ('bayesian', 'random', 'algorithm_configuration')
-            acquisition_function: Acquisition function ('ei', 'lcb', 'pi', 'eips', 'log_ei')
-            initial_design: Initial design strategy ('latin_hypercube', 'random', 'sobol')
-            surrogate_model: Surrogate model type ('random_forest', 'gaussian_process', 'random_forest_with_instances')
-            use_multi_fidelity: Whether to use multi-fidelity optimization
-            use_random_search: Whether to use random search
+            strategy: ``'bayesian'``, ``'random'``, or ``'algorithm_configuration'``
+            acquisition_function: ``'ei'``, ``'lcb'``, ``'pi'``, ``'eips'``, or
+                ``'ts'`` (Thompson sampling). ``'log_ei'`` is **not** supported.
+            initial_design: ``'latin_hypercube'``, ``'random'``, or ``'sobol'``
+            surrogate_model: Only ``'random_forest'`` is supported. GP and
+                ``random_forest_with_instances`` raise ``ValueError``.
+            use_multi_fidelity: If True, requires fidelity parameters on
+                ``param_space`` (``is_fidelity=True``) with numeric bounds used
+                as SMAC ``min_budget`` / ``max_budget`` for Successive Halving.
+            use_random_search: Alias for ``strategy='random'`` (RandomFacade)
+            fixed_params: Merged into every trial (e.g. ``n_agents``, ``steps``,
+                ``show_progress``). Overridden by search-space keys of the same name.
             on_error: ``'raise'`` (default) propagates evaluation failures;
                 ``'penalize'`` maps them to a large finite cost and records a
                 structured failure entry on ``self.failures``.
@@ -598,12 +616,21 @@ class SMACOptimizer:
             raise ValueError(
                 f"on_error must be 'raise' or 'penalize', got {on_error!r}"
             )
-        from smac import HyperparameterOptimizationFacade, Scenario, MultiFidelityFacade, RandomFacade, AlgorithmConfigurationFacade
+        from smac import (
+            HyperparameterOptimizationFacade,
+            Scenario,
+            MultiFidelityFacade,
+            RandomFacade,
+            AlgorithmConfigurationFacade,
+        )
         from smac.model.random_forest import RandomForest
-        from smac.model.gaussian_process import GaussianProcess
         from smac.acquisition.function import EI, LCB, PI, EIPS, TS
         from smac.acquisition.maximizer import LocalAndSortedRandomSearch
-        from smac.initial_design import LatinHypercubeInitialDesign, RandomInitialDesign, SobolInitialDesign
+        from smac.initial_design import (
+            LatinHypercubeInitialDesign,
+            RandomInitialDesign,
+            SobolInitialDesign,
+        )
         from smac.intensifier import SuccessiveHalving
 
         self.model_type = model_type
@@ -613,22 +640,24 @@ class SMACOptimizer:
         self.n_workers = n_workers
         self.seed = seed
         self.on_error = on_error
+        self.fixed_params: Dict[str, Any] = dict(fixed_params or {})
         self.failures: List[Dict[str, Any]] = []
+        self._fidelity_name: Optional[str] = None
 
         # Initialize SMAC components
         self.configspace = param_space.get_configspace()
 
-        # Select initial design
+        # Select initial design class
         if initial_design == 'latin_hypercube':
-            initial_design = LatinHypercubeInitialDesign
+            initial_design_cls = LatinHypercubeInitialDesign
         elif initial_design == 'random':
-            initial_design = RandomInitialDesign
+            initial_design_cls = RandomInitialDesign
         elif initial_design == 'sobol':
-            initial_design = SobolInitialDesign
+            initial_design_cls = SobolInitialDesign
         else:
             raise ValueError(f"Unknown initial design: {initial_design}")
 
-        # Select acquisition function
+        # Select acquisition function (supported set only)
         if acquisition_function == 'ei':
             acq_func = EI()
         elif acquisition_function == 'lcb':
@@ -637,38 +666,76 @@ class SMACOptimizer:
             acq_func = PI()
         elif acquisition_function == 'eips':
             acq_func = EIPS()
-        elif acquisition_function == 'log_ei':
+        elif acquisition_function == 'ts':
             acq_func = TS()
+        elif acquisition_function == 'log_ei':
+            raise ValueError(
+                "acquisition_function='log_ei' is not supported (it previously "
+                "mis-mapped to Thompson sampling). Use 'ei' or 'ts'."
+            )
         else:
-            raise ValueError(f"Unknown acquisition function: {acquisition_function}")
+            raise ValueError(
+                f"Unknown acquisition function: {acquisition_function!r}. "
+                "Supported: 'ei', 'lcb', 'pi', 'eips', 'ts'."
+            )
 
-        # Select surrogate model. SMAC 2.x surrogate models require the
-        # configuration space as their first argument.
+        # Surrogate model — only RandomForest is wired for SMAC 2.x here.
         if surrogate_model == 'random_forest':
             model = RandomForest(self.configspace)
-        elif surrogate_model == 'gaussian_process':
-            model = GaussianProcess(self.configspace)
+        elif surrogate_model in (
+            'gaussian_process',
+            'random_forest_with_instances',
+        ):
+            raise ValueError(
+                f"surrogate_model={surrogate_model!r} is not supported in this "
+                "AMBER release. Use surrogate_model='random_forest' (default)."
+            )
         else:
-            raise ValueError(f"Unknown model type: {surrogate_model}")
+            raise ValueError(
+                f"Unknown model type: {surrogate_model!r}. "
+                "Supported: 'random_forest'."
+            )
 
-        # Create scenario
-        self.scenario = Scenario(
-            self.configspace,
-            n_trials=n_trials,
-            n_workers=n_workers,
-            seed=seed
-        )
+        want_random = bool(use_random_search) or strategy == 'random'
+        want_mf = bool(use_multi_fidelity)
+
+        scenario_kwargs: Dict[str, Any] = {
+            "n_trials": n_trials,
+            "n_workers": n_workers,
+            "seed": seed,
+        }
+        if want_mf:
+            if not param_space.fidelity_parameters:
+                raise ValueError(
+                    "use_multi_fidelity=True requires at least one parameter "
+                    "added with is_fidelity=True (numeric bounds become "
+                    "min_budget/max_budget for Successive Halving)."
+                )
+            # First fidelity parameter defines the budget axis.
+            fname, fparam = next(iter(param_space.fidelity_parameters.items()))
+            if fparam.get("bounds") is None:
+                raise ValueError(
+                    f"Fidelity parameter {fname!r} must have numeric bounds"
+                )
+            lo, hi = fparam["bounds"]
+            if lo is None or hi is None or float(lo) >= float(hi):
+                raise ValueError(
+                    f"Fidelity parameter {fname!r} bounds must satisfy min < max"
+                )
+            scenario_kwargs["min_budget"] = lo
+            scenario_kwargs["max_budget"] = hi
+            self._fidelity_name = fname
+
+        self.scenario = Scenario(self.configspace, **scenario_kwargs)
 
         # Initialize appropriate SMAC facade
-        if use_multi_fidelity:
-            if not param_space.fidelity_parameters:
-                raise ValueError("No fidelity parameters defined for multi-fidelity optimization")
+        if want_mf:
             self.smac = MultiFidelityFacade(
                 scenario=self.scenario,
                 target_function=self._evaluate_config,
                 acquisition_function=acq_func,
                 model=model,
-                initial_design=initial_design(
+                initial_design=initial_design_cls(
                     scenario=self.scenario,
                     n_configs=min(10, n_trials)
                 ),
@@ -678,7 +745,7 @@ class SMACOptimizer:
                     max_incumbents=1
                 )
             )
-        elif use_random_search:
+        elif want_random:
             self.smac = RandomFacade(
                 scenario=self.scenario,
                 target_function=self._evaluate_config
@@ -689,18 +756,18 @@ class SMACOptimizer:
                 target_function=self._evaluate_config,
                 acquisition_function=acq_func,
                 model=model,
-                initial_design=initial_design(
+                initial_design=initial_design_cls(
                     scenario=self.scenario,
                     n_configs=min(10, n_trials)
                 )
             )
-        else:  # bayesian
+        elif strategy == 'bayesian':
             self.smac = HyperparameterOptimizationFacade(
                 scenario=self.scenario,
                 target_function=self._evaluate_config,
                 acquisition_function=acq_func,
                 model=model,
-                initial_design=initial_design(
+                initial_design=initial_design_cls(
                     scenario=self.scenario,
                     n_configs=min(10, n_trials)
                 ),
@@ -711,6 +778,11 @@ class SMACOptimizer:
                     local_search_iterations=10
                 )
             )
+        else:
+            raise ValueError(
+                f"Unknown strategy: {strategy!r}. "
+                "Supported: 'bayesian', 'random', 'algorithm_configuration'."
+            )
 
     def _evaluate_config(self, config, seed: int = 0, budget=None) -> float:
         """Evaluate a parameter configuration (SMAC 2.x target function).
@@ -718,17 +790,21 @@ class SMACOptimizer:
         SMAC passes a ``Configuration`` plus a per-trial ``seed`` (and an
         optional ``budget`` for multi-fidelity); both are accepted so SMAC's
         ``TargetFunctionRunner`` can bind them. The seed is injected into the
-        model parameters so each trial is reproducible.
+        model parameters so each trial is reproducible. ``fixed_params`` are
+        merged first; search-space values override them.
 
         Args:
             config: SMAC ``Configuration`` (dict-like) of parameter values
             seed: per-trial seed supplied by SMAC
-            budget: optional fidelity budget (unused in the single-fidelity path)
+            budget: optional fidelity budget (written to the fidelity param)
 
         Returns:
             Objective value
         """
-        params = dict(config)
+        params = dict(self.fixed_params)
+        params.update(dict(config))
+        if budget is not None and self._fidelity_name is not None:
+            params[self._fidelity_name] = budget
         params.setdefault('seed', seed)
         params.setdefault('show_progress', False)
         model = self.model_type(params)
@@ -762,9 +838,14 @@ class SMACOptimizer:
         """Run the optimization.
 
         Returns:
-            Dictionary containing best configuration and results. When
-            ``on_error='penalize'``, also includes ``failures`` (list of
-            structured failure records).
+            Dict with:
+
+            * ``best_config`` — incumbent hyperparameters (search space only)
+            * ``best_cost`` / ``best_objective`` — minimized cost (aliases)
+            * ``n_evaluations`` — number of history rows
+            * ``history`` — Polars frame: search-space columns plus ``cost``,
+              ``objective`` (same as cost), ``time``, ``trial``
+            * ``failures`` — only when ``on_error='penalize'``
         """
         # Run optimization; only documented search-exhaustion is non-fatal.
         try:
@@ -778,12 +859,15 @@ class SMACOptimizer:
         # Mapping of TrialKey -> TrialValue; access configs via get_config).
         history = self.smac.runhistory
         data = []
-        for trial_key, trial_value in history.items():
+        for trial_i, (trial_key, trial_value) in enumerate(history.items()):
             config = history.get_config(trial_key.config_id)
+            cost = trial_value.cost
             data.append({
                 **dict(config),
-                'cost': trial_value.cost,
+                'cost': cost,
+                'objective': cost,  # alias — SMAC minimizes cost
                 'time': getattr(trial_value, 'time', 0.0),
+                'trial': trial_i,
             })
         history_df = pl.DataFrame(data) if data else pl.DataFrame()
 
@@ -797,6 +881,7 @@ class SMACOptimizer:
             'best_config': dict(incumbent) if incumbent is not None else {},
             'best_cost': best_cost,
             'best_objective': best_cost,  # alias for callers expecting this key
+            'n_evaluations': len(data),
             'history': history_df,
         }
         if self.on_error == "penalize":
