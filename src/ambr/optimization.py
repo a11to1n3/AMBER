@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import os
 import pickle
+import secrets
 import shutil
 import tempfile
 import polars as pl
@@ -153,88 +154,132 @@ def _error_payload(exc: BaseException) -> Dict[str, Any]:
     }
 
 
+def _error_json_path(path: str) -> Path:
+    """Sibling structured-JSON path for ``first_error`` side-channel."""
+    p = Path(path)
+    # Support both ``foo.pkl`` → ``foo.json`` and bare paths → ``.json`` suffix.
+    if p.suffix:
+        return p.with_suffix(".json")
+    return Path(str(p) + ".json")
+
+
 def _write_first_error(path: Optional[str], exc: BaseException) -> None:
     """Side-channel for the first target failure (multi-process safe).
 
-    Tries ``pickle.dumps(exc)`` first. If that fails (local exception class,
-    unpickleable attribute, …), write a structured JSON payload so the parent
-    can still raise under ``on_error='raise'`` instead of returning ``inf``.
-    Even when ``str(exc)`` fails, a minimal JSON marker is written.
+    Always writes a structured JSON sibling (type / message / traceback) so the
+    parent can raise even when:
+
+    * ``pickle.dumps(exc)`` fails, or
+    * pickle succeeds but the parent cannot unpickle the class, or
+    * ``str(exc)`` / ``repr(exc)`` fail.
+
+    Pickle of the original exception is best-effort only.
     """
     if not path:
         return
     try:
         p = Path(path)
-        if p.exists():
-            return
         p.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            p.write_bytes(pickle.dumps(exc, protocol=pickle.HIGHEST_PROTOCOL))
-            return
-        except Exception:
-            pass
-        try:
-            p.write_text(
-                json.dumps(_error_payload(exc), default=str),
-                encoding="utf-8",
-            )
-            return
-        except Exception:
-            pass
-        # Last resort — never leave the parent without a raise signal.
-        try:
-            p.write_text(
-                json.dumps(
-                    {
-                        "kind": "amber_remote_objective_error",
-                        "exception_type": type(exc).__name__,
-                        "message": "<unprintable exception>",
-                        "traceback": "",
-                    }
-                ),
-                encoding="utf-8",
-            )
-        except Exception:
-            pass
+        jp = _error_json_path(path)
+        # Structured payload first — this is the reliable raise signal.
+        if not jp.exists():
+            try:
+                jp.write_text(
+                    json.dumps(_error_payload(exc), default=str),
+                    encoding="utf-8",
+                )
+            except Exception:
+                try:
+                    jp.write_text(
+                        json.dumps(
+                            {
+                                "kind": "amber_remote_objective_error",
+                                "exception_type": type(exc).__name__,
+                                "message": "<unprintable exception>",
+                                "traceback": "",
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    pass
+        # Best-effort pickle of the original exception (same-process re-raise).
+        if not p.exists():
+            try:
+                p.write_bytes(
+                    pickle.dumps(exc, protocol=pickle.HIGHEST_PROTOCOL)
+                )
+            except Exception:
+                pass
     except Exception:
         pass
 
 
-def _load_error_side_channel(path: Optional[str]) -> Optional[BaseException]:
-    """Load a pickled exception or structured remote-objective payload."""
-    if not path:
-        return None
-    p = Path(path)
-    if not p.is_file():
-        return None
-    raw = p.read_bytes()
-    # Prefer pickle (original exception type when serializable).
-    try:
-        obj = pickle.loads(raw)
-        if isinstance(obj, BaseException):
-            return obj
-    except Exception:
-        pass
-    # Structured JSON fallback.
-    try:
-        payload = json.loads(raw.decode("utf-8"))
-    except Exception:
-        return RemoteObjectiveError(
-            "Remote SMAC objective failed (unreadable error side-channel)"
-        )
-    if not isinstance(payload, dict):
-        return RemoteObjectiveError(
-            "Remote SMAC objective failed (invalid error side-channel)"
-        )
+def _payload_to_remote_error(payload: Dict[str, Any]) -> RemoteObjectiveError:
     et = str(payload.get("exception_type") or "Exception")
     msg = str(payload.get("message") or "")
     tb = str(payload.get("traceback") or "")
     text = f"{et}: {msg}" if msg else et
     if tb:
         text = f"{text}\n\nRemote traceback:\n{tb}"
-    return RemoteObjectiveError(
-        text, exception_type=et, traceback_text=tb
-    )
+    return RemoteObjectiveError(text, exception_type=et, traceback_text=tb)
+
+
+def _load_error_side_channel(path: Optional[str]) -> Optional[BaseException]:
+    """Load a pickled exception and/or structured remote-objective payload.
+
+    Preference order:
+
+    1. Structured JSON sibling (always raiseable, survives unpickleable classes)
+    2. Pickle of the original exception (when loadable)
+    3. Structured JSON written to the primary path
+    4. ``RemoteObjectiveError`` if a side-channel file existed but was unreadable
+    """
+    if not path:
+        return None
+    p = Path(path)
+    jp = _error_json_path(path)
+    saw_file = p.is_file() or jp.is_file()
+
+    # Prefer structured JSON — never depends on exception class pickling.
+    if jp.is_file():
+        try:
+            payload = json.loads(jp.read_text(encoding="utf-8"))
+            if isinstance(payload, dict) and payload.get("kind") == (
+                "amber_remote_objective_error"
+            ):
+                return _payload_to_remote_error(payload)
+            if isinstance(payload, dict):
+                return _payload_to_remote_error(payload)
+        except Exception:
+            pass
+
+    if p.is_file():
+        raw = p.read_bytes()
+        # Primary path may itself be JSON (older writers / last-resort marker).
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+            if isinstance(payload, dict):
+                return _payload_to_remote_error(payload)
+        except Exception:
+            pass
+        try:
+            obj = pickle.loads(raw)
+            if isinstance(obj, BaseException):
+                return obj
+        except Exception:
+            # Pickle present but not loadable (local class in worker) — still
+            # signal failure rather than returning None → silent inf.
+            return RemoteObjectiveError(
+                "Remote SMAC objective failed (exception not unpickleable in "
+                "parent process; structured side-channel missing or corrupt)"
+            )
+
+    if saw_file:
+        return RemoteObjectiveError(
+            "Remote SMAC objective failed (unreadable error side-channel)"
+        )
+    return None
 
 
 def _append_failure_jsonl(path: Optional[str], record: Dict[str, Any]) -> None:
@@ -1059,7 +1104,14 @@ class SMACOptimizer:
         # Unique SMAC run directory — created only after validation so failed
         # constructors do not leak amber_smac_* directories.
         self._output_dir = tempfile.mkdtemp(prefix="amber_smac_")
-        self._error_path = str(Path(self._output_dir) / "first_error.pkl")
+        # Error side-channel lives *outside* the SMAC output directory so it
+        # survives SMAC/Dask touching that tree. Use a path that does **not**
+        # pre-create an empty file (empty files would look like a failed
+        # side-channel and spuriously raise after a successful run).
+        self._error_path = str(
+            Path(tempfile.gettempdir())
+            / f"amber_smac_err_{os.getpid()}_{secrets.token_hex(8)}.pkl"
+        )
         self._failures_path = (
             str(Path(self._output_dir) / "failures.jsonl")
             if on_error == "penalize"
@@ -1181,6 +1233,30 @@ class SMACOptimizer:
         out = getattr(self, "_output_dir", None)
         if out:
             shutil.rmtree(out, ignore_errors=True)
+        # Error side-channel files (outside output dir)
+        err = getattr(self, "_error_path", None)
+        if err:
+            try:
+                Path(err).unlink(missing_ok=True)
+            except TypeError:
+                try:
+                    if Path(err).is_file():
+                        Path(err).unlink()
+                except OSError:
+                    pass
+            except OSError:
+                pass
+            try:
+                _error_json_path(err).unlink(missing_ok=True)
+            except TypeError:
+                try:
+                    jp = _error_json_path(err)
+                    if jp.is_file():
+                        jp.unlink()
+                except OSError:
+                    pass
+            except OSError:
+                pass
 
     def _shutdown_parallel_resources(self) -> None:
         """Close SMAC's Dask client/workers when ``n_workers > 1``.
@@ -1277,9 +1353,18 @@ class SMACOptimizer:
             # Mapping of TrialKey -> TrialValue; access configs via get_config).
             history = self.smac.runhistory
             data = []
+            crashed = False
             for trial_i, (trial_key, trial_value) in enumerate(history.items()):
                 config = history.get_config(trial_key.config_id)
                 cost = trial_value.cost
+                status = getattr(trial_value, "status", None)
+                status_name = (
+                    getattr(status, "name", None) or str(status or "")
+                ).upper()
+                if status_name == "CRASHED" or (
+                    isinstance(cost, (int, float)) and not np.isfinite(float(cost))
+                ):
+                    crashed = True
                 row: Dict[str, Any] = {
                     **dict(config),
                     'cost': cost,
@@ -1295,6 +1380,28 @@ class SMACOptimizer:
                             budget, self._fidelity_type
                         )
                 data.append(row)
+
+            # Last line of defense: never return silent inf under raise mode.
+            if self.on_error == "raise":
+                first = self._load_first_error()
+                if first is not None:
+                    raise first
+                if crashed or (
+                    incumbent is None
+                    and data
+                    and all(
+                        not np.isfinite(float(r["cost"]))
+                        if isinstance(r.get("cost"), (int, float))
+                        else True
+                        for r in data
+                    )
+                ):
+                    raise RemoteObjectiveError(
+                        "SMAC trial(s) crashed under on_error='raise' but the "
+                        "original exception was not recoverable in the parent "
+                        "(unpickleable worker exception or missing side-channel)."
+                    )
+
             history_df = pl.DataFrame(data) if data else pl.DataFrame()
 
             best_cost = None

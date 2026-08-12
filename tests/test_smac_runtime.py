@@ -162,10 +162,14 @@ def test_write_error_when_str_and_pickle_fail():
         def __repr__(self):
             raise RuntimeError("no repr")
 
+    from ambr.optimization import _error_json_path
+
     path = Path(tempfile.mkdtemp(prefix="amber_err_")) / "first_error.pkl"
     try:
         _write_first_error(str(path), _EvilError())
-        assert path.is_file()
+        # Structured JSON sibling is always written; pickle may be absent.
+        jp = _error_json_path(str(path))
+        assert jp.is_file() or path.is_file()
         loaded = _load_error_side_channel(str(path))
         assert isinstance(loaded, RemoteObjectiveError)
         assert "EvilError" in str(loaded) or "unprintable" in str(loaded).lower()
@@ -216,31 +220,73 @@ def test_search_exhausted_exact_type_only():
 
 @pytest.mark.unit
 def test_error_side_channel_structured_fallback():
-    """When pickle.dumps(exc) fails, structured payload still raises."""
+    """When pickle.dumps(exc) fails, structured JSON sibling still raises."""
     from ambr.optimization import (
         RemoteObjectiveError,
+        _error_json_path,
         _load_error_side_channel,
         _write_first_error,
     )
 
     class _UnpicklableError(Exception):
-        def __getstate__(self):
+        def __reduce__(self):
             raise TypeError("deliberately unpickleable")
 
     path = Path(tempfile.mkdtemp(prefix="amber_err_")) / "first_error.pkl"
     try:
         _write_first_error(str(path), _UnpicklableError("objective data missing"))
-        assert path.is_file()
+        # Structured sibling is the reliable signal
+        jp = _error_json_path(str(path))
+        assert jp.is_file(), "expected first_error.json structured payload"
         loaded = _load_error_side_channel(str(path))
         assert isinstance(loaded, RemoteObjectiveError)
         assert "objective data missing" in str(loaded)
         assert "UnpicklableError" in str(loaded) or loaded.exception_type.endswith(
             "UnpicklableError"
         )
+        # Prefer JSON even when a stale/unreadable pickle exists
+        path.write_bytes(b"not-a-valid-pickle")
+        loaded2 = _load_error_side_channel(str(path))
+        assert isinstance(loaded2, RemoteObjectiveError)
+        assert "objective data missing" in str(loaded2)
     finally:
         import shutil
 
         shutil.rmtree(path.parent, ignore_errors=True)
+
+
+@pytest.mark.unit
+def test_on_error_raise_never_returns_inf_on_unpickleable_objective():
+    """End-to-end: unpickleable objective error must raise, not best_cost=inf."""
+    from ambr.optimization import RemoteObjectiveError
+
+    class _UnpicklableError(Exception):
+        def __reduce__(self):
+            raise TypeError("deliberately unpickleable")
+
+    def boom(m):
+        raise _UnpicklableError("objective data missing")
+
+    fixed = {"n_agents": 8, "steps": 1, "show_progress": False}
+    opt = SMACOptimizer(
+        _TinyModel,
+        _space(),
+        boom,
+        n_trials=2,
+        seed=0,
+        strategy="random",
+        fixed_params=fixed,
+        on_error="raise",
+    )
+    with pytest.raises((RemoteObjectiveError, Exception)) as ei:
+        out = opt.optimize()
+        # Must not reach a successful return with non-finite cost
+        raise AssertionError(f"optimize returned instead of raising: {out!r}")
+    # Never a silent success
+    assert ei.value is not None
+    assert "objective data missing" in str(ei.value) or "Unpicklable" in str(
+        ei.value
+    ) or "crashed under on_error" in str(ei.value)
 
 
 @pytest.mark.unit
