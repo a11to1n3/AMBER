@@ -73,9 +73,8 @@ FRAGMENT_ALLOWLIST = {
     "docs/tutorial.rst:5",  # plots AnalyticalWealthModel + plt
     "docs/tutorial.rst:7",  # random_search needs prior model+space
     "docs/tutorial.rst:9",  # experiment_results from prior fence
-    # ParallelRunner fence is spawn-safe as a *file*, but executing the fence
-    # body via a temp script still defines MyModel in __main__ → spawn fail.
-    "docs/api/performance.rst:0",
+    # ParallelRunner fence is executed via spawn-safe module import (see
+    # _run_code); not allowlisted.
 }
 
 # Fences that are complete but too heavy for every CI matrix cell.
@@ -182,28 +181,61 @@ def _run_code(code: str, timeout: float = 90.0) -> None:
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
     }
-    # Write as real UTF-8 bytes (NamedTemporaryFile text mode uses locale encoding
-    # on Windows and can mangle non-ASCII into cp1252, then SyntaxError on \x97).
     body = "# -*- coding: utf-8 -*-\n" + code
-    fd, path = tempfile.mkstemp(suffix=".py")
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(body.encode("utf-8"))
-        proc = subprocess.run(
-            [sys.executable, "-X", "utf8", path],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            env=env,
-            cwd=str(ROOT),
-        )
-    finally:
+
+    # ParallelRunner uses spawn: the model class must be importable by name.
+    # Running a one-shot temp script as __main__ fails child import. For fences
+    # that use ParallelRunner, write a real module on PYTHONPATH and call main().
+    if "ParallelRunner" in code:
+        tmpdir = tempfile.mkdtemp(prefix="amber_doc_fence_")
         try:
-            os.unlink(path)
-        except OSError:
-            pass
+            mod_path = Path(tmpdir) / "amber_doc_parallel_demo.py"
+            mod_path.write_text(body, encoding="utf-8")
+            env["PYTHONPATH"] = tmpdir + os.pathsep + env["PYTHONPATH"]
+            runner = (
+                "import amber_doc_parallel_demo as m\n"
+                "if hasattr(m, 'main'):\n"
+                "    m.main()\n"
+                "else:\n"
+                "    raise SystemExit('ParallelRunner fence must define main()')\n"
+            )
+            proc = subprocess.run(
+                [sys.executable, "-X", "utf8", "-c", runner],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                env=env,
+                cwd=str(ROOT),
+            )
+        finally:
+            try:
+                for p in Path(tmpdir).iterdir():
+                    p.unlink()
+                Path(tmpdir).rmdir()
+            except OSError:
+                pass
+    else:
+        fd, path = tempfile.mkstemp(suffix=".py")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(body.encode("utf-8"))
+            proc = subprocess.run(
+                [sys.executable, "-X", "utf8", path],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                env=env,
+                cwd=str(ROOT),
+            )
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
     if proc.returncode != 0:
         raise AssertionError(
             f"exit={proc.returncode}\n"

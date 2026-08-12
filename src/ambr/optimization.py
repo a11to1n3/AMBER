@@ -48,19 +48,18 @@ def _check_smac():
 
 
 def _is_search_exhausted(exc: BaseException) -> bool:
-    """Return True only for the documented SMAC 'search exhausted' condition.
+    """Return True only for SMAC configuration-space exhaustion.
 
-    Broad ``except Exception: pass`` is intentionally *not* used: real target
-    failures, import errors, and programmer bugs must surface. Exhaustion is
-    identified by message markers and/or exception type name (SMAC versions
-    differ; ``ConfigurationSpaceExhaustedException`` often has an empty
-    message).
+    Matches SMAC's ``ConfigurationSpaceExhaustedException`` by **exact type
+    name** (message is often empty). Message markers remain a secondary
+    fallback for older SMAC builds that re-raise plain ``Exception`` with a
+    known exhaustion phrase. Arbitrary exception types whose names merely
+    contain both "configuration" and "exhausted" are **not** accepted.
     """
-    msg = str(exc).lower()
-    if any(marker in msg for marker in _SEARCH_EXHAUSTED_MARKERS):
+    if type(exc).__name__ == "ConfigurationSpaceExhaustedException":
         return True
-    name = type(exc).__name__.lower()
-    return "exhausted" in name and "configuration" in name
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _SEARCH_EXHAUSTED_MARKERS)
 
 
 def _failure_record(
@@ -378,6 +377,8 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
     # Side-channel for penalized failures (config id is not stable across
     # SMAC versions, so we key by a frozen parameter tuple).
     failure_by_params: Dict[tuple, Dict[str, Any]] = {}
+    # SMAC swallows target exceptions; re-raise after optimize when required.
+    raise_holder: List[BaseException] = []
 
     def _resolve_params(config: dict) -> Dict[str, Any]:
         params = dict(fixed_params)
@@ -403,11 +404,20 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
             )
         except Exception as exc:
             if on_error == "raise":
+                raise_holder.append(exc)
                 raise
             key = tuple(sorted(params.items()))
             failure_by_params[key] = _failure_record(params, exc)
             # SMAC minimises; a large positive cost is "worst" for both
             # minimize and maximize (maximize path negates successful objs).
+            return _PENALTY_COST
+        if obj is None or not np.isfinite(obj):
+            exc = ValueError(f"Objective returned non-finite value: {obj!r}")
+            if on_error == "raise":
+                raise_holder.append(exc)
+                raise exc
+            key = tuple(sorted(params.items()))
+            failure_by_params[key] = _failure_record(params, exc)
             return _PENALTY_COST
         # SMAC always minimises; if the user wants to maximise, negate
         return -obj if not minimize else obj
@@ -426,11 +436,18 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
     try:
         smac.optimize()
     except Exception as exc:
+        if on_error == "raise" and raise_holder:
+            raise raise_holder[0] from exc
         # Only the documented "search exhausted" condition is non-fatal —
         # proceed with whatever SMAC evaluated so far (runhistory still has
         # the partial results). All other exceptions re-raise.
         if not _is_search_exhausted(exc):
             raise
+
+    # SMAC often swallows target failures into CRASHED/inf trials — enforce
+    # the documented strict default after the run completes.
+    if on_error == "raise" and raise_holder:
+        raise raise_holder[0]
 
     # --- collect history ---------------------------------------------------
     results: List[Dict[str, Any]] = []
@@ -626,6 +643,8 @@ class SMACOptimizer:
         self.failures: List[Dict[str, Any]] = []
         self._fidelity_name: Optional[str] = None
         self._fidelity_type: Optional[str] = None
+        # SMAC catches target exceptions; stash for re-raise after optimize().
+        self._raise_exc: Optional[BaseException] = None
 
         # Initialize SMAC components
         self.configspace = param_space.get_configspace()
@@ -819,20 +838,18 @@ class SMACOptimizer:
             value = self.objective(model)
         except Exception as exc:
             if self.on_error == "raise":
+                self._raise_exc = exc
                 raise
             self.failures.append(_failure_record(params, exc))
             return _PENALTY_COST
         if value is None or not np.isfinite(value):
-            if self.on_error == "raise":
-                raise ValueError(
-                    f"Objective returned non-finite value: {value!r}"
-                )
-            self.failures.append(
-                _failure_record(
-                    params,
-                    ValueError(f"Objective returned non-finite value: {value!r}"),
-                )
+            err = ValueError(
+                f"Objective returned non-finite value: {value!r}"
             )
+            if self.on_error == "raise":
+                self._raise_exc = err
+                raise err
+            self.failures.append(_failure_record(params, err))
             return _PENALTY_COST
         return float(value)
 
@@ -848,14 +865,24 @@ class SMACOptimizer:
             * ``history`` — Polars frame: search-space columns plus ``cost``,
               ``objective`` (same as cost), ``time``, ``trial``
             * ``failures`` — only when ``on_error='penalize'``
+
+        When ``on_error='raise'`` (default), the first target/objective
+        exception is re-raised after SMAC returns (SMAC itself swallows
+        target crashes into CRASHED/inf trials).
         """
+        self._raise_exc = None
         # Run optimization; only documented search-exhaustion is non-fatal.
         try:
             incumbent = self.smac.optimize()
         except Exception as exc:
+            if self.on_error == "raise" and self._raise_exc is not None:
+                raise self._raise_exc from exc
             if not _is_search_exhausted(exc):
                 raise
             incumbent = None
+
+        if self.on_error == "raise" and self._raise_exc is not None:
+            raise self._raise_exc
 
         # Convert the run history to a DataFrame (SMAC 2.x RunHistory is a
         # Mapping of TrialKey -> TrialValue; access configs via get_config).

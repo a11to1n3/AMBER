@@ -16,8 +16,14 @@
   integer fidelities coerce SH rungs to ``int``; history reports evaluated budget.
 - **bayesian_optimization**: fixed floats go to ``fixed_params`` (degenerate
   float HPs no longer crash ConfigSpace/SMAC).
-- **NetworkEnvironment.get_neighbors**: agent-id wins when agent/node ids
-  overlap; use ``as_node=True`` for explicit graph-node queries.
+- **NetworkEnvironment identity**: agent-first resolution for
+  ``get_neighbors`` / ``get_distance`` / ``get_degree`` / ``get_clustering`` /
+  ``add_edge`` / ``remove_edge``; missing ``node_id`` column no longer crashes
+  (unplaced agent → empty/0); use ``as_node=True`` for graph-node ids.
+- **SMAC on_error='raise'**: re-raise target/objective exceptions after SMAC
+  returns (SMAC swallows crashes into CRASHED/inf trials).
+- **Search exhaustion**: match SMAC ``ConfigurationSpaceExhaustedException`` by
+  exact type name (not arbitrary "configuration"+"exhausted" names).
 - **Docs / examples**: SMAC calibration scripts match the optimizer return
   shape; environment API uses ``grid_position`` / ``node_id``; ParallelRunner
   docs are spawn-safe (Sphinx fence fixed); OOP README/quickstart use
