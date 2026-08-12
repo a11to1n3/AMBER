@@ -50,7 +50,7 @@ path). In scripts and notebooks, guard the entry point with
 :class:`~ambr.performance.RunOutcome` (``status``, ``error_type``,
 ``error_message``).
 
-Example (module-level model + ``__main__`` guard — required for spawn)::
+Example (module-level model + ``__main__`` guard — required for spawn):
 
 .. code-block:: python
 

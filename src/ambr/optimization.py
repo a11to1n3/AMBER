@@ -52,10 +52,15 @@ def _is_search_exhausted(exc: BaseException) -> bool:
 
     Broad ``except Exception: pass`` is intentionally *not* used: real target
     failures, import errors, and programmer bugs must surface. Exhaustion is
-    identified by message markers (SMAC versions differ in exception type).
+    identified by message markers and/or exception type name (SMAC versions
+    differ; ``ConfigurationSpaceExhaustedException`` often has an empty
+    message).
     """
     msg = str(exc).lower()
-    return any(marker in msg for marker in _SEARCH_EXHAUSTED_MARKERS)
+    if any(marker in msg for marker in _SEARCH_EXHAUSTED_MARKERS):
+        return True
+    name = type(exc).__name__.lower()
+    return "exhausted" in name and "configuration" in name
 
 
 def _failure_record(
@@ -347,16 +352,12 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
                 default_value=value.start,
             )
             cs.add(hp)
-        elif isinstance(value, float):
-            hp = UniformFloatHyperparameter(
-                name=name,
-                lower=value,
-                upper=value,
-                default_value=value,
-            )
-            cs.add(hp)
-        elif isinstance(value, (int, str, bool)):
-            # Fixed scalar — not optimised; stored separately.
+        elif isinstance(value, bool):
+            # bool is a subclass of int — keep before the int branch.
+            fixed_params[name] = value
+        elif isinstance(value, (int, float, str)):
+            # Fixed scalar (incl. float) — not optimised. Degenerate float
+            # hyperparameters (lower==upper) crash SMAC/ConfigSpace.
             fixed_params[name] = value
         else:
             raise TypeError(
@@ -531,30 +532,11 @@ class SMACParameterSpace:
                 )
             cs.add_hyperparameter(hp)
 
-        # Add fidelity parameters
-        for name, param in self.fidelity_parameters.items():
-            if param['type'] == 'float':
-                hp = UniformFloatHyperparameter(
-                    name=name,
-                    lower=param['bounds'][0],
-                    upper=param['bounds'][1],
-                    default_value=param['default']
-                )
-            elif param['type'] == 'int':
-                hp = UniformIntegerHyperparameter(
-                    name=name,
-                    lower=param['bounds'][0],
-                    upper=param['bounds'][1],
-                    default_value=param['default']
-                )
-            else:  # categorical
-                hp = CategoricalHyperparameter(
-                    name=name,
-                    choices=param['choices'],
-                    default_value=param['default']
-                )
-            cs.add_hyperparameter(hp)
-
+        # Fidelity parameters are *not* searchable hyperparameters. Their
+        # bounds define SMAC multi-fidelity min_budget/max_budget only; the
+        # budget is injected into the trial via the target-function argument.
+        # Adding them to the configspace caused independent samples that
+        # disagreed with the Successive Halving budget actually evaluated.
         return cs
 
 class SMACOptimizer:
@@ -643,6 +625,7 @@ class SMACOptimizer:
         self.fixed_params: Dict[str, Any] = dict(fixed_params or {})
         self.failures: List[Dict[str, Any]] = []
         self._fidelity_name: Optional[str] = None
+        self._fidelity_type: Optional[str] = None
 
         # Initialize SMAC components
         self.configspace = param_space.get_configspace()
@@ -699,10 +682,16 @@ class SMACOptimizer:
         want_random = bool(use_random_search) or strategy == 'random'
         want_mf = bool(use_multi_fidelity)
 
+        # Unique SMAC run directory — never reuse cwd smac3_output/ (stale
+        # runhistory would silently skip re-evaluation under a new objective).
+        import tempfile
+
+        self._output_dir = tempfile.mkdtemp(prefix="amber_smac_")
         scenario_kwargs: Dict[str, Any] = {
             "n_trials": n_trials,
             "n_workers": n_workers,
             "seed": seed,
+            "output_directory": self._output_dir,
         }
         if want_mf:
             if not param_space.fidelity_parameters:
@@ -722,9 +711,13 @@ class SMACOptimizer:
                 raise ValueError(
                     f"Fidelity parameter {fname!r} bounds must satisfy min < max"
                 )
+            # Integer fidelity types use integer budgets end-to-end.
+            if fparam.get("type") == "int":
+                lo, hi = int(lo), int(hi)
             scenario_kwargs["min_budget"] = lo
             scenario_kwargs["max_budget"] = hi
             self._fidelity_name = fname
+            self._fidelity_type = fparam.get("type")
 
         self.scenario = Scenario(self.configspace, **scenario_kwargs)
 
@@ -784,6 +777,15 @@ class SMACOptimizer:
                 "Supported: 'bayesian', 'random', 'algorithm_configuration'."
             )
 
+    def _coerce_budget(self, budget: Any) -> Any:
+        """Map SMAC budget onto the fidelity parameter type (int vs float)."""
+        if budget is None:
+            return None
+        if self._fidelity_type == "int":
+            # Successive Halving may emit fractional rungs; round to nearest int.
+            return int(round(float(budget)))
+        return float(budget)
+
     def _evaluate_config(self, config, seed: int = 0, budget=None) -> float:
         """Evaluate a parameter configuration (SMAC 2.x target function).
 
@@ -804,7 +806,7 @@ class SMACOptimizer:
         params = dict(self.fixed_params)
         params.update(dict(config))
         if budget is not None and self._fidelity_name is not None:
-            params[self._fidelity_name] = budget
+            params[self._fidelity_name] = self._coerce_budget(budget)
         params.setdefault('seed', seed)
         params.setdefault('show_progress', False)
         model = self.model_type(params)
@@ -862,13 +864,19 @@ class SMACOptimizer:
         for trial_i, (trial_key, trial_value) in enumerate(history.items()):
             config = history.get_config(trial_key.config_id)
             cost = trial_value.cost
-            data.append({
+            row: Dict[str, Any] = {
                 **dict(config),
                 'cost': cost,
                 'objective': cost,  # alias — SMAC minimizes cost
                 'time': getattr(trial_value, 'time', 0.0),
                 'trial': trial_i,
-            })
+            }
+            # Multi-fidelity: report the budget actually used (not a CS sample).
+            if self._fidelity_name is not None:
+                budget = getattr(trial_key, "budget", None)
+                if budget is not None:
+                    row[self._fidelity_name] = self._coerce_budget(budget)
+            data.append(row)
         history_df = pl.DataFrame(data) if data else pl.DataFrame()
 
         best_cost = None

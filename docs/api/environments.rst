@@ -91,10 +91,12 @@ The NetworkEnvironment provides graph-based topology for agent interactions.
            nodes = list(G.nodes())
            for i, aid in enumerate(self.agents.ids.to_list()):
                self.agents.at[aid].set(node_id=nodes[i % len(nodes)])
-           # Graph-node neighbors of node 0, then agent-id neighbors of agent 0:
-           print("node 0 neighbors:", self.network.get_neighbors(0))
-           print("agent 0 neighbors:", self.network.get_neighbors(
-               self.agents.ids.to_list()[0]
+           # When agent ids and node ids overlap (0..n-1), agent wins by
+           # default. Pass as_node=True for explicit graph-node queries.
+           aid0 = self.agents.ids.to_list()[0]
+           print("agent 0 neighbors (agent ids):", self.network.get_neighbors(aid0))
+           print("node 0 neighbors (node ids):", self.network.get_neighbors(
+               0, as_node=True
            ))
 
    NetDemo({"steps": 1, "seed": 0, "show_progress": False}).run()

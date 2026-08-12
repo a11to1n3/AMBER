@@ -10,12 +10,20 @@
   ``trial``; multi-fidelity Scenario gets ``min_budget``/``max_budget`` from
   fidelity parameter bounds; unsupported options (``log_ei``, GP /
   ``random_forest_with_instances``) raise clear ``ValueError``.
+- **SMACOptimizer isolation**: each instance uses a unique temp
+  ``output_directory`` (no silent reuse of cwd ``smac3_output/``).
+- **Multi-fidelity budgets**: fidelity params are budget-only (not CS samples);
+  integer fidelities coerce SH rungs to ``int``; history reports evaluated budget.
+- **bayesian_optimization**: fixed floats go to ``fixed_params`` (degenerate
+  float HPs no longer crash ConfigSpace/SMAC).
+- **NetworkEnvironment.get_neighbors**: agent-id wins when agent/node ids
+  overlap; use ``as_node=True`` for explicit graph-node queries.
 - **Docs / examples**: SMAC calibration scripts match the optimizer return
   shape; environment API uses ``grid_position`` / ``node_id``; ParallelRunner
-  docs are spawn-safe; OOP quickstart uses ``step_oop`` + ``cpu(mode="oop")``;
-  Sample/Experiment contracts document zip sampling and ``info`` as a dict;
-  BaseAgent/BaseModel no longer presented as user bases; doc-fence suite
-  documents its smoke (not full-script) scope.
+  docs are spawn-safe (Sphinx fence fixed); OOP README/quickstart use
+  ``step_oop`` + ``cpu(mode="oop")``; Sample/Experiment contracts document zip
+  sampling and ``info`` as a dict; BaseAgent/BaseModel no longer presented as
+  user bases; GPU CI described as hard NOT VERIFIED (not soft-skip).
 
 - **Windows RunResults I/O**: exclusive payload writes use ``O_BINARY`` so LF
   is not expanded to CRLF (SHA-256 checksums stay stable on Windows CI).
