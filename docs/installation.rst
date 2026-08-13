@@ -79,6 +79,9 @@ AMBER extras (install what you need):
    # SMAC Bayesian / multi-objective optimization (pins scikit-learn for SMAC 2.4)
    pip install 'ambr[advanced]'
 
+   # SMAC examples that plot results (RandomForest search + matplotlib)
+   pip install 'ambr[advanced,viz]'
+
    # Plot helpers (matplotlib; import ambr never pulls it until plot_* is used)
    pip install 'ambr[viz]'
 

@@ -13,24 +13,35 @@ Key Features:
 - Easy result interpretation
 
 Requirements:
-    pip install smac ConfigSpace
+    pip install 'ambr[advanced]'          # SMAC + ConfigSpace
+    pip install 'ambr[advanced,viz]'      # plus matplotlib for plots
 """
 
 import ambr as am
 import numpy as np
 
 
-def _require_matplotlib():
-    """Lazy import so the model smoke path works without a working Matplotlib."""
+_VIZ_WARNED = False
+
+
+def _try_matplotlib():
+    """Return pyplot, or None if matplotlib is missing / ABI-incompatible.
+
+    Search completes without viz extras. Plots need ``ambr[advanced,viz]``.
+    """
+    global _VIZ_WARNED
     try:
         import matplotlib.pyplot as plt
         return plt
-    except ImportError as exc:
-        raise ImportError(
-            "Plotting requires a NumPy-compatible matplotlib.\n"
-            "  pip install -U 'matplotlib>=3.8'\n"
-            f"Underlying error: {exc!r}"
-        ) from exc
+    except Exception as exc:
+        if not _VIZ_WARNED:
+            print(
+                "Skipping plots — install visualization extras:\n"
+                "  pip install 'ambr[advanced,viz]'\n"
+                f"Underlying error: {exc!r}"
+            )
+            _VIZ_WARNED = True
+        return None
 
 
 class SimpleWealthModel(am.Model):
@@ -186,8 +197,11 @@ def analyze_simple_results(optimizer, results):
     final_gini = model_results['model']['gini_coefficient'].tail(1).item()
     print(f"Final Gini coefficient: {final_gini:.4f} (target: 0.4)")
 
-    # Simple visualization (optional dependency)
-    plt = _require_matplotlib()
+    # Simple visualization (optional: ambr[advanced,viz])
+    plt = _try_matplotlib()
+    if plt is None:
+        return
+
     plt.figure(figsize=(12, 4))
 
     # Plot 1: Optimization progress
@@ -271,8 +285,11 @@ def compare_with_random_search():
     else:
         print("Random search performed similarly (this can happen with simple problems)")
 
-    # Visualize comparison
-    plt = _require_matplotlib()
+    # Visualize comparison (optional: ambr[advanced,viz])
+    plt = _try_matplotlib()
+    if plt is None:
+        return
+
     plt.figure(figsize=(10, 4))
 
     # Plot optimization curves (history uses cost; objective is an alias)
@@ -343,6 +360,9 @@ if __name__ == "__main__":
         raise SystemExit(0)
 
     print("This example optimizes a simple wealth transfer model for moderate inequality.")
+    if _try_matplotlib() is None:
+        print("Preflight: matplotlib missing — optimization will run; plots skipped.")
+        print("For plots: pip install 'ambr[advanced,viz]'")
     optimizer, results = run_simple_optimization()
     analyze_simple_results(optimizer, results)
     compare_with_random_search()

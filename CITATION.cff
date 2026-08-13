@@ -10,11 +10,13 @@ authors:
   - family-names: Pham
     given-names: Anh-Duy
     alias: a11to1n3
+    email: anh-duy.pham@uni-wuerzburg.de
+    orcid: "https://orcid.org/0000-0003-3832-9453"
 repository-code: "https://github.com/a11to1n3/AMBER"
 url: "https://github.com/a11to1n3/AMBER"
 license: BSD-3-Clause
 version: "0.5.0"
-date-released: "2026-08-05"
+date-released: "2026-08-13"
 keywords:
   - agent-based modeling
   - multi-agent systems

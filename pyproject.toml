@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [
-    { name = "a11to1n3", email = "citation.needed@example.com" }
+    { name = "a11to1n3", email = "anh-duy.pham@uni-wuerzburg.de" }
 ]
 keywords = [
     "agent-based modeling",

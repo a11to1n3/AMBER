@@ -424,8 +424,9 @@ print(best_params, results[0]["objective"])
 ```
 
 Beyond `grid_search`, AMBER ships `random_search`, `bayesian_optimization`
-(SMAC Gaussian-process), and `SMACOptimizer` (random-forest surrogate) — plus the
-GPU batched ensemble above for derivative-free calibration at scale.
+(SMAC RandomForest surrogate; GP is unsupported), and `SMACOptimizer`
+(same RandomForest stack) — plus the GPU batched ensemble above for
+derivative-free calibration at scale.
 
 ## 📦 Installation
 
@@ -433,8 +434,9 @@ GPU batched ensemble above for derivative-free calibration at scale.
 pip install ambr
 
 # Optional extras
-pip install 'ambr[perf]'       # Numba CPU scatter (recommended on Mac)
-pip install 'ambr[advanced]'   # SMAC optimization
+pip install 'ambr[perf]'              # Numba CPU scatter (recommended on Mac)
+pip install 'ambr[advanced]'          # SMAC optimization
+pip install 'ambr[advanced,viz]'      # SMAC + matplotlib (example plots)
 ```
 
 ```python

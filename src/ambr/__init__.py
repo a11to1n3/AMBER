@@ -118,7 +118,7 @@ def __dir__():
 
 
 __author__ = 'a11to1n3'
-__email__ = 'citation.needed@example.com'
+__email__ = 'anh-duy.pham@uni-wuerzburg.de'
 __url__ = 'https://github.com/a11to1n3/AMBER'
 
 __all__ = [

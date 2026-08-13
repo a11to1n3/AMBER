@@ -2,7 +2,34 @@
 
 ## Unreleased
 
+## v0.5.0 - 2026-08-13
+
+Production-candidate cut of the post-0.4.7 correctness, integrity, and
+release-gate series. **Requires a new PyPI version** (0.4.7 already published).
+
 ### Fixed
+
+- **MultiObjectiveSMAC strategy**: `strategy` is validated and forwarded to
+  each scalar `SMACOptimizer` (`bayesian` / `random` /
+  `algorithm_configuration`). `strategy='pareto'` now raises `ValueError`
+  (the Pareto set is always assembled after the fact; it is not a search
+  facade). `fixed_params` are applied to trials and incumbent re-scoring.
+- **SMAC advanced example**: `n_trials` is documented as per-objective;
+  default demo is 3×4 evaluations with `fixed_params` (`steps=8`,
+  `grid_size=10`) instead of 20×4 implicit 100-step runs.
+
+- **Example notebooks**: regenerated `button_network_simulation.ipynb`,
+  `flocking_simulation.ipynb`, and `forest_fire_simulation.ipynb` from the
+  working `.py` models (no more `pl.concat` of history into `agents_df`).
+  CI executes the notebooks (`example-notebooks` job).
+- **bayesian_optimization docs**: the helper uses SMAC's RandomForest, not a
+  Gaussian process. README, API docs, and the function docstring now match
+  the implementation.
+- **SMAC examples**: plotting is optional; a clean `ambr[advanced]` install
+  completes search without matplotlib. Document `ambr[advanced,viz]`.
+- **Release metadata**: contact email is `anh-duy.pham@uni-wuerzburg.de`
+  (no `example.com` placeholder); `CITATION.cff` `date-released` matches
+  this 0.5.0 date.
 
 - **SMACOptimizer contract (0.5.x)**: ``strategy='random'`` selects RandomFacade;
   ``fixed_params`` merge into every trial; ``optimize()`` returns
@@ -82,11 +109,6 @@
   ``error_type == "Cancelled"``) and are omitted from checkpoints so resume
   re-queues them; a user exception class named ``Cancelled`` remains a
   persisted ``failed`` outcome.
-
-## v0.5.0 - 2026-08-11
-
-Production-candidate cut of the post-0.4.7 correctness, integrity, and
-release-gate series. **Requires a new PyPI version** (0.4.7 already published).
 
 ### Changed
 
