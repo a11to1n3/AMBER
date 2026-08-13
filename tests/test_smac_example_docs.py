@@ -26,8 +26,8 @@ def test_smac_examples_document_viz_extra_and_optional_plots(path: Path):
     # Plotting must be skippable — never a hard ImportError on the success path.
     assert "_try_matplotlib" in text
     assert "raise ImportError" not in text
-    # Windows cp1252 cannot encode emoji banners on success.
-    assert not any(ch in text for ch in "🚀🎯✅📁🧪📊🔍🔬🏆🎉")
+    # Windows cp1252 cannot encode emoji / box-drawing on success.
+    text.encode("cp1252")
     if path.name == "smac_calibration_advanced.py":
         assert "per objective" in text.lower() or "per-objective" in text.lower()
         assert "strategy=\"pareto\"" not in text
@@ -47,3 +47,21 @@ def test_smac_examples_document_viz_extra_and_optional_plots(path: Path):
         assert "SMAC incumbent cost" in text
         main = text.split('if __name__ == "__main__":', 1)[1]
         assert main.find("parse_args(") < main.find("SimpleWealthModel({")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "name",
+    (
+        "gpu_quickstart.py",
+        "flocking_tensor.py",
+        "button_network_simulation.py",
+        "flocking_simulation.py",
+        "forest_fire_simulation.py",
+        "schelling_vectorized.py",
+        "segregation_model.py",
+    ),
+)
+def test_console_example_scripts_are_cp1252_safe(name: str):
+    """Windows default consoles use cp1252; stdout snippets must encode."""
+    (EXAMPLES / name).read_text(encoding="utf-8").encode("cp1252")

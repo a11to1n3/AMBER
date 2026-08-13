@@ -33,7 +33,10 @@ release-gate series. **Requires a new PyPI version** (0.4.7 already published).
   10x15 with a pinned seed; ``--full`` restores comparison.
 - **bayesian_optimization**: ``deterministic`` follows a pinned non-``None``
   model ``seed`` (same rule as ``SMACOptimizer``); SMAC trial seed is applied
-  via ``setdefault``.
+  via ``setdefault``. Penalize-path failure records look up the config
+  without the injected trial seed.
+- **Install wording**: officially tested/supported on Python 3.10–3.13
+  (``requires-python`` remains ``>=3.10``; 3.14+ is not a declared target).
 
 - **MultiObjectiveSMAC strategy**: `strategy` is validated and forwarded to
   each scalar `SMACOptimizer` (`bayesian` / `random` /

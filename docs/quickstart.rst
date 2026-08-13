@@ -62,8 +62,8 @@ Lane A — AgentPy-shaped (intuitive first model)
 
    # mode="oop" so provenance reports execution_lane cpu/oop (not vectorized)
    results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).cpu(mode="oop").run()
-   print(results.model)     # or results['model']
-   print(results.agents.head())
+   print(results.model.tail(3).to_dicts())     # ASCII-safe (also results['model'])
+   print(results.agents.head().to_dicts())
    print(results.info.get("mode"), results.info.get("execution_lane"))
 
 Lane B — vectorized (fast path at scale)
@@ -287,7 +287,7 @@ wins: ``step()`` → declarative ``model_reporters`` → ``update()``.
    results = AnalyticalWealthModel(
        {'steps': 50, 'seed': 42, 'show_progress': False}
    ).run()
-   print(results.model.tail())
+   print(results.model.tail(3).to_dicts())
 
 When per-agent loops are OK
 ---------------------------

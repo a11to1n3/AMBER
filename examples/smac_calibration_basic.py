@@ -275,7 +275,7 @@ def analyze_optimization_results(optimizer, results):
     model_results = model.run()
 
     incumbent = results.get("best_objective")
-    print("\n📈 Summary Statistics:")
+    print("\nSummary Statistics:")
     print(f"Total trials: {len(objectives)}")
     print(f"SMAC incumbent cost: {incumbent:.6f}")
     print(f"Minimum trial cost (history): {min(objectives):.6f}")
@@ -381,7 +381,7 @@ def compare_optimization_strategies(n_trials: int = 20, steps: int = 100):
                 comparison_results[f'{strategy}_{acq_func}'] = results['best_objective']
                 print(f"    Best objective: {results['best_objective']:.6f}")
 
-        else:  # random strategy → RandomFacade
+        else:  # random strategy -> RandomFacade
             optimizer = am.SMACOptimizer(
                 model_type=WealthTransferModel,
                 param_space=param_space,

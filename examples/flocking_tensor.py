@@ -186,7 +186,10 @@ if __name__ == "__main__":
     clean = sum(c.clean for c in certs)
     print(f"flocking: {len(certs)} steps, {clean} clean certificates, "
           f"all ok={all(c.ok for c in certs)}")
-    print(f"final positions sample:\n{res['agents'].select('id', 'x', 'y').head(3)}")
+    print(
+        "final positions sample:",
+        res["agents"].select("id", "x", "y").head(3).to_dicts(),
+    )
 
     # --- micro-benchmark: tensor-lane step vs the loop reference -------------
     for N in (200, 1000):

@@ -772,7 +772,10 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
     # Target function for SMAC (always minimises)
     def _target(config: dict, seed: int = 0) -> float:
         # Merge SMAC config + fixed params + restore categorical types
-        params = _resolve_params(config)
+        base = _resolve_params(config)
+        # Lookup key must match result assembly (no SMAC-injected trial seed).
+        key = tuple(sorted(base.items()))
+        params = dict(base)
         params.setdefault("seed", seed)
         try:
             obj = objective_function(
@@ -782,7 +785,6 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
             if on_error == "raise":
                 _write_first_error(error_path, exc)
                 raise
-            key = tuple(sorted(params.items()))
             rec = _failure_record(params, exc)
             failure_by_params[key] = rec
             _append_failure_jsonl(failures_path, rec)
@@ -794,7 +796,6 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
             if on_error == "raise":
                 _write_first_error(error_path, exc)
                 raise exc
-            key = tuple(sorted(params.items()))
             rec = _failure_record(params, exc)
             failure_by_params[key] = rec
             _append_failure_jsonl(failures_path, rec)

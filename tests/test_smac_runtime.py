@@ -515,6 +515,46 @@ def test_bayesian_optimization_fixed_float_parameter():
 
 
 @pytest.mark.unit
+def test_bayesian_optimization_penalize_keeps_failure_without_fixed_seed():
+    """SMAC-injected trial seed must not hide failure records."""
+    from ambr import ParameterSpace, bayesian_optimization
+
+    class Boom(am.Model):
+        def setup(self):
+            self.add_agents(2, wealth=1)
+
+        def step(self):
+            pass
+
+        def update(self):
+            self.record_model("s", 1.0)
+
+    space = ParameterSpace(
+        {
+            "n_agents": [2, 4],
+            "steps": 1,
+            "show_progress": False,
+        }
+    )
+    results = bayesian_optimization(
+        Boom,
+        space,
+        metric="missing_metric",
+        n_calls=2,
+        iterations=1,
+        minimize=True,
+        random_state=0,
+        on_error="penalize",
+    )
+    assert results
+    assert all(row.get("failure") is not None for row in results)
+    assert all("missing" in str(row["failure"]).lower() or
+               "missing_metric" in str(row["failure"]).lower() or
+               row["failure"].get("exception_type")
+               for row in results)
+
+
+@pytest.mark.unit
 def test_network_missing_node_id_column_no_crash():
     nx = pytest.importorskip("networkx")
 

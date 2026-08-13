@@ -4,7 +4,11 @@ Installation
 Requirements
 ------------
 
-AMBER requires Python 3.10–3.13 and the following dependencies:
+AMBER is officially tested and supported on Python 3.10–3.13
+(``requires-python = ">=3.10"``). 3.14+ may install but is not a
+declared support target until the release wheel matrix covers it.
+
+Core dependencies:
 
 * **polars** >= 0.20.0 - High-performance DataFrame library
 * **numpy** >= 1.21.0 - Numerical computing
