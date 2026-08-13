@@ -109,7 +109,7 @@ Quick Reference
 * :func:`ambr.smac_batch_calibrate` - SMAC over a batched ensemble
   (``ambr[advanced]``)
 
-**Activation & viz (0.4.6):**
+**Activation & viz (0.5):**
 
 * :func:`ambr.activate` / :meth:`ambr.Model.activate_agents` - OOP activation
   helpers (not a schedule proof); see :doc:`scheduling`

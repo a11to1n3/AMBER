@@ -1,9 +1,9 @@
 Roadmap to 1.0
 ==============
 
-Status: **0.4.x / Unreleased P0–P2 complete**; this page is the **P3 freeze
-plan** (dry-run). Nothing listed under “Remove in 1.0” is deleted until the
-``1.0.0`` tag.
+Status: **0.5.0 is the honesty/integrity production-candidate**; 0.4.x P0–P2
+is done. This page is the **P3 freeze plan** toward 0.9 / 1.0. Nothing
+listed under “Remove in 1.0” is deleted until the ``1.0.0`` tag.
 
 Goals for 1.0
 -------------
@@ -42,15 +42,15 @@ Explicit **non-goals** (will not block 1.0):
 Suggested version train
 -----------------------
 
-==========  ============================================================
+==========  ================================================================
 Version     Intent
-==========  ============================================================
-0.4.x       P0–P2 honesty, activation, viz, RunResults I/O (current work)
-0.5.x       Optional: deeper schedulers / viz polish if needed
-0.9.0       API freeze candidate: no new deprecations without inventory;
-            migration guide; release candidate tags
+==========  ================================================================
+0.4.x       P0–P2 honesty, activation, viz, RunResults I/O (**done**)
+0.5.0       Production-candidate cut: integrity, RunResults, gates (**this**)
+0.5.x       Optional polish after 0.5.0 (schedulers / viz) if needed
+0.9.0       API freeze candidate: inventory + migration guide
 1.0.0       Delete deprecated aliases; SemVer post-1.0 rules apply
-==========  ============================================================
+==========  ================================================================
 
 Checklist before tagging 1.0.0
 ------------------------------
