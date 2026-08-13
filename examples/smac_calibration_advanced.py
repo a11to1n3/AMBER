@@ -13,7 +13,8 @@ Key features:
 - Canonical agent writes (``agents.at[id].set(...)``)
 
 Requirements:
-    pip install smac ConfigSpace
+    pip install 'ambr[advanced]'          # SMAC + ConfigSpace
+    pip install 'ambr[advanced,viz]'      # plus matplotlib for plots
 
 For a lighter single-objective vectorized wealth example, see
 ``smac_calibration_basic.py``.
@@ -25,6 +26,26 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import ambr as am
 import numpy as np
+
+
+_VIZ_WARNED = False
+
+
+def _try_matplotlib():
+    """Return pyplot, or None if matplotlib is missing / ABI-incompatible."""
+    global _VIZ_WARNED
+    try:
+        import matplotlib.pyplot as plt
+        return plt
+    except Exception as exc:
+        if not _VIZ_WARNED:
+            print(
+                "Skipping plots — install visualization extras:\n"
+                "  pip install 'ambr[advanced,viz]'\n"
+                f"Underlying error: {exc!r}"
+            )
+            _VIZ_WARNED = True
+        return None
 
 
 def _as_tuple(pos) -> Optional[Tuple]:
@@ -334,14 +355,22 @@ def run_multi_objective_optimization(n_trials: int = 40, seed: int = 42):
 
 def analyze_pareto_frontier(optimizer, results):
     """Analyze and visualize the Pareto frontier."""
-    # Plotting is optional and should not prevent importing or smoke-testing
-    # the model when Matplotlib is absent (or installed in another ABI env).
-    import matplotlib.pyplot as plt
-
     print("\nAnalyzing Pareto Frontier...")
     pareto_front = results["pareto_front"]
     history = results["history"]
     objective_names = ["segregation", "clustering", "mobility", "satisfaction"]
+
+    ideal = np.min(pareto_front[objective_names].to_numpy(), axis=0)
+    distances = np.sum((pareto_front[objective_names].to_numpy() - ideal) ** 2, axis=1)
+    best_idx = int(np.argmin(distances))
+    best_solution = pareto_front.row(best_idx, named=True)
+    print("Best compromise objectives:")
+    for obj in objective_names:
+        print(f"  {obj}: {best_solution[obj]:.4f}")
+
+    plt = _try_matplotlib()
+    if plt is None:
+        return best_solution
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
     pairs = [
@@ -368,14 +397,6 @@ def analyze_pareto_frontier(optimizer, results):
     plt.tight_layout()
     plt.savefig("amber_multi_objective_analysis.png", dpi=150, bbox_inches="tight")
     print("Saved amber_multi_objective_analysis.png")
-
-    ideal = np.min(pareto_front[objective_names].to_numpy(), axis=0)
-    distances = np.sum((pareto_front[objective_names].to_numpy() - ideal) ** 2, axis=1)
-    best_idx = int(np.argmin(distances))
-    best_solution = pareto_front.row(best_idx, named=True)
-    print("Best compromise objectives:")
-    for obj in objective_names:
-        print(f"  {obj}: {best_solution[obj]:.4f}")
     return best_solution
 
 
@@ -412,9 +433,12 @@ if __name__ == "__main__":
         import smac  # noqa: F401
     except ImportError:
         print("smac/ConfigSpace not installed — skipping multi-objective section")
-        print("Install with: pip install smac ConfigSpace")
+        print("Install with: pip install 'ambr[advanced]'")
         raise SystemExit(0)
 
+    if _try_matplotlib() is None:
+        print("Preflight: matplotlib missing — optimization will run; plots skipped.")
+        print("For plots: pip install 'ambr[advanced,viz]'")
     optimizer, results = run_multi_objective_optimization(n_trials=20, seed=42)
     analyze_pareto_frontier(optimizer, results)
     print("\nAdvanced AMBER SMAC calibration example completed.")

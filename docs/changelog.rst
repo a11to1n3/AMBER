@@ -9,13 +9,13 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 ------------
 
-[0.5.0] - 2026-08-11
+[0.5.0] - 2026-08-13
 --------------------
 
 Production-candidate: step recordings retained, strict optimization, versioned
 RunResults manifest, lazy viz, real release/GPU gates, run provenance,
 structured ``ParallelRunner`` outcomes, maintenance baseline. See
-``CHANGELOG.md`` for the full Unreleased → 0.5.0 list.
+``CHANGELOG.md`` for the full 0.5.0 list.
 
 Supported Python: **3.10–3.13**. Nightly GPU workflow fails as **NOT VERIFIED**
 without CUDA (never soft-green).

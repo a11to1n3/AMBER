@@ -104,8 +104,9 @@ Bayesian Optimization
 
 .. autofunction:: ambr.bayesian_optimization
 
-Intelligent parameter search using SMAC Bayesian optimization
-(requires ``pip install 'ambr[advanced]'`` / SMAC + ConfigSpace).
+Intelligent parameter search using SMAC's **RandomForest** surrogate
+(Gaussian-process surrogates are not supported). Requires
+``pip install 'ambr[advanced]'`` / SMAC + ConfigSpace.
 Same return shape as ``grid_search``:
 
 .. code-block:: python

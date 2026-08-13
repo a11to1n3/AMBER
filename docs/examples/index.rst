@@ -42,16 +42,19 @@ Advanced Examples
    Cellular automaton model of wildfire spread.
 
    - Script: ``examples/forest_fire_simulation.py``
+   - Notebook: ``examples/forest_fire_simulation.ipynb`` (regenerated from the script)
 
 **Flocking Simulation**
    Boids-style flocking (see also ``examples/flocking_tensor.py``).
 
    - Script: ``examples/flocking_simulation.py``
+   - Notebook: ``examples/flocking_simulation.ipynb`` (regenerated from the script)
 
 **Button Network Simulation**
-   Network-based information diffusion.
+   Network percolation (Kauffman buttons + threads).
 
    - Script: ``examples/button_network_simulation.py``
+   - Notebook: ``examples/button_network_simulation.ipynb`` (regenerated from the script)
 
 Parameter Optimization & Calibration
 -------------------------------------
@@ -97,13 +100,11 @@ Some examples may require additional dependencies:
 
 .. code-block:: bash
 
-   pip install 'ambr[perf]'          # Numba CPU path
-   pip install 'ambr[gpu]'           # NVIDIA + CuPy only (not Metal/MPS)
-   pip install 'ambr[advanced]'      # SMAC examples
-   pip install 'ambr[viz,examples]'
-
-   # For optimization examples
-   pip install smac ConfigSpace
+   pip install 'ambr[perf]'              # Numba CPU path
+   pip install 'ambr[gpu]'               # NVIDIA + CuPy only (not Metal/MPS)
+   pip install 'ambr[advanced]'          # SMAC search (no plots)
+   pip install 'ambr[advanced,viz]'      # SMAC examples with matplotlib plots
+   pip install 'ambr[viz,examples]'      # notebooks / interactive extras
 
 **Example Structure**
 

@@ -639,11 +639,13 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
                          n_initial_design: int = 5,
                          on_error: Literal["raise", "penalize"] = "raise",
                          ) -> List[Dict[str, Any]]:
-    """Perform Bayesian optimisation using SMAC3's Gaussian Process facade.
+    """Perform Bayesian optimisation using SMAC3's RandomForest surrogate.
 
     Converts the simple ``ParameterSpace`` to a SMAC3 ``ConfigurationSpace``
-    internally and runs true Bayesian optimisation with Expected Improvement
-    acquisition. Requires SMAC3 to be installed (``pip install smac``).
+    internally and runs SMAC's ``HyperparameterOptimizationFacade`` with a
+    RandomForest model and Expected Improvement acquisition. Gaussian-process
+    surrogates are not supported. Requires SMAC3
+    (``pip install 'ambr[advanced]'``).
 
     Args:
         model_class: Model class to optimize.

@@ -2,7 +2,25 @@
 
 ## Unreleased
 
+## v0.5.0 - 2026-08-13
+
+Production-candidate cut of the post-0.4.7 correctness, integrity, and
+release-gate series. **Requires a new PyPI version** (0.4.7 already published).
+
 ### Fixed
+
+- **Example notebooks**: regenerated `button_network_simulation.ipynb`,
+  `flocking_simulation.ipynb`, and `forest_fire_simulation.ipynb` from the
+  working `.py` models (no more `pl.concat` of history into `agents_df`).
+  CI executes the notebooks (`example-notebooks` job).
+- **bayesian_optimization docs**: the helper uses SMAC's RandomForest, not a
+  Gaussian process. README, API docs, and the function docstring now match
+  the implementation.
+- **SMAC examples**: plotting is optional; a clean `ambr[advanced]` install
+  completes search without matplotlib. Document `ambr[advanced,viz]`.
+- **Release metadata**: contact email is `anh-duy.pham@uni-wuerzburg.de`
+  (no `example.com` placeholder); `CITATION.cff` `date-released` matches
+  this 0.5.0 date.
 
 - **SMACOptimizer contract (0.5.x)**: ``strategy='random'`` selects RandomFacade;
   ``fixed_params`` merge into every trial; ``optimize()`` returns
@@ -82,11 +100,6 @@
   ``error_type == "Cancelled"``) and are omitted from checkpoints so resume
   re-queues them; a user exception class named ``Cancelled`` remains a
   persisted ``failed`` outcome.
-
-## v0.5.0 - 2026-08-11
-
-Production-candidate cut of the post-0.4.7 correctness, integrity, and
-release-gate series. **Requires a new PyPI version** (0.4.7 already published).
 
 ### Changed
 

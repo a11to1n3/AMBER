@@ -14,7 +14,8 @@ Key Features:
 - Automatic result analysis and visualization
 
 Requirements:
-    pip install smac ConfigSpace
+    pip install 'ambr[advanced]'          # SMAC + ConfigSpace
+    pip install 'ambr[advanced,viz]'      # plus matplotlib for plots
 """
 
 import ambr as am
@@ -22,17 +23,27 @@ import numpy as np
 from typing import Dict, Any
 
 
-def _require_matplotlib():
-    """Lazy import so the model smoke path works without a working Matplotlib."""
+_VIZ_WARNED = False
+
+
+def _try_matplotlib():
+    """Return pyplot, or None if matplotlib is missing / ABI-incompatible.
+
+    Search completes without viz extras. Plots need ``ambr[advanced,viz]``.
+    """
+    global _VIZ_WARNED
     try:
         import matplotlib.pyplot as plt
         return plt
-    except ImportError as exc:
-        raise ImportError(
-            "Plotting requires a NumPy-compatible matplotlib.\n"
-            "  pip install -U 'matplotlib>=3.8'\n"
-            f"Underlying error: {exc!r}"
-        ) from exc
+    except Exception as exc:
+        if not _VIZ_WARNED:
+            print(
+                "Skipping plots — install visualization extras:\n"
+                "  pip install 'ambr[advanced,viz]'\n"
+                f"Underlying error: {exc!r}"
+            )
+            _VIZ_WARNED = True
+        return None
 
 
 class WealthTransferModel(am.Model):
@@ -247,8 +258,28 @@ def analyze_optimization_results(optimizer, results):
     drop_cols = [c for c in ('cost', 'objective', 'time', 'trial') if c in history.columns]
     configs = history.drop(drop_cols).to_dicts()
 
-    # Create visualization
-    plt = _require_matplotlib()
+    # Run best configuration for detailed analysis (independent of plots)
+    best_params = {
+        "steps": 100,
+        "show_progress": False,
+        **results["best_config"],
+    }
+    model = WealthTransferModel(best_params)
+    model_results = model.run()
+
+    print(f"\n📈 Summary Statistics:")
+    print(f"Total trials: {len(objectives)}")
+    print(f"Best objective: {min(objectives):.6f}")
+    print(f"Worst objective: {max(objectives):.6f}")
+    print(f"Average objective: {np.mean(objectives):.6f}")
+    print(f"Improvement: {(max(objectives) - min(objectives)):.6f}")
+    print(f"Final Gini coefficient: {model_results['model']['gini_coefficient'].tail(1).item():.3f}")
+    print(f"Final wealth concentration: {model_results['model']['wealth_concentration'].tail(1).item():.3f}")
+
+    # Create visualization (optional: ambr[advanced,viz])
+    plt = _try_matplotlib()
+    if plt is None:
+        return
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
 
     # Plot 1: Objective value over time
@@ -280,16 +311,6 @@ def analyze_optimization_results(optimizer, results):
     # Plot 5: Best configuration simulation
     axes[1, 1].set_title('Best Configuration Dynamics')
 
-    # Run best configuration for detailed analysis
-    best_params = {
-        "steps": 100,
-        "show_progress": False,
-        **results["best_config"],
-    }
-
-    model = WealthTransferModel(best_params)
-    model_results = model.run()
-
     time_steps = range(len(model_results['model']))
     axes[1, 1].plot(time_steps, model_results['model']['gini_coefficient'],
                    label='Gini Coefficient', linewidth=2)
@@ -314,16 +335,6 @@ def analyze_optimization_results(optimizer, results):
     plt.tight_layout()
     plt.savefig('amber_smac_calibration_results.png', dpi=300, bbox_inches='tight')
     plt.show()
-
-    # Print summary statistics
-    print(f"\n📈 Summary Statistics:")
-    print(f"Total trials: {len(objectives)}")
-    print(f"Best objective: {min(objectives):.6f}")
-    print(f"Worst objective: {max(objectives):.6f}")
-    print(f"Average objective: {np.mean(objectives):.6f}")
-    print(f"Improvement: {(max(objectives) - min(objectives)):.6f}")
-    print(f"Final Gini coefficient: {model_results['model']['gini_coefficient'].tail(1).item():.3f}")
-    print(f"Final wealth concentration: {model_results['model']['wealth_concentration'].tail(1).item():.3f}")
 
 
 def compare_optimization_strategies():
@@ -377,8 +388,12 @@ def compare_optimization_strategies():
             comparison_results[strategy] = results['best_objective']
             print(f"  Best objective: {results['best_objective']:.6f}")
 
-    # Plot comparison
-    plt = _require_matplotlib()
+    # Plot comparison (optional: ambr[advanced,viz])
+    plt = _try_matplotlib()
+    if plt is None:
+        best_method = min(comparison_results.items(), key=lambda x: x[1])
+        print(f"\n🏆 Best performing method: {best_method[0]} (objective: {best_method[1]:.6f})")
+        return
     plt.figure(figsize=(12, 6))
 
     methods = list(comparison_results.keys())
@@ -446,8 +461,10 @@ def demonstrate_parameter_importance():
     for param, importance in sorted_importance:
         print(f"  {param.replace('_', ' ').title()}: {importance:.3f}")
 
-    # Visualize parameter importance
-    plt = _require_matplotlib()
+    # Visualize parameter importance (optional: ambr[advanced,viz])
+    plt = _try_matplotlib()
+    if plt is None:
+        return
     plt.figure(figsize=(10, 6))
     params, values = zip(*sorted_importance)
 
@@ -497,6 +514,9 @@ if __name__ == "__main__":
         print("Install with: pip install 'ambr[advanced]'  # or: pip install smac ConfigSpace")
         raise SystemExit(0)
 
+    if _try_matplotlib() is None:
+        print("Preflight: matplotlib missing — optimization will run; plots skipped.")
+        print("For plots: pip install 'ambr[advanced,viz]'")
     optimizer, results = run_smac_optimization()
     analyze_optimization_results(optimizer, results)
     compare_optimization_strategies()

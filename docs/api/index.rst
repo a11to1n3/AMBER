@@ -68,7 +68,7 @@ Quick Reference
 
 * :func:`ambr.grid_search` - Exhaustive parameter space search
 * :func:`ambr.random_search` - Random parameter sampling
-* :func:`ambr.bayesian_optimization` - Bayesian optimization of model parameters
+* :func:`ambr.bayesian_optimization` - SMAC RandomForest Bayesian optimization
 
 **Experiments:**
 
