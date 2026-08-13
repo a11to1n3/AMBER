@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GPU / CPU placement quickstart (AMBER 0.4.4+).
+"""GPU / CPU placement quickstart (AMBER 0.5).
 
 Run::
 

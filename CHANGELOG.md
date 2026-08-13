@@ -41,6 +41,10 @@ release-gate series. **Requires a new PyPI version** (0.4.7 already published).
   Remaining README / Sphinx DataFrame prints use ``.to_dicts()``.
   Tutorial fences (spatial inspect + experiment summary) included; CI
   scans doc fences for ``print(df)`` without ``.to_dicts()``.
+- **Version-line / first-run status**: paper-vs-package and roadmap say
+  0.5.0; ``print_status`` / ``recommend`` include native
+  ``model.gpu().run()``; gpu_quickstart and API viz heading drop 0.4.x
+  pins.
 
 - **MultiObjectiveSMAC strategy**: `strategy` is validated and forwarded to
   each scalar `SMACOptimizer` (`bayesian` / `random` /

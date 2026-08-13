@@ -7,7 +7,7 @@ The research paper and the installable **PyPI package** are related but
 Package (source of truth for software claims)
 ---------------------------------------------
 
-* Name: ``ambr`` on PyPI (current line: **0.4.x**, Beta classifier).
+* Name: ``ambr`` on PyPI (current line: **0.5.x**, Beta classifier).
 * Performance headlines in the **README / Sphinx** cite the committed
   snapshot::
 

@@ -8,8 +8,9 @@ Lanes (same mental model as the docs / paper):
    Scatter kernels live in :mod:`ambr.performance`; id→row in :mod:`ambr._id_index`.
 3. **Tensor** — ``agents.borrow`` / ``agents.commit`` for dense NumPy kernels.
 4. **CPU JIT** — Numba accelerates scatters when installed (recommended on Mac).
-5. **GPU** — ``ArrayKernelModel`` (single run) or ``GPUEnsembleRunner`` (many
-   parameter sets). Uses **CuPy/CUDA only** — not Apple MPS/Metal.
+5. **GPU** — native ``model.gpu().run()`` for view-API models;
+   ``ArrayKernelModel`` (array-kernel single run) or ``GPUEnsembleRunner``
+   (many parameter sets). Uses **CuPy/CUDA only** — not Apple MPS/Metal.
 
 Call :func:`status` / :func:`print_status` to see what this machine can run, and
 :func:`recommend` for a one-line suggestion by population size.
@@ -42,6 +43,7 @@ def status() -> Dict[str, Any]:
             "vectorized": "agents.where / .at / .set / scatter_add — write this style",
             "tensor": "agents.borrow / .commit — dense NumPy interaction kernels",
             "cpu_jit": "Numba accelerates scatter_add / subset writes when installed",
+            "gpu_native": "model.gpu().run() — view-API Model on device-resident columns",
             "gpu_single": "ArrayKernelModel — one large run on CuPy/NumPy arrays",
             "gpu_ensemble": "GPUEnsembleRunner — B parameter sets in one batch",
         },
@@ -120,8 +122,8 @@ def recommend(n_agents: int, *, ensemble: bool = False) -> str:
         )
     if GPU_AVAILABLE:
         return (
-            "Large N: use ArrayKernelModel so state stays on device; "
-            "vectorized Polars is still fine for simple filters/updates."
+            "Large N: model.gpu().run() for a view-API Model so columns stay "
+            "on device; ArrayKernelModel when the whole step is array math."
         )
     return (
         "Large N on CPU (e.g. Mac): stay vectorized + install numba; "
