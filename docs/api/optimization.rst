@@ -143,6 +143,9 @@ Requires ``pip install 'ambr[advanced]'`` (SMAC + ConfigSpace).
 * ``acquisition_function``: ``ei``, ``lcb``, ``pi``, ``eips``, ``ts``
 * ``surrogate_model``: ``random_forest`` only
 * ``fixed_params``: merged into every trial (e.g. ``n_agents``, ``steps``)
+* ``deterministic``: ``None`` (default) is ``True`` when
+  ``fixed_params['seed']`` is not ``None`` (same config is not
+  re-evaluated); ``False`` otherwise, including ``{"seed": None}``
 * multi-fidelity: ``use_multi_fidelity=True`` plus a fidelity parameter
   (``is_fidelity=True`` with numeric bounds → SMAC min/max budget)
 
@@ -173,7 +176,10 @@ post-hoc non-dominated set. This is **not** ParEGO / EHVI.
   raises ``ValueError`` — the Pareto front is always assembled afterwards.
 * ``fixed_params`` are merged into every trial **and** into incumbent
   re-scoring. Pass ``steps`` here; otherwise :meth:`Model.run` defaults to
-  100 steps per evaluation.
+  100 steps per evaluation. If ``seed`` is omitted, the constructor
+  ``seed`` is used for every model evaluation so Pareto values match the
+  searched front. A non-``None`` model seed also sets SMAC
+  ``deterministic=True``; ``{"seed": None}`` stays stochastic.
 
 Demo script: ``examples/smac_calibration_advanced.py`` (3 trials × 4
 objectives, ``steps=8``).

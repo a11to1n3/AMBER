@@ -218,8 +218,16 @@ class Experiment:
                 'iterations': self.iterations
             },
             'parameters': pl.DataFrame(self.sample.combinations),
-            'agents': pl.concat(all_agents_data) if all_agents_data else pl.DataFrame(),
-            'model': pl.concat(all_model_data) if all_model_data else pl.DataFrame()
+            'agents': (
+                pl.concat(all_agents_data, how="diagonal_relaxed")
+                if all_agents_data
+                else pl.DataFrame()
+            ),
+            'model': (
+                pl.concat(all_model_data, how="diagonal_relaxed")
+                if all_model_data
+                else pl.DataFrame()
+            ),
         }
 
         return combined

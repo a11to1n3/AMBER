@@ -1,10 +1,13 @@
 Performance utilities
 =====================
 
-Optional CPU acceleration (Numba, SciPy KD-tree) and parallel experiment
-helpers. Install with::
+Optional CPU acceleration (Numba scatter kernels, SciPy KD-tree
+:class:`~ambr.performance.SpatialIndex`). Install with::
 
    pip install 'ambr[perf]'
+
+:class:`~ambr.performance.ParallelRunner` is **core** (stdlib
+``multiprocessing`` only). It does **not** require ``ambr[perf]``.
 
 Flags
 -----

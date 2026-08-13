@@ -266,6 +266,7 @@ class SegregationModel(am.Model):
 DEMO_FIXED_PARAMS = {
     "grid_size": 10,
     "steps": 8,
+    "seed": 42,
     "show_progress": False,
     "agent_type_distribution": "binary",
     "neighborhood_radius": 1,
@@ -380,26 +381,22 @@ def analyze_pareto_frontier(optimizer, results):
     if plt is None:
         return best_solution
 
+    # history is long-format (one objective filled per row). Plot each
+    # objective vs its own trial index; pairwise clouds would be all-null.
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    pairs = [
-        ("segregation", "clustering"),
-        ("segregation", "mobility"),
-        ("clustering", "satisfaction"),
-        ("mobility", "satisfaction"),
-    ]
-    for ax, (obj1, obj2) in zip(axes.ravel(), pairs):
-        ax.scatter(history[obj1].to_list(), history[obj2].to_list(), alpha=0.35, s=20)
-        ax.scatter(
-            pareto_front[obj1].to_list(),
-            pareto_front[obj2].to_list(),
-            c="red",
-            s=60,
-            alpha=0.85,
-            label="Pareto",
-        )
-        ax.set_xlabel(obj1)
-        ax.set_ylabel(obj2)
-        ax.legend()
+    for ax, name in zip(axes.ravel(), objective_names):
+        series = history.select(["trial", name]).drop_nulls() if "trial" in history.columns else history.select(name).drop_nulls()
+        if "trial" in series.columns:
+            ax.plot(series["trial"].to_list(), series[name].to_list(), "o-", alpha=0.7)
+            ax.set_xlabel("trial")
+        else:
+            ax.plot(series[name].to_list(), "o-", alpha=0.7)
+            ax.set_xlabel("row")
+        ax.set_ylabel(name)
+        ax.set_title(f"{name} (per-objective search)")
+        if name in pareto_front.columns:
+            for val in pareto_front[name].to_list():
+                ax.axhline(val, color="red", ls="--", alpha=0.5)
         ax.grid(True, alpha=0.3)
 
     plt.tight_layout()

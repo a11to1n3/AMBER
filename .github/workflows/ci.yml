@@ -89,7 +89,7 @@ jobs:
         pytest tests/test_doc_fences.py tests/test_readme_examples.py -q --tb=short
         # Headless example entry points (no GUI)
         python examples/virus_spread_simulation.py --headless --steps 3 --n 20
-        python examples/gpu_quickstart.py || true
+        python examples/gpu_quickstart.py
 
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'

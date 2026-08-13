@@ -330,6 +330,29 @@ class TestExperiment:
         experiment_no_record = Experiment(RecordModel, sample, record=False)
         assert experiment_no_record.record is False
 
+    def test_experiment_concat_tolerates_extra_model_column(self):
+        """Param-gated extra metrics must not raise ShapeError at concat."""
+
+        class GatedModel(am.Model):
+            def step(self):
+                self.record_model("always", 1)
+                if self.p.get("extra"):
+                    self.record_model("bonus", 2)
+
+        sample = Sample(
+            {
+                "extra": [False, True],
+                "steps": 2,
+                "show_progress": False,
+                "seed": 0,
+            },
+            n=2,
+        )
+        results = Experiment(GatedModel, sample, iterations=1).run()
+        assert "always" in results["model"].columns
+        assert "bonus" in results["model"].columns
+        assert results["model"].height >= 2
+
 
 class TestExperimentIntegration:
     """Integration tests for Experiment class."""
