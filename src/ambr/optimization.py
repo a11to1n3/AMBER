@@ -305,6 +305,11 @@ def _append_failure_jsonl(path: Optional[str], record: Dict[str, Any]) -> None:
         pass
 
 
+def _smac_deterministic_from_fixed(fixed_params: Optional[Dict[str, Any]]) -> bool:
+    """True only when a concrete model seed is pinned (not missing, not None)."""
+    return (fixed_params or {}).get("seed") is not None
+
+
 def _smac_trial_target(
     config,
     seed: int = 0,
@@ -645,7 +650,8 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
     internally and runs SMAC's ``HyperparameterOptimizationFacade`` with a
     RandomForest model and Expected Improvement acquisition. Gaussian-process
     surrogates are not supported. Requires SMAC3
-    (``pip install 'ambr[advanced]'``).
+    (``pip install 'ambr[advanced]'``). SMAC ``deterministic`` is ``True``
+    only when the parameter space pins a non-``None`` model ``seed``.
 
     Args:
         model_class: Model class to optimize.
@@ -741,7 +747,7 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
         cs,
         n_trials=n_calls,
         seed=random_state,
-        deterministic=True,
+        deterministic=_smac_deterministic_from_fixed(fixed_params),
         output_directory=tmp_dir,
     )
 
@@ -766,7 +772,11 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
     # Target function for SMAC (always minimises)
     def _target(config: dict, seed: int = 0) -> float:
         # Merge SMAC config + fixed params + restore categorical types
-        params = _resolve_params(config)
+        base = _resolve_params(config)
+        # Lookup key must match result assembly (no SMAC-injected trial seed).
+        key = tuple(sorted(base.items()))
+        params = dict(base)
+        params.setdefault("seed", seed)
         try:
             obj = objective_function(
                 model_class, params, metric, iterations, minimize
@@ -775,7 +785,6 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
             if on_error == "raise":
                 _write_first_error(error_path, exc)
                 raise
-            key = tuple(sorted(params.items()))
             rec = _failure_record(params, exc)
             failure_by_params[key] = rec
             _append_failure_jsonl(failures_path, rec)
@@ -787,7 +796,6 @@ def bayesian_optimization(model_class: Type[Model], parameter_space: ParameterSp
             if on_error == "raise":
                 _write_first_error(error_path, exc)
                 raise exc
-            key = tuple(sorted(params.items()))
             rec = _failure_record(params, exc)
             failure_by_params[key] = rec
             _append_failure_jsonl(failures_path, rec)
@@ -1028,7 +1036,7 @@ class SMACOptimizer:
         self.on_error = on_error
         self.fixed_params: Dict[str, Any] = dict(fixed_params or {})
         if deterministic is None:
-            deterministic = self.fixed_params.get("seed") is not None
+            deterministic = _smac_deterministic_from_fixed(self.fixed_params)
         self.deterministic = bool(deterministic)
         self.failures: List[Dict[str, Any]] = []
         self._fidelity_name: Optional[str] = None
@@ -1542,7 +1550,7 @@ class MultiObjectiveSMAC:
         if "seed" not in self.fixed_params and self.seed is not None:
             self.fixed_params["seed"] = int(self.seed)
         if deterministic is None:
-            deterministic = self.fixed_params.get("seed") is not None
+            deterministic = _smac_deterministic_from_fixed(self.fixed_params)
         self.deterministic = bool(deterministic)
         # Built on first optimize() so construction stays cheap for smoke tests.
         self._optimizers: Optional[Dict[str, SMACOptimizer]] = None

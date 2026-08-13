@@ -75,6 +75,18 @@ def test_smac_optimizer_unique_output_and_cleanup():
 
 
 @pytest.mark.unit
+def test_smac_deterministic_from_fixed_helper():
+    from ambr.optimization import _smac_deterministic_from_fixed
+
+    assert _smac_deterministic_from_fixed({"seed": 0}) is True
+    assert _smac_deterministic_from_fixed({"seed": 7}) is True
+    assert _smac_deterministic_from_fixed({"seed": None}) is False
+    assert _smac_deterministic_from_fixed({"steps": 2}) is False
+    assert _smac_deterministic_from_fixed({}) is False
+    assert _smac_deterministic_from_fixed(None) is False
+
+
+@pytest.mark.unit
 def test_smac_optimizer_deterministic_when_model_seed_pinned():
     space = am.SMACParameterSpace()
     space.add_parameter("x", param_type="float", bounds=(0.0, 1.0), default=0.1)
@@ -500,6 +512,46 @@ def test_bayesian_optimization_fixed_float_parameter():
     )
     assert results
     assert results[0]["parameters"].get("fixed_float") == 0.05
+
+
+@pytest.mark.unit
+def test_bayesian_optimization_penalize_keeps_failure_without_fixed_seed():
+    """SMAC-injected trial seed must not hide failure records."""
+    from ambr import ParameterSpace, bayesian_optimization
+
+    class Boom(am.Model):
+        def setup(self):
+            self.add_agents(2, wealth=1)
+
+        def step(self):
+            pass
+
+        def update(self):
+            self.record_model("s", 1.0)
+
+    space = ParameterSpace(
+        {
+            "n_agents": [2, 4],
+            "steps": 1,
+            "show_progress": False,
+        }
+    )
+    results = bayesian_optimization(
+        Boom,
+        space,
+        metric="missing_metric",
+        n_calls=2,
+        iterations=1,
+        minimize=True,
+        random_state=0,
+        on_error="penalize",
+    )
+    assert results
+    assert all(row.get("failure") is not None for row in results)
+    assert all("missing" in str(row["failure"]).lower() or
+               "missing_metric" in str(row["failure"]).lower() or
+               row["failure"].get("exception_type")
+               for row in results)
 
 
 @pytest.mark.unit

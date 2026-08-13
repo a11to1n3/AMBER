@@ -211,7 +211,7 @@ def objective_function(model: WealthTransferModel) -> float:
 
 def run_smac_optimization(n_trials: int = 10, steps: int = 15):
     """Run SMAC optimization using AMBER's SMACOptimizer."""
-    print("🚀 Starting SMAC Calibration with AMBER's SMACOptimizer")
+    print("Starting SMAC Calibration with AMBER's SMACOptimizer")
     print("=" * 60)
     print(f"Budget: n_trials={n_trials}, steps={steps} (pass --full for the long demo)")
 
@@ -241,7 +241,7 @@ def run_smac_optimization(n_trials: int = 10, steps: int = 15):
     results = optimizer.optimize()
 
     # Display results
-    print("\n🎯 Optimization Results:")
+    print("\nOptimization Results:")
     print("=" * 40)
     print("Best configuration found:")
     best_config = results['best_config']
@@ -256,7 +256,7 @@ def run_smac_optimization(n_trials: int = 10, steps: int = 15):
 
 def analyze_optimization_results(optimizer, results):
     """Analyze and visualize optimization results."""
-    print("\n📊 Analyzing Optimization Results...")
+    print("\nAnalyzing Optimization Results...")
 
     # Get optimization history (cost == objective; trial index for x-axis)
     history = results['history']
@@ -275,7 +275,7 @@ def analyze_optimization_results(optimizer, results):
     model_results = model.run()
 
     incumbent = results.get("best_objective")
-    print("\n📈 Summary Statistics:")
+    print("\nSummary Statistics:")
     print(f"Total trials: {len(objectives)}")
     print(f"SMAC incumbent cost: {incumbent:.6f}")
     print(f"Minimum trial cost (history): {min(objectives):.6f}")
@@ -347,7 +347,7 @@ def analyze_optimization_results(optimizer, results):
 
 def compare_optimization_strategies(n_trials: int = 20, steps: int = 100):
     """Compare different SMAC optimization strategies."""
-    print("\n🔍 Comparing Optimization Strategies")
+    print("\nComparing Optimization Strategies")
     print("=" * 40)
 
     param_space = create_parameter_space()
@@ -381,7 +381,7 @@ def compare_optimization_strategies(n_trials: int = 20, steps: int = 100):
                 comparison_results[f'{strategy}_{acq_func}'] = results['best_objective']
                 print(f"    Best objective: {results['best_objective']:.6f}")
 
-        else:  # random strategy → RandomFacade
+        else:  # random strategy -> RandomFacade
             optimizer = am.SMACOptimizer(
                 model_type=WealthTransferModel,
                 param_space=param_space,
@@ -400,7 +400,7 @@ def compare_optimization_strategies(n_trials: int = 20, steps: int = 100):
     plt = _try_matplotlib()
     if plt is None:
         best_method = min(comparison_results.items(), key=lambda x: x[1])
-        print(f"\n🏆 Best performing method: {best_method[0]} (objective: {best_method[1]:.6f})")
+        print(f"\nBest performing method: {best_method[0]} (objective: {best_method[1]:.6f})")
         return
     plt.figure(figsize=(12, 6))
 
@@ -425,12 +425,12 @@ def compare_optimization_strategies(n_trials: int = 20, steps: int = 100):
 
     # Find best strategy
     best_method = min(comparison_results.items(), key=lambda x: x[1])
-    print(f"\n🏆 Best performing method: {best_method[0]} (objective: {best_method[1]:.6f})")
+    print(f"\nBest performing method: {best_method[0]} (objective: {best_method[1]:.6f})")
 
 
 def demonstrate_parameter_importance(n_trials: int = 100, steps: int = 100):
     """Demonstrate parameter importance analysis using SMAC results."""
-    print("\n🔬 Parameter Importance Analysis")
+    print("\nParameter Importance Analysis")
     print("=" * 35)
 
     # Run optimization with more trials for better importance analysis
@@ -543,5 +543,5 @@ if __name__ == "__main__":
         analyze_optimization_results(optimizer, results)
         print("Skipped comparison/importance (pass --full for the long demo).")
 
-    print("\n✅ AMBER SMAC calibration example completed!")
-    print("📁 PNG outputs written when matplotlib is available and ABI-compatible with NumPy.")
+    print("\nAMBER SMAC calibration example completed.")
+    print("PNG outputs written when matplotlib is available.")

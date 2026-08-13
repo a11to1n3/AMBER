@@ -107,7 +107,8 @@ Bayesian Optimization
 Intelligent parameter search using SMAC's **RandomForest** surrogate
 (Gaussian-process surrogates are not supported). Requires
 ``pip install 'ambr[advanced]'`` / SMAC + ConfigSpace.
-Same return shape as ``grid_search``:
+SMAC ``deterministic`` is ``True`` only when the space pins a non-``None``
+model ``seed``. Same return shape as ``grid_search``:
 
 .. code-block:: python
 
