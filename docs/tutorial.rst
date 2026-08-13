@@ -57,7 +57,7 @@ operations — no per-agent loop.
    # earlier who are still alive. For per-step agent history, declare
    # ``agent_reporters`` and use ``results.agent_vars`` (time column ``t``).
    print("Final wealth distribution:")
-   print(results.agents.select(['id', 'wealth']).head(10))
+   print(results.agents.select(['id', 'wealth']).head(10).to_dicts())
 
 Part 2: Adding Spatial Structure
 ---------------------------------

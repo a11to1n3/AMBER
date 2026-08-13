@@ -39,7 +39,7 @@ Basic Usage
                agent.step()
 
    results = MyModel({"steps": 5, "seed": 0, "show_progress": False}).run()
-   print(results.agents.head())
+   print(results.agents.head().to_dicts())
 
 Custom Agent Classes
 --------------------

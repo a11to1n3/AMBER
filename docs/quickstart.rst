@@ -163,7 +163,7 @@ vectorized way:
 
    # Inspect the results
    print("Final wealth distribution (first 10 agents):")
-   print(results['agents'].select(['id', 'wealth']).head(10))
+   print(results['agents'].select(['id', 'wealth']).head(10).to_dicts())
 
 That's the whole idiom. No per-agent loops, no ``update_agent_data`` calls,
 and no ``.item()`` ceremonies. ``step_vectorized()`` is a handful of view-API

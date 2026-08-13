@@ -50,7 +50,7 @@ Canonical usage::
    #   agents     — Polars frame (concatenated end-of-run agent tables)
    #   model      — Polars frame (model-level time series across runs)
    print(results["info"])
-   print(results["model"].head())
+   print(results["model"].head().to_dicts())
 
 Legacy kwargs ``model_class=`` / ``parameters=`` still work with a
 ``DeprecationWarning`` (removed in **1.0**).
