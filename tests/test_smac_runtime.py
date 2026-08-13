@@ -96,6 +96,27 @@ def test_smac_optimizer_deterministic_when_model_seed_pinned():
 
 
 @pytest.mark.unit
+def test_smac_optimizer_seed_none_is_not_deterministic():
+    space = am.SMACParameterSpace()
+    space.add_parameter("x", param_type="float", bounds=(0.0, 1.0), default=0.1)
+    opt = SMACOptimizer(
+        _TinyModel,
+        space,
+        _const_obj,
+        n_trials=2,
+        seed=0,
+        strategy="random",
+        fixed_params={"n_agents": 4, "steps": 1, "seed": None, "show_progress": False},
+    )
+    try:
+        assert opt.deterministic is False
+        assert bool(opt.scenario.deterministic) is False
+    finally:
+        opt._cleanup_output_dir()
+        opt._shutdown_parallel_resources()
+
+
+@pytest.mark.unit
 def test_constructor_validation_does_not_leak_temp_dir():
     before = {p for p in Path(tempfile.gettempdir()).glob("amber_smac_*")}
     with pytest.raises(ValueError, match="Unknown strategy"):

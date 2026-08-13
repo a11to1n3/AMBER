@@ -24,7 +24,8 @@ release-gate series. **Requires a new PyPI version** (0.4.7 already published).
 - **Windows GPU quickstart**: print ``DataFrame.to_dicts()`` (ASCII) instead
   of Polars box-drawing ``tail()`` so CP1252 stdout does not raise.
 - **SMAC deterministic**: ``SMACOptimizer`` / ``MultiObjectiveSMAC`` set
-  ``Scenario(deterministic=True)`` when the model ``seed`` is pinned.
+  ``Scenario(deterministic=True)`` only when ``fixed_params['seed']`` is
+  not ``None`` (``{"seed": None}`` stays stochastic).
 - **SMAC basic example**: parse ``--help`` first; label incumbent vs history
   min; replay the best config with the same seed.
 

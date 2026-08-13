@@ -193,3 +193,27 @@ def test_multiobjective_pins_deterministic_when_model_seed_is_fixed():
         for opt in opts.values():
             opt._cleanup_output_dir()
             opt._shutdown_parallel_resources()
+
+
+def test_multiobjective_seed_none_is_not_deterministic():
+    space = SMACParameterSpace()
+    space.add_parameter("x", param_type="float", bounds=(0.0, 3.0), default=1.0)
+    mo = MultiObjectiveSMAC(
+        model_type=_TinyModel,
+        param_space=space,
+        objectives={"a": _obj_a},
+        n_trials=1,
+        seed=0,
+        strategy="random",
+        fixed_params={"steps": 2, "seed": None, "show_progress": False},
+    )
+    assert mo.fixed_params.get("seed") is None
+    assert mo.deterministic is False
+    opts = mo._ensure_optimizers()
+    try:
+        assert all(opt.deterministic is False for opt in opts.values())
+        assert all(not bool(opt.scenario.deterministic) for opt in opts.values())
+    finally:
+        for opt in opts.values():
+            opt._cleanup_output_dir()
+            opt._shutdown_parallel_resources()
