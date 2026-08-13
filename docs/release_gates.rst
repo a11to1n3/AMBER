@@ -48,10 +48,10 @@ Security defaults
   Release assets). No long-lived PyPI API token is required when Trusted
   Publishing is configured.
 
-Definition of done (production-candidate)
------------------------------------------
+Definition of done (0.5.0 production-candidate)
+-----------------------------------------------
 
-Before the next production-candidate release, require **all** of::
+Before tagging **0.5.0** (and later production tags), require **all** of::
 
    pytest -q
    ruff check src/ambr
