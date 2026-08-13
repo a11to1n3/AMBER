@@ -34,10 +34,10 @@ Maintainer setup
 * PyPI trusted publisher: owner ``a11to1n3``, repo ``AMBER``, workflow
   ``release.yml``, environment ``pypi``.
 * GitHub Environment ``pypi``: enable required reviewers.
-* Repository variable ``GPU_RUNNER``: self-hosted runner label(s) with CUDA
-  (for example ``self-hosted`` or a custom label). Without this, the CUDA
-  gate **and** the nightly GPU workflow fail as **NOT VERIFIED** (never
-  soft-green).
+* Repository variable ``GPU_RUNNER``: a **single** self-hosted runner label
+  with CUDA (for example ``cuda``). The ``runs-on`` expression is scalar, so
+  do not set ``self-hosted,gpu``. Without this, the CUDA gate **and** the
+  nightly GPU workflow fail as **NOT VERIFIED** (never soft-green).
 
 Security defaults
 -----------------
