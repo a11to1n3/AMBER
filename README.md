@@ -207,8 +207,9 @@ the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).
 
 > **New in 0.5.0:** production-candidate. **Breaking / install:** matplotlib
-> and scikit-optimize are no longer core (`ambr[viz]`, `ambr[advanced]`);
-> Python **3.10–3.13** only. **API:** `record_model` inside `step()` is kept;
+> moved to `ambr[viz]`; scikit-optimize was removed and replaced by SMAC
+> under `ambr[advanced]` (SMAC + ConfigSpace + scikit-learn). Python
+> **3.10–3.13** only. **API:** `record_model` inside `step()` is kept;
 > missing optimization metrics raise; SMAC defaults to `on_error='raise'`;
 > `RunResults.save` uses a versioned manifest. Upgrade with
 > `pip install -U 'ambr>=0.5.0'`. Full list:

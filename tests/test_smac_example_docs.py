@@ -35,3 +35,7 @@ def test_smac_examples_document_viz_extra_and_optional_plots(path: Path):
     if path.name == "smac_calibration_basic.py":
         assert "--full" in text
         assert "n_trials=10" in text or "n_trials: int = 10" in text
+        assert "SMAC incumbent cost" in text
+        # --help must parse argv before the smoke run / SMAC import.
+        main = text.split('if __name__ == "__main__":', 1)[1]
+        assert main.find("parse_args(") < main.find("WealthTransferModel({")

@@ -170,3 +170,26 @@ def test_multiobjective_rescore_uses_optimizer_seed():
     )
     replay.results = replay.run()
     assert abs(obj(replay) - float(row["a"])) < 1e-12
+
+
+def test_multiobjective_pins_deterministic_when_model_seed_is_fixed():
+    space = SMACParameterSpace()
+    space.add_parameter("x", param_type="float", bounds=(0.0, 3.0), default=1.0)
+    mo = MultiObjectiveSMAC(
+        model_type=_TinyModel,
+        param_space=space,
+        objectives={"a": _obj_a, "b": _obj_b},
+        n_trials=3,
+        seed=0,
+        strategy="random",
+        fixed_params={"steps": 2, "show_progress": False},
+    )
+    assert mo.deterministic is True
+    opts = mo._ensure_optimizers()
+    try:
+        assert all(opt.deterministic for opt in opts.values())
+        assert all(bool(opt.scenario.deterministic) for opt in opts.values())
+    finally:
+        for opt in opts.values():
+            opt._cleanup_output_dir()
+            opt._shutdown_parallel_resources()

@@ -231,6 +231,7 @@ def run_smac_optimization(n_trials: int = 10, steps: int = 15):
         surrogate_model="random_forest",
         fixed_params={
             "steps": steps,
+            "seed": 42,
             "show_progress": False,
         },
     )
@@ -242,12 +243,12 @@ def run_smac_optimization(n_trials: int = 10, steps: int = 15):
     # Display results
     print("\n🎯 Optimization Results:")
     print("=" * 40)
-    print(f"Best configuration found:")
+    print("Best configuration found:")
     best_config = results['best_config']
     for param, value in best_config.items():
         print(f"  {param}: {value}")
 
-    print(f"\nBest objective value: {results['best_objective']:.6f}")
+    print(f"\nSMAC incumbent cost: {results['best_objective']:.6f}")
     print(f"Total function evaluations: {results['n_evaluations']}")
 
     return optimizer, results
@@ -266,18 +267,20 @@ def analyze_optimization_results(optimizer, results):
     # Run best configuration for detailed analysis (independent of plots)
     best_params = {
         "steps": int(optimizer.fixed_params.get("steps", 15)),
+        "seed": int(optimizer.fixed_params.get("seed", 42)),
         "show_progress": False,
         **results["best_config"],
     }
     model = WealthTransferModel(best_params)
     model_results = model.run()
 
-    print(f"\n📈 Summary Statistics:")
+    incumbent = results.get("best_objective")
+    print("\n📈 Summary Statistics:")
     print(f"Total trials: {len(objectives)}")
-    print(f"Best objective: {min(objectives):.6f}")
-    print(f"Worst objective: {max(objectives):.6f}")
-    print(f"Average objective: {np.mean(objectives):.6f}")
-    print(f"Improvement: {(max(objectives) - min(objectives)):.6f}")
+    print(f"SMAC incumbent cost: {incumbent:.6f}")
+    print(f"Minimum trial cost (history): {min(objectives):.6f}")
+    print(f"Worst trial cost (history): {max(objectives):.6f}")
+    print(f"Average trial cost: {np.mean(objectives):.6f}")
     print(f"Final Gini coefficient: {model_results['model']['gini_coefficient'].tail(1).item():.3f}")
     print(f"Final wealth concentration: {model_results['model']['wealth_concentration'].tail(1).item():.3f}")
 
@@ -350,7 +353,7 @@ def compare_optimization_strategies(n_trials: int = 20, steps: int = 100):
     param_space = create_parameter_space()
     strategies = ['bayesian', 'random']
     acquisition_functions = ['ei', 'lcb', 'pi']
-    fixed = {"steps": steps, "show_progress": False}
+    fixed = {"steps": steps, "seed": 42, "show_progress": False}
 
     comparison_results = {}
 
@@ -441,7 +444,7 @@ def demonstrate_parameter_importance(n_trials: int = 100, steps: int = 100):
         seed=42,
         strategy="bayesian",
         acquisition_function="ei",
-        fixed_params={"steps": steps, "show_progress": False},
+        fixed_params={"steps": steps, "seed": 42, "show_progress": False},
     )
 
     results = optimizer.optimize()
@@ -490,6 +493,14 @@ def demonstrate_parameter_importance(n_trials: int = 100, steps: int = 100):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="AMBER SMAC calibration demo")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Run strategy comparison + importance (hundreds of 100-step trials)",
+    )
+    args = parser.parse_args()
+
     print("SMAC Calibration with AMBER's Built-in Optimization")
     print("=" * 55)
 
@@ -518,14 +529,6 @@ if __name__ == "__main__":
         print("smac/ConfigSpace not installed — skipping SMAC optimization section")
         print("Install with: pip install 'ambr[advanced]'  # or: pip install smac ConfigSpace")
         raise SystemExit(0)
-
-    parser = argparse.ArgumentParser(description="AMBER SMAC calibration demo")
-    parser.add_argument(
-        "--full",
-        action="store_true",
-        help="Run strategy comparison + importance (hundreds of 100-step trials)",
-    )
-    args = parser.parse_args()
 
     if _try_matplotlib() is None:
         print("Preflight: matplotlib missing — optimization will run; plots skipped.")

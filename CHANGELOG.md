@@ -21,6 +21,12 @@ release-gate series. **Requires a new PyPI version** (0.4.7 already published).
 - **README / UX**: 0.5.0 upgrade note; ``help(ambr)`` matches the vectorized
   quickstart; ParallelRunner documented as core; GPU quickstart CI no longer
   ``|| true``.
+- **Windows GPU quickstart**: print ``DataFrame.to_dicts()`` (ASCII) instead
+  of Polars box-drawing ``tail()`` so CP1252 stdout does not raise.
+- **SMAC deterministic**: ``SMACOptimizer`` / ``MultiObjectiveSMAC`` set
+  ``Scenario(deterministic=True)`` when the model ``seed`` is pinned.
+- **SMAC basic example**: parse ``--help`` first; label incumbent vs history
+  min; replay the best config with the same seed.
 
 - **MultiObjectiveSMAC strategy**: `strategy` is validated and forwarded to
   each scalar `SMACOptimizer` (`bayesian` / `random` /

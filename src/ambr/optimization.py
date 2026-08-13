@@ -965,7 +965,8 @@ class SMACOptimizer:
                  use_multi_fidelity: bool = False,
                  use_random_search: bool = False,
                  fixed_params: Optional[Dict[str, Any]] = None,
-                 on_error: Literal["raise", "penalize"] = "raise"):
+                 on_error: Literal["raise", "penalize"] = "raise",
+                 deterministic: Optional[bool] = None):
         """Initialize the optimizer.
 
         Args:
@@ -990,6 +991,10 @@ class SMACOptimizer:
             on_error: ``'raise'`` (default) propagates evaluation failures;
                 ``'penalize'`` maps them to a large finite cost and records a
                 structured failure entry on ``self.failures``.
+            deterministic: SMAC Scenario flag. ``None`` (default) is ``True``
+                when ``fixed_params`` pins a model ``seed`` (same config ⇒
+                same cost; do not waste trials re-evaluating it) and
+                ``False`` otherwise.
         """
         # Check SMAC availability and do lazy imports
         _check_smac()
@@ -1022,6 +1027,9 @@ class SMACOptimizer:
         self.seed = seed
         self.on_error = on_error
         self.fixed_params: Dict[str, Any] = dict(fixed_params or {})
+        if deterministic is None:
+            deterministic = "seed" in self.fixed_params
+        self.deterministic = bool(deterministic)
         self.failures: List[Dict[str, Any]] = []
         self._fidelity_name: Optional[str] = None
         self._fidelity_type: Optional[str] = None
@@ -1146,6 +1154,7 @@ class SMACOptimizer:
                 "n_trials": n_trials,
                 "n_workers": n_workers,
                 "seed": seed,
+                "deterministic": self.deterministic,
                 "output_directory": self._output_dir,
             }
             if mf_budgets is not None:
@@ -1479,7 +1488,9 @@ class MultiObjectiveSMAC:
     such as ``steps`` belong in ``fixed_params`` — otherwise
     :meth:`Model.run` defaults to 100 steps per evaluation. If ``seed`` is
     omitted from ``fixed_params``, the constructor ``seed`` is used for
-    every model evaluation and for incumbent re-scoring.
+    every model evaluation and for incumbent re-scoring. A pinned model
+    seed also sets SMAC ``deterministic=True`` so identical configs are
+    not re-evaluated.
     """
 
     def __init__(
@@ -1493,6 +1504,7 @@ class MultiObjectiveSMAC:
         strategy: str = "bayesian",
         use_multi_fidelity: bool = False,
         fixed_params: Optional[Dict[str, Any]] = None,
+        deterministic: Optional[bool] = None,
     ):
         _check_smac()
         if use_multi_fidelity:
@@ -1529,6 +1541,9 @@ class MultiObjectiveSMAC:
         # is a fresh unseeded run (incomparable on stochastic models).
         if "seed" not in self.fixed_params and self.seed is not None:
             self.fixed_params["seed"] = int(self.seed)
+        if deterministic is None:
+            deterministic = "seed" in self.fixed_params
+        self.deterministic = bool(deterministic)
         # Built on first optimize() so construction stays cheap for smoke tests.
         self._optimizers: Optional[Dict[str, SMACOptimizer]] = None
 
@@ -1549,6 +1564,7 @@ class MultiObjectiveSMAC:
                 seed=seed,
                 strategy=self.strategy,
                 fixed_params=self.fixed_params,
+                deterministic=self.deterministic,
             )
         self._optimizers = opts
         return opts
