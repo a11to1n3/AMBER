@@ -237,9 +237,9 @@ def step(self):
     self.agents.at[[1, 1, 3]].scatter_add(wealth=1)  # agent 1 gets +2, agent 3 gets +1
 ```
 
-## 🧭 Canonical API (0.4)
+## Canonical API (0.5)
 
-AMBER 0.4 settles on one obvious verb per task. The legacy spellings still work
+AMBER 0.5 settles on one obvious verb per task. The legacy spellings still work
 (they emit a `DeprecationWarning` and are scheduled for removal in **1.0**); set
 `AMBER_SUPPRESS_DEPRECATIONS=1` to silence them in benchmark / reproducibility runs.
 Batch performance comes from these verbs (columnar writes), not from extra public

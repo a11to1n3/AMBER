@@ -108,5 +108,5 @@ if __name__ == "__main__":
     results = model.run()
     print("Smoke run OK:", results["info"])
     print("metrics columns:", results["model"].columns)
-    print(results["model"].tail(3))
+    print(results["model"].tail(3).to_dicts())
     _optional_plot(results, params["size"])

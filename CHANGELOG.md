@@ -28,6 +28,12 @@ release-gate series. **Requires a new PyPI version** (0.4.7 already published).
   not ``None`` (``{"seed": None}`` stays stochastic).
 - **SMAC basic example**: parse ``--help`` first; label incumbent vs history
   min; replay the best config with the same seed.
+- **First-run / Windows**: example scripts print ASCII (no emoji; Polars
+  ``to_dicts()`` instead of box-drawing ``tail()``). Simple SMAC defaults to
+  10x15 with a pinned seed; ``--full`` restores comparison.
+- **bayesian_optimization**: ``deterministic`` follows a pinned non-``None``
+  model ``seed`` (same rule as ``SMACOptimizer``); SMAC trial seed is applied
+  via ``setdefault``.
 
 - **MultiObjectiveSMAC strategy**: `strategy` is validated and forwarded to
   each scalar `SMACOptimizer` (`bayesian` / `random` /

@@ -360,7 +360,7 @@ Finally, let's use the experiment framework to run systematic parameter sweeps.
        iterations=1,  # repeats per combination
    )
    experiment_results = experiment.run()
-   # run() returns a dict of Polars frames: info, parameters, agents, model
+   # run() returns parameters/agents/model as Polars frames; info is a dict.
    print(experiment_results['info'])
    print(experiment_results['model'].head())
 
@@ -368,7 +368,7 @@ Finally, let's use the experiment framework to run systematic parameter sweeps.
 
 .. code-block:: python
 
-   # Continues Step 1 — experiment_results is a dict of Polars frames, not pandas.
+   # Continues Step 1 — table keys are Polars frames; info is a dict, not pandas.
    import polars as pl
 
    model_df = experiment_results['model']

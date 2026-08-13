@@ -178,7 +178,9 @@ The model returns a dictionary with three keys:
 
 * ``agents`` — a Polars DataFrame of agent state at the end of the run
 * ``model`` — a Polars DataFrame of the model-level metrics you reported
-* ``info`` — a small dict with ``steps`` and ``run_time``
+* ``info`` — a Python dict of run provenance (``steps``, ``run_time``,
+  ``run_uuid``, ``model_class``, ``parameters``, ``seed``,
+  ``execution_lane``, library versions, …). Not a DataFrame.
 
 .. code-block:: python
 

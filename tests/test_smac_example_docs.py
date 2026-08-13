@@ -26,6 +26,8 @@ def test_smac_examples_document_viz_extra_and_optional_plots(path: Path):
     # Plotting must be skippable — never a hard ImportError on the success path.
     assert "_try_matplotlib" in text
     assert "raise ImportError" not in text
+    # Windows cp1252 cannot encode emoji banners on success.
+    assert not any(ch in text for ch in "🚀🎯✅📁🧪📊🔍🔬🏆🎉")
     if path.name == "smac_calibration_advanced.py":
         assert "per objective" in text.lower() or "per-objective" in text.lower()
         assert "strategy=\"pareto\"" not in text
@@ -39,3 +41,9 @@ def test_smac_examples_document_viz_extra_and_optional_plots(path: Path):
         # --help must parse argv before the smoke run / SMAC import.
         main = text.split('if __name__ == "__main__":', 1)[1]
         assert main.find("parse_args(") < main.find("WealthTransferModel({")
+    if path.name == "smac_calibration_simple.py":
+        assert "--full" in text
+        assert "n_trials=10" in text or "n_trials: int = 10" in text
+        assert "SMAC incumbent cost" in text
+        main = text.split('if __name__ == "__main__":', 1)[1]
+        assert main.find("parse_args(") < main.find("SimpleWealthModel({")

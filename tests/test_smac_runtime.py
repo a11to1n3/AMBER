@@ -75,6 +75,18 @@ def test_smac_optimizer_unique_output_and_cleanup():
 
 
 @pytest.mark.unit
+def test_smac_deterministic_from_fixed_helper():
+    from ambr.optimization import _smac_deterministic_from_fixed
+
+    assert _smac_deterministic_from_fixed({"seed": 0}) is True
+    assert _smac_deterministic_from_fixed({"seed": 7}) is True
+    assert _smac_deterministic_from_fixed({"seed": None}) is False
+    assert _smac_deterministic_from_fixed({"steps": 2}) is False
+    assert _smac_deterministic_from_fixed({}) is False
+    assert _smac_deterministic_from_fixed(None) is False
+
+
+@pytest.mark.unit
 def test_smac_optimizer_deterministic_when_model_seed_pinned():
     space = am.SMACParameterSpace()
     space.add_parameter("x", param_type="float", bounds=(0.0, 1.0), default=0.1)
