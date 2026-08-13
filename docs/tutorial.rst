@@ -115,7 +115,7 @@ Now let's enhance our model with a grid environment where agents can only intera
    # End-of-run agent table (one row per living agent). ``step`` is creation
    # step, not time-series history — use the full table for final state.
    final_data = results.agents
-   print(final_data.select(['id', 'x', 'y', 'wealth']).head())
+   print(final_data.select(['id', 'x', 'y', 'wealth']).head().to_dicts())
 
    # Optional plot — requires a NumPy-compatible matplotlib:
    #   pip install -U 'matplotlib>=3.8'
@@ -362,7 +362,7 @@ Finally, let's use the experiment framework to run systematic parameter sweeps.
    experiment_results = experiment.run()
    # run() returns parameters/agents/model as Polars frames; info is a dict.
    print(experiment_results['info'])
-   print(experiment_results['model'].head())
+   print(experiment_results['model'].head().to_dicts())
 
 **Step 2: Analyze Experiment Results**
 
@@ -380,7 +380,7 @@ Finally, let's use the experiment framework to run systematic parameter sweeps.
        .agg(pl.col('gini_coefficient').mean())
        .sort('n_agents')
    )
-   print(gini_by_population)
+   print(gini_by_population.to_dicts())
 
    # Optional plot (matplotlib):
    # import matplotlib.pyplot as plt

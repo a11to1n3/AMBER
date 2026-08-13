@@ -42,8 +42,6 @@ def test_bayesian_optimization_docs_do_not_claim_gaussian_process():
     assert "RandomForest" in readme
     assert "ambr[gpu]" in readme
     assert "ambr[viz]" in readme
-    assert "print(results.model)" not in readme
-    assert "print(results.agents.head())" not in readme
 
 
 def test_contact_email_is_not_a_placeholder():

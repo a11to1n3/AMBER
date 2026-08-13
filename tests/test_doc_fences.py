@@ -36,6 +36,7 @@ DOC_PATHS = [
     "docs/tutorial.rst",
     "docs/installation.rst",
     "docs/going_faster.rst",
+    "docs/from_agentpy.rst",
     "docs/index.rst",
     "docs/api/agent.rst",
     "docs/api/base.rst",
@@ -242,6 +243,113 @@ def _run_code(code: str, timeout: float = 90.0) -> None:
 
 
 FENCES = _collect_fences()
+
+_PRINT_CALL = re.compile(r"(?<![\w.])print\s*\(", re.M)
+_DF_MARKERS = (
+    ".head(",
+    ".tail(",
+    ".select(",
+    ".group_by(",
+    ".groupby(",
+    "['model']",
+    '["model"]',
+    "['agents']",
+    '["agents"]',
+    ".model",
+    ".agents",
+)
+_DF_ASSIGN = re.compile(
+    r"^(\w+)\s*=\s*(?:.|\n)*?(?:\.head\(|\.tail\(|\.select\(|\.group_by\(|"
+    r"\.groupby\(|results\[|res\[|\.model|\.agents)",
+    re.M,
+)
+
+
+def _split_top_level_args(inner: str) -> list[str]:
+    parts: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    quote = None
+    for ch in inner:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+            continue
+        if ch in "([{":
+            depth += 1
+            buf.append(ch)
+            continue
+        if ch in ")]}":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+            continue
+        if ch == "," and depth == 0:
+            part = "".join(buf).strip()
+            if part:
+                parts.append(part)
+            buf = []
+            continue
+        buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def _print_args(code: str) -> list[str]:
+    """Return each top-level argument of every ``print(...)`` call."""
+    args: list[str] = []
+    for match in _PRINT_CALL.finditer(code):
+        start = match.end()
+        depth = 1
+        i = start
+        while i < len(code) and depth:
+            ch = code[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            i += 1
+        if depth == 0:
+            args.extend(_split_top_level_args(code[start : i - 1]))
+    return args
+
+
+def _assigned_dataframe_names(code: str) -> set[str]:
+    return {m.group(1) for m in _DF_ASSIGN.finditer(code)}
+
+
+@pytest.mark.unit
+def test_doc_fences_print_dataframes_via_to_dicts():
+    """Windows CP1252 cannot encode Polars box-drawing ``print(df)``."""
+    offenders: list[str] = []
+    for fence_id, code in FENCES:
+        df_names = _assigned_dataframe_names(code)
+        for arg in _print_args(code):
+            compact = re.sub(r"\s+", "", arg)
+            if compact.startswith(("'", '"')) and compact.endswith(("'", '"')):
+                continue
+            if ".to_dicts()" in compact or ".to_dict(" in compact:
+                continue
+            if compact.endswith((".shape", ".columns", ".height", ".width", ".schema", ".dtypes")):
+                continue
+            if arg in ("results.info", "res.info") or arg.endswith("['info']") or arg.endswith('["info"]'):
+                continue
+            if arg.startswith("results.info") or arg.startswith("res.info"):
+                continue
+            looks_df = any(marker in compact for marker in _DF_MARKERS)
+            looks_df = looks_df or arg in df_names
+            if looks_df:
+                offenders.append(f"{fence_id}: print({arg})")
+    assert not offenders, (
+        "Doc fences must print DataFrames via .to_dicts() (ASCII-safe):\n"
+        + "\n".join(offenders)
+    )
 
 
 @pytest.mark.unit
