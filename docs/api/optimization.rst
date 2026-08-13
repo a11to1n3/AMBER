@@ -104,9 +104,11 @@ Bayesian Optimization
 
 .. autofunction:: ambr.bayesian_optimization
 
-Intelligent parameter search using SMAC Bayesian optimization
-(requires ``pip install 'ambr[advanced]'`` / SMAC + ConfigSpace).
-Same return shape as ``grid_search``:
+Intelligent parameter search using SMAC's **RandomForest** surrogate
+(Gaussian-process surrogates are not supported). Requires
+``pip install 'ambr[advanced]'`` / SMAC + ConfigSpace.
+SMAC ``deterministic`` is ``True`` only when the space pins a non-``None``
+model ``seed``. Same return shape as ``grid_search``:
 
 .. code-block:: python
 
@@ -124,3 +126,61 @@ Same return shape as ``grid_search``:
    )
    best = results[0]
    print(best['parameters'], best['objective'])
+
+SMACOptimizer (advanced)
+------------------------
+
+.. autoclass:: ambr.SMACOptimizer
+   :members:
+   :undoc-members:
+
+Requires ``pip install 'ambr[advanced]'`` (SMAC + ConfigSpace).
+
+**Supported options (0.5.x):**
+
+* ``strategy``: ``bayesian`` (default), ``random`` (RandomFacade),
+  ``algorithm_configuration``
+* ``use_random_search=True`` — same as ``strategy='random'``
+* ``acquisition_function``: ``ei``, ``lcb``, ``pi``, ``eips``, ``ts``
+* ``surrogate_model``: ``random_forest`` only
+* ``fixed_params``: merged into every trial (e.g. ``n_agents``, ``steps``)
+* ``deterministic``: ``None`` (default) is ``True`` when
+  ``fixed_params['seed']`` is not ``None`` (same config is not
+  re-evaluated); ``False`` otherwise, including ``{"seed": None}``
+* multi-fidelity: ``use_multi_fidelity=True`` plus a fidelity parameter
+  (``is_fidelity=True`` with numeric bounds → SMAC min/max budget)
+
+**Not supported:** ``gaussian_process``, ``random_forest_with_instances``,
+``acquisition_function='log_ei'`` (raise ``ValueError``).
+
+``optimize()`` returns ``best_config``, ``best_cost`` / ``best_objective``,
+``n_evaluations``, and ``history`` (Polars: search columns + ``cost``,
+``objective``, ``time``, ``trial``).
+
+Full scripts: ``examples/smac_calibration_simple.py``,
+``examples/smac_calibration_basic.py``.
+
+MultiObjectiveSMAC
+------------------
+
+.. autoclass:: ambr.MultiObjectiveSMAC
+   :members:
+   :undoc-members:
+
+Independent **per-objective** :class:`ambr.SMACOptimizer` searches, then a
+post-hoc non-dominated set. This is **not** ParEGO / EHVI.
+
+* ``n_trials`` is the budget **for each objective** (total SMAC evaluations
+  ``≈ n_trials × len(objectives)``).
+* ``strategy`` is forwarded to each scalar optimizer: ``bayesian``
+  (default), ``random``, ``algorithm_configuration``. ``strategy='pareto'``
+  raises ``ValueError`` — the Pareto front is always assembled afterwards.
+* ``fixed_params`` are merged into every trial **and** into incumbent
+  re-scoring. Pass ``steps`` here; otherwise :meth:`Model.run` defaults to
+  100 steps per evaluation. If ``seed`` is omitted, the constructor
+  ``seed`` is used for every model evaluation so Pareto values match the
+  searched front. A non-``None`` model seed also sets SMAC
+  ``deterministic=True``; ``{"seed": None}`` stays stochastic.
+
+Demo script: ``examples/smac_calibration_advanced.py`` (3 trials × 4
+objectives, ``steps=8``).

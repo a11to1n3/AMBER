@@ -26,8 +26,54 @@ def test_documentation_version_matches_distribution_metadata():
 def test_python_support_floor_is_declared_consistently():
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
-    assert 'requires-python = ">=3.9"' in pyproject
-    assert '"Programming Language :: Python :: 3.9"' in pyproject
+    assert 'requires-python = ">=3.10"' in pyproject
+    assert '"Programming Language :: Python :: 3.10"' in pyproject
+    assert '"Programming Language :: Python :: 3.9"' not in pyproject
+
+
+def test_bayesian_optimization_docs_do_not_claim_gaussian_process():
+    from ambr.optimization import bayesian_optimization
+
+    doc = bayesian_optimization.__doc__ or ""
+    assert "RandomForest" in doc
+    assert "Gaussian Process facade" not in doc
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "SMAC Gaussian-process" not in readme
+    assert "RandomForest" in readme
+    assert "ambr[gpu]" in readme
+    assert "ambr[viz]" in readme
+
+
+def test_contact_email_is_not_a_placeholder():
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    citation = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
+
+    assert "example.com" not in ambr.__email__
+    assert "@uni-wuerzburg.de" in ambr.__email__
+    assert "example.com" not in pyproject
+    assert ambr.__email__ in pyproject
+    assert ambr.__email__ in citation
+    assert "example.com" not in citation
+
+
+def test_citation_release_date_matches_changelog():
+    """CITATION.cff, CHANGELOG.md, and docs/changelog.rst must agree on 0.5.0."""
+    import re
+
+    citation = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    rst = (ROOT / "docs" / "changelog.rst").read_text(encoding="utf-8")
+
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    proj_ver = re.search(r'^version\s*=\s*"(\d+\.\d+\.\d+)"', pyproject, re.M)
+    cite_date = re.search(r'^date-released:\s*"(\d{4}-\d{2}-\d{2})"', citation, re.M)
+    cite_ver = re.search(r'^version:\s*"([^"]+)"', citation, re.M)
+    md_ver = re.search(r"^## v(\d+\.\d+\.\d+) - (\d{4}-\d{2}-\d{2})", changelog, re.M)
+    rst_ver = re.search(r"^\[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})", rst, re.M)
+
+    assert proj_ver and cite_date and cite_ver and md_ver and rst_ver
+    assert cite_ver.group(1) == md_ver.group(1) == rst_ver.group(1) == proj_ver.group(1)
+    assert cite_date.group(1) == md_ver.group(2) == rst_ver.group(2)
 
 
 def test_local_only_paths_are_excluded_from_release_surface():

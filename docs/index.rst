@@ -79,15 +79,14 @@ Create your first model:
    else:
        results = model.cpu(mode="vectorized").run()
    print(results.info)
-   print(results.model)       # also results['model']
+   print(results.model.tail(3).to_dicts())       # also results['model']
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for what is new in **0.4.7** (GPU claim script rename,
-paper-host label scrub). **0.4.6** added doc-fence CI, GPU claim verification,
-activation helpers, RunResults I/O, and 1.0 freeze prep. 0.4.5 added honest
-10M headline evidence and ``ambr[gpu]``; 0.4.4 added lanes and the operational
-contract.
+See :doc:`changelog` for **0.5.0** (step-data integrity, versioned RunResults,
+strict optimization, extras / first-run honesty, real release/GPU gates).
+Earlier 0.4.x notes: 0.4.7 label scrub; 0.4.6 doc-fence CI / RunResults I/O /
+1.0 prep; 0.4.5 ``ambr[gpu]``; 0.4.4 lanes and the operational contract.
 
 Table of Contents
 -----------------
@@ -107,6 +106,7 @@ Table of Contents
    versioning
    public_api
    roadmap_1_0
+   release_gates
    benchmarks
    examples/index
 

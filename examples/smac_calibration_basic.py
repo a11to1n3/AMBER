@@ -14,25 +14,40 @@ Key Features:
 - Automatic result analysis and visualization
 
 Requirements:
-    pip install smac ConfigSpace
+    pip install 'ambr[advanced]'          # SMAC + ConfigSpace
+    pip install 'ambr[advanced,viz]'      # plus matplotlib for plots
+
+Default ``__main__`` is a short search (10 trials × 15 steps). Pass
+``--full`` for the longer comparison / importance workflows.
 """
 
+import argparse
 import ambr as am
 import numpy as np
 from typing import Dict, Any
 
 
-def _require_matplotlib():
-    """Lazy import so the model smoke path works without a working Matplotlib."""
+_VIZ_WARNED = False
+
+
+def _try_matplotlib():
+    """Return pyplot, or None if matplotlib is missing / ABI-incompatible.
+
+    Search completes without viz extras. Plots need ``ambr[advanced,viz]``.
+    """
+    global _VIZ_WARNED
     try:
         import matplotlib.pyplot as plt
         return plt
-    except ImportError as exc:
-        raise ImportError(
-            "Plotting requires a NumPy-compatible matplotlib.\n"
-            "  pip install -U 'matplotlib>=3.8'\n"
-            f"Underlying error: {exc!r}"
-        ) from exc
+    except Exception as exc:
+        if not _VIZ_WARNED:
+            print(
+                "Skipping plots — install visualization extras:\n"
+                "  pip install 'ambr[advanced,viz]'\n"
+                f"Underlying error: {exc!r}"
+            )
+            _VIZ_WARNED = True
+        return None
 
 
 class WealthTransferModel(am.Model):
@@ -194,46 +209,46 @@ def objective_function(model: WealthTransferModel) -> float:
     return objective
 
 
-def run_smac_optimization():
+def run_smac_optimization(n_trials: int = 10, steps: int = 15):
     """Run SMAC optimization using AMBER's SMACOptimizer."""
-    print("🚀 Starting SMAC Calibration with AMBER's SMACOptimizer")
+    print("Starting SMAC Calibration with AMBER's SMACOptimizer")
     print("=" * 60)
+    print(f"Budget: n_trials={n_trials}, steps={steps} (pass --full for the long demo)")
 
     # Create parameter space
     param_space = create_parameter_space()
 
-    # Create SMAC optimizer
+    # Create SMAC optimizer — fixed_params are merged into every trial
     optimizer = am.SMACOptimizer(
         model_type=WealthTransferModel,
         param_space=param_space,
         objective=objective_function,
-        n_trials=50,
+        n_trials=n_trials,
         seed=42,
-        strategy='bayesian',  # Use Bayesian optimization
-        acquisition_function='ei',  # Expected Improvement
-        initial_design='latin_hypercube',  # Latin Hypercube Sampling
-        surrogate_model='random_forest'  # Random Forest surrogate
+        strategy="bayesian",
+        acquisition_function="ei",
+        initial_design="latin_hypercube",
+        surrogate_model="random_forest",
+        fixed_params={
+            "steps": steps,
+            "seed": 42,
+            "show_progress": False,
+        },
     )
-
-    # Add fixed parameters that don't need optimization
-    fixed_params = {
-        'steps': 100,
-        'show_progress': False
-    }
 
     # Run optimization
     print("Starting optimization...")
     results = optimizer.optimize()
 
     # Display results
-    print("\n🎯 Optimization Results:")
+    print("\nOptimization Results:")
     print("=" * 40)
-    print(f"Best configuration found:")
+    print("Best configuration found:")
     best_config = results['best_config']
     for param, value in best_config.items():
         print(f"  {param}: {value}")
 
-    print(f"\nBest objective value: {results['best_objective']:.6f}")
+    print(f"\nSMAC incumbent cost: {results['best_objective']:.6f}")
     print(f"Total function evaluations: {results['n_evaluations']}")
 
     return optimizer, results
@@ -241,17 +256,38 @@ def run_smac_optimization():
 
 def analyze_optimization_results(optimizer, results):
     """Analyze and visualize optimization results."""
-    print("\n📊 Analyzing Optimization Results...")
+    print("\nAnalyzing Optimization Results...")
 
-    # Get optimization history
+    # Get optimization history (cost == objective; trial index for x-axis)
     history = results['history']
+    objectives = history['cost'].to_list()
+    drop_cols = [c for c in ('cost', 'objective', 'time', 'trial') if c in history.columns]
+    configs = history.drop(drop_cols).to_dicts()
 
-    # Extract data for plotting
-    objectives = history['objective'].to_list()
-    configs = history.drop(['objective', 'trial']).to_dict('records')
+    # Run best configuration for detailed analysis (independent of plots)
+    best_params = {
+        "steps": int(optimizer.fixed_params.get("steps", 15)),
+        "seed": int(optimizer.fixed_params.get("seed", 42)),
+        "show_progress": False,
+        **results["best_config"],
+    }
+    model = WealthTransferModel(best_params)
+    model_results = model.run()
 
-    # Create visualization
-    plt = _require_matplotlib()
+    incumbent = results.get("best_objective")
+    print("\nSummary Statistics:")
+    print(f"Total trials: {len(objectives)}")
+    print(f"SMAC incumbent cost: {incumbent:.6f}")
+    print(f"Minimum trial cost (history): {min(objectives):.6f}")
+    print(f"Worst trial cost (history): {max(objectives):.6f}")
+    print(f"Average trial cost: {np.mean(objectives):.6f}")
+    print(f"Final Gini coefficient: {model_results['model']['gini_coefficient'].tail(1).item():.3f}")
+    print(f"Final wealth concentration: {model_results['model']['wealth_concentration'].tail(1).item():.3f}")
+
+    # Create visualization (optional: ambr[advanced,viz])
+    plt = _try_matplotlib()
+    if plt is None:
+        return
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
 
     # Plot 1: Objective value over time
@@ -283,13 +319,6 @@ def analyze_optimization_results(optimizer, results):
     # Plot 5: Best configuration simulation
     axes[1, 1].set_title('Best Configuration Dynamics')
 
-    # Run best configuration for detailed analysis
-    best_params = results['best_config'].copy()
-    best_params.update({'steps': 100, 'show_progress': False})
-
-    model = WealthTransferModel(best_params)
-    model_results = model.run()
-
     time_steps = range(len(model_results['model']))
     axes[1, 1].plot(time_steps, model_results['model']['gini_coefficient'],
                    label='Gini Coefficient', linewidth=2)
@@ -302,11 +331,9 @@ def analyze_optimization_results(optimizer, results):
     axes[1, 1].legend()
     axes[1, 1].grid(True, alpha=0.3)
 
-    # Plot 6: Final wealth distribution
+    # Plot 6: Final wealth distribution (end-of-run agent table)
     axes[1, 2].set_title('Final Wealth Distribution')
-    final_wealth = model_results['agents'].filter(
-        model_results['agents']['step'] == model_results['agents']['step'].max()
-    )['wealth'].to_list()
+    final_wealth = model_results.agents['wealth'].to_list()
 
     axes[1, 2].hist(final_wealth, bins=20, alpha=0.7, edgecolor='black', color='skyblue')
     axes[1, 2].set_xlabel('Wealth')
@@ -317,25 +344,16 @@ def analyze_optimization_results(optimizer, results):
     plt.savefig('amber_smac_calibration_results.png', dpi=300, bbox_inches='tight')
     plt.show()
 
-    # Print summary statistics
-    print(f"\n📈 Summary Statistics:")
-    print(f"Total trials: {len(objectives)}")
-    print(f"Best objective: {min(objectives):.6f}")
-    print(f"Worst objective: {max(objectives):.6f}")
-    print(f"Average objective: {np.mean(objectives):.6f}")
-    print(f"Improvement: {(max(objectives) - min(objectives)):.6f}")
-    print(f"Final Gini coefficient: {model_results['model']['gini_coefficient'].tail(1).item():.3f}")
-    print(f"Final wealth concentration: {model_results['model']['wealth_concentration'].tail(1).item():.3f}")
 
-
-def compare_optimization_strategies():
+def compare_optimization_strategies(n_trials: int = 20, steps: int = 100):
     """Compare different SMAC optimization strategies."""
-    print("\n🔍 Comparing Optimization Strategies")
+    print("\nComparing Optimization Strategies")
     print("=" * 40)
 
     param_space = create_parameter_space()
     strategies = ['bayesian', 'random']
     acquisition_functions = ['ei', 'lcb', 'pi']
+    fixed = {"steps": steps, "seed": 42, "show_progress": False}
 
     comparison_results = {}
 
@@ -351,33 +369,39 @@ def compare_optimization_strategies():
                     model_type=WealthTransferModel,
                     param_space=param_space,
                     objective=objective_function,
-                    n_trials=20,  # Fewer trials for comparison
+                    n_trials=n_trials,
                     seed=42,
                     strategy=strategy,
                     acquisition_function=acq_func,
-                    surrogate_model='random_forest'
+                    surrogate_model="random_forest",
+                    fixed_params=fixed,
                 )
 
                 results = optimizer.optimize()
                 comparison_results[f'{strategy}_{acq_func}'] = results['best_objective']
                 print(f"    Best objective: {results['best_objective']:.6f}")
 
-        else:  # random strategy
+        else:  # random strategy -> RandomFacade
             optimizer = am.SMACOptimizer(
                 model_type=WealthTransferModel,
                 param_space=param_space,
                 objective=objective_function,
-                n_trials=20,
+                n_trials=n_trials,
                 seed=42,
-                strategy=strategy
+                strategy=strategy,
+                fixed_params=fixed,
             )
 
             results = optimizer.optimize()
             comparison_results[strategy] = results['best_objective']
             print(f"  Best objective: {results['best_objective']:.6f}")
 
-    # Plot comparison
-    plt = _require_matplotlib()
+    # Plot comparison (optional: ambr[advanced,viz])
+    plt = _try_matplotlib()
+    if plt is None:
+        best_method = min(comparison_results.items(), key=lambda x: x[1])
+        print(f"\nBest performing method: {best_method[0]} (objective: {best_method[1]:.6f})")
+        return
     plt.figure(figsize=(12, 6))
 
     methods = list(comparison_results.keys())
@@ -401,12 +425,12 @@ def compare_optimization_strategies():
 
     # Find best strategy
     best_method = min(comparison_results.items(), key=lambda x: x[1])
-    print(f"\n🏆 Best performing method: {best_method[0]} (objective: {best_method[1]:.6f})")
+    print(f"\nBest performing method: {best_method[0]} (objective: {best_method[1]:.6f})")
 
 
-def demonstrate_parameter_importance():
+def demonstrate_parameter_importance(n_trials: int = 100, steps: int = 100):
     """Demonstrate parameter importance analysis using SMAC results."""
-    print("\n🔬 Parameter Importance Analysis")
+    print("\nParameter Importance Analysis")
     print("=" * 35)
 
     # Run optimization with more trials for better importance analysis
@@ -416,10 +440,11 @@ def demonstrate_parameter_importance():
         model_type=WealthTransferModel,
         param_space=param_space,
         objective=objective_function,
-        n_trials=100,
+        n_trials=n_trials,
         seed=42,
-        strategy='bayesian',
-        acquisition_function='ei'
+        strategy="bayesian",
+        acquisition_function="ei",
+        fixed_params={"steps": steps, "seed": 42, "show_progress": False},
     )
 
     results = optimizer.optimize()
@@ -431,7 +456,7 @@ def demonstrate_parameter_importance():
 
     for param in param_names:
         param_values = history[param].to_list()
-        objectives = history['objective'].to_list()
+        objectives = history['cost'].to_list()
 
         # Calculate correlation coefficient
         correlation = np.corrcoef(param_values, objectives)[0, 1]
@@ -444,8 +469,10 @@ def demonstrate_parameter_importance():
     for param, importance in sorted_importance:
         print(f"  {param.replace('_', ' ').title()}: {importance:.3f}")
 
-    # Visualize parameter importance
-    plt = _require_matplotlib()
+    # Visualize parameter importance (optional: ambr[advanced,viz])
+    plt = _try_matplotlib()
+    if plt is None:
+        return
     plt.figure(figsize=(10, 6))
     params, values = zip(*sorted_importance)
 
@@ -466,6 +493,14 @@ def demonstrate_parameter_importance():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="AMBER SMAC calibration demo")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Run strategy comparison + importance (hundreds of 100-step trials)",
+    )
+    args = parser.parse_args()
+
     print("SMAC Calibration with AMBER's Built-in Optimization")
     print("=" * 55)
 
@@ -495,10 +530,18 @@ if __name__ == "__main__":
         print("Install with: pip install 'ambr[advanced]'  # or: pip install smac ConfigSpace")
         raise SystemExit(0)
 
-    optimizer, results = run_smac_optimization()
-    analyze_optimization_results(optimizer, results)
-    compare_optimization_strategies()
-    demonstrate_parameter_importance()
+    if _try_matplotlib() is None:
+        print("Preflight: matplotlib missing — optimization will run; plots skipped.")
+        print("For plots: pip install 'ambr[advanced,viz]'")
+    if args.full:
+        optimizer, results = run_smac_optimization(n_trials=50, steps=100)
+        analyze_optimization_results(optimizer, results)
+        compare_optimization_strategies(n_trials=20, steps=100)
+        demonstrate_parameter_importance(n_trials=100, steps=100)
+    else:
+        optimizer, results = run_smac_optimization(n_trials=10, steps=15)
+        analyze_optimization_results(optimizer, results)
+        print("Skipped comparison/importance (pass --full for the long demo).")
 
-    print("\n✅ AMBER SMAC calibration example completed!")
-    print("📁 PNG outputs written when matplotlib is available and ABI-compatible with NumPy.")
+    print("\nAMBER SMAC calibration example completed.")
+    print("PNG outputs written when matplotlib is available.")

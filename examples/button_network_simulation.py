@@ -72,6 +72,6 @@ if __name__ == "__main__":
     results = model.run()
     print("Smoke run OK:", results["info"])
     print("metrics:", results["model"].columns)
-    print(results["model"].tail(3))
+    print(results["model"].tail(3).to_dicts())
     print("final giant_frac:", results["model"]["giant_frac"][-1])
     _optional_plot(results)

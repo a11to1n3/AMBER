@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GPU / CPU placement quickstart (AMBER 0.4.4+).
+"""GPU / CPU placement quickstart (AMBER 0.5).
 
 Run::
 
@@ -68,4 +68,5 @@ if __name__ == "__main__":
     drift = Drift({"n": 100_000, "steps": 20, "seed": 0, "dx": 0.01})
     res = drift.run()
     print("ArrayKernelModel info:", res.info)
-    print(res.model.tail(3))
+    # ASCII-only: Polars' box-drawing tail() is not encodable on Windows CP1252.
+    print(res.model.tail(3).to_dicts())

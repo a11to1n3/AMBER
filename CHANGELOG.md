@@ -2,6 +2,224 @@
 
 ## Unreleased
 
+## v0.5.0 - 2026-08-13
+
+Production-candidate cut of the post-0.4.7 correctness, integrity, and
+release-gate series. **Requires a new PyPI version** (0.4.7 already published).
+
+### Fixed
+
+- **MultiObjectiveSMAC seed**: optimizer ``seed`` (or ``fixed_params['seed']``)
+  is applied to every trial and to incumbent re-scoring so Pareto values match
+  the searched front on stochastic models.
+- **Experiment concat**: ``agents`` / ``model`` frames use
+  ``diagonal_relaxed`` so param-gated extra columns do not raise ShapeError.
+- **Virus example**: live ``agents_df`` is the unique-id population table
+  (no per-step history concat).
+- **SMAC basic example**: default ``__main__`` is 10 trials × 15 steps;
+  ``--full`` restores the long comparison/importance workflow.
+- **README / UX**: 0.5.0 upgrade note; ``help(ambr)`` matches the vectorized
+  quickstart; ParallelRunner documented as core; GPU quickstart CI no longer
+  ``|| true``.
+- **Windows GPU quickstart**: print ``DataFrame.to_dicts()`` (ASCII) instead
+  of Polars box-drawing ``tail()`` so CP1252 stdout does not raise.
+- **SMAC deterministic**: ``SMACOptimizer`` / ``MultiObjectiveSMAC`` set
+  ``Scenario(deterministic=True)`` only when ``fixed_params['seed']`` is
+  not ``None`` (``{"seed": None}`` stays stochastic).
+- **SMAC basic example**: parse ``--help`` first; label incumbent vs history
+  min; replay the best config with the same seed.
+- **First-run / Windows**: example scripts print ASCII (no emoji; Polars
+  ``to_dicts()`` instead of box-drawing ``tail()``). Simple SMAC defaults to
+  10x15 with a pinned seed; ``--full`` restores comparison.
+- **bayesian_optimization**: ``deterministic`` follows a pinned non-``None``
+  model ``seed`` (same rule as ``SMACOptimizer``); SMAC trial seed is applied
+  via ``setdefault``. Penalize-path failure records look up the config
+  without the injected trial seed.
+- **Install wording**: officially tested/supported on Python 3.10–3.13
+  (``requires-python`` remains ``>=3.10``; 3.14+ is not a declared target).
+- **README extras**: document standalone ``ambr[gpu]`` and ``ambr[viz]``.
+  Remaining README / Sphinx DataFrame prints use ``.to_dicts()``.
+  Tutorial fences (spatial inspect + experiment summary) included; CI
+  scans doc fences for ``print(df)`` without ``.to_dicts()``.
+- **Version-line / first-run status**: paper-vs-package and roadmap say
+  0.5.0; ``print_status`` / ``recommend`` include native
+  ``model.gpu().run()``; gpu_quickstart and API viz heading drop 0.4.x
+  pins.
+
+- **MultiObjectiveSMAC strategy**: `strategy` is validated and forwarded to
+  each scalar `SMACOptimizer` (`bayesian` / `random` /
+  `algorithm_configuration`). `strategy='pareto'` now raises `ValueError`
+  (the Pareto set is always assembled after the fact; it is not a search
+  facade). `fixed_params` are applied to trials and incumbent re-scoring.
+- **SMAC advanced example**: `n_trials` is documented as per-objective;
+  default demo is 3×4 evaluations with `fixed_params` (`steps=8`,
+  `grid_size=10`) instead of 20×4 implicit 100-step runs.
+
+- **Example notebooks**: regenerated `button_network_simulation.ipynb`,
+  `flocking_simulation.ipynb`, and `forest_fire_simulation.ipynb` from the
+  working `.py` models (no more `pl.concat` of history into `agents_df`).
+  CI executes the notebooks (`example-notebooks` job).
+- **bayesian_optimization docs**: the helper uses SMAC's RandomForest, not a
+  Gaussian process. README, API docs, and the function docstring now match
+  the implementation.
+- **SMAC examples**: plotting is optional; a clean `ambr[advanced]` install
+  completes search without matplotlib. Document `ambr[advanced,viz]`.
+- **Release metadata**: contact email is `anh-duy.pham@uni-wuerzburg.de`
+  (no `example.com` placeholder); `CITATION.cff` `date-released` matches
+  this 0.5.0 date.
+
+- **SMACOptimizer contract (0.5.x)**: ``strategy='random'`` selects RandomFacade;
+  ``fixed_params`` merge into every trial; ``optimize()`` returns
+  ``n_evaluations`` and history columns ``cost`` / ``objective`` / ``time`` /
+  ``trial``; multi-fidelity Scenario gets ``min_budget``/``max_budget`` from
+  fidelity parameter bounds; unsupported options (``log_ei``, GP /
+  ``random_forest_with_instances``) raise clear ``ValueError``.
+- **SMACOptimizer isolation**: each instance uses a unique temp
+  ``output_directory`` (no silent reuse of cwd ``smac3_output/``).
+- **Multi-fidelity budgets**: fidelity params are budget-only (not CS samples);
+  integer fidelities coerce SH rungs to ``int``; history reports evaluated budget.
+- **bayesian_optimization**: fixed floats go to ``fixed_params`` (degenerate
+  float HPs no longer crash ConfigSpace/SMAC).
+- **NetworkEnvironment identity**: agent-first resolution for
+  ``get_neighbors`` / ``get_distance`` / ``get_degree`` / ``get_clustering`` /
+  ``add_edge`` / ``remove_edge``; missing ``node_id`` column no longer crashes
+  (unplaced agent → empty/0); use ``as_node=True`` for graph-node ids.
+- **SMAC on_error='raise'**: re-raise target/objective exceptions after SMAC
+  returns (SMAC swallows crashes into CRASHED/inf trials); multi-process via
+  pickle side-channel under the run directory.
+- **SMACOptimizer ``n_workers>1``**: pickle-safe trial evaluator with a clean
+  ``(config, seed)`` signature (no partial-arg SMAC warnings); explicitly
+  close Dask client/cluster after ``optimize()`` so workers do not linger.
+- **SMAC temp dirs**: create ``amber_smac_*`` only after constructor
+  validation; remove after ``optimize()`` / failed construction unless
+  ``AMBER_SMAC_KEEP_OUTPUT=1``.
+- **Search exhaustion**: ``isinstance`` /
+  ``ConfigurationSpaceExhaustedException`` only (plus message markers); no
+  broad name-substring matching.
+- **on_error='raise' side-channel**: if the exception is not picklable, persist
+  a structured type/message/traceback payload and re-raise
+  ``RemoteObjectiveError`` (never silent ``best_cost=inf``).
+- **Docs / examples**: SMAC calibration scripts match the optimizer return
+  shape; environment API uses ``grid_position`` / ``node_id``; ParallelRunner
+  docs are spawn-safe (Sphinx fence fixed); OOP README/quickstart use
+  ``step_oop`` + ``cpu(mode="oop")``; Sample/Experiment contracts document zip
+  sampling and ``info`` as a dict; BaseAgent/BaseModel no longer presented as
+  user bases; GPU CI described as hard NOT VERIFIED (not soft-skip).
+
+- **Windows RunResults I/O**: exclusive payload writes use ``O_BINARY`` so LF
+  is not expanded to CRLF (SHA-256 checksums stay stable on Windows CI).
+- **GPU nightly**: no longer runs on every path-push (would fail red without
+  a GPU runner); schedule / ``workflow_dispatch`` still hard-require CUDA.
+- **ParallelRunner fail_fast**: terminates the full active-worker registry
+  (no orphaned sibling processes / delayed side effects).
+- **ParallelRunner worker registry**: register each process in ``active``
+  immediately after ``start()``, before parent-side ``child_conn.close()``,
+  so a close failure cannot leave a live worker outside cleanup.
+- **Checkpoint writes**: random exclusive temp + ``O_NOFOLLOW`` / ``fsync`` /
+  ``os.replace`` (no predictable ``*.tmp`` symlink escape).
+- **Checkpoint dtypes**: frames stored as Arrow IPC (base64), not lossy
+  record JSON.
+- **max_in_flight**: never exceeds ``n_workers``; reject non-positive limits.
+- **Manifest integrity**: ``sha256`` required (64 hex chars) on every entry.
+- **Release wheels**: stamp ``GITHUB_SHA`` into ``_build_info.GIT_REVISION``
+  and assert it in the built wheel.
+- **Min-deps CI** aligned to declared floors; ``SECURITY.md`` supports 0.5.x.
+- **ParallelRunner retry + fail_fast**: retries register in the live process
+  registry immediately (not only a dual ``still_active`` list), so fail_fast
+  cleanup terminates them.
+- **Release wheel install assert**: resolve the built wheel to an absolute path
+  before ``pip install`` under a temporary ``cwd`` (relative ``dist/…`` failed).
+- **Checkpoint schema v2/v3/v4**: writers emit ``schema_version=4`` with
+  ``polars_ipc_b64`` frames + revision-aware workload fingerprint; schemas
+  1–3 still load (including historical schema-1 files that already stored
+  IPC). IPC encode failures raise ``CheckpointSerializationError`` instead
+  of silently storing ``repr(df)``.
+- **Checkpoint resume integrity**: schema-4 fingerprints include AMBER
+  version/revision, model source digest, and optional
+  ``workload_revision`` / ``AMBER_APP_REVISION`` so code edits invalidate
+  resume. Schema-3 fingerprints are validated with the original
+  model+params algorithm so existing schema-3 files still resume.
+  Identity-less schema-1/2 resume is refused by default
+  (``allow_unverified_checkpoint=True`` for an explicit unsafe migration;
+  ``_load_checkpoint`` remains available for inspection). Per-index params
+  must still match. Never-run slots use ``status=cancelled`` (not
+  ``error_type == "Cancelled"``) and are omitted from checkpoints so resume
+  re-queues them; a user exception class named ``Cancelled`` remains a
+  persisted ``failed`` outcome.
+
+### Changed
+
+- **Step-data lifecycle (breaking for silent loss)**: `run_step` now allocates
+  the model-data row *before* `step()`, so values recorded via
+  `record_model` inside `step()` are retained. Precedence on duplicate keys
+  (later wins): `step()` → declarative `model_reporters` → `update()`.
+  A failed step discards the partial row and does not append it; `t` is not
+  advanced. Contract modes (`off` / `check` / `warn` / `raise`) share this
+  behaviour. Docs updated to match (quickstart / tutorial no longer claim
+  step recordings are discarded).
+- **Optimization metrics are strict by default (breaking)**:
+  `objective_function` no longer silently returns `0` for missing, empty,
+  non-numeric, or non-finite metrics — it raises `KeyError` / `ValueError`.
+  `iterations` must be `>= 1`.
+- **SMAC error handling (breaking)**: `bayesian_optimization` and
+  `SMACOptimizer` default to `on_error='raise'`. Pass `on_error='penalize'` to
+  map evaluation failures to a large finite cost and keep structured failure
+  records (`configuration`, `exception_type`, `message`, `traceback`). Broad
+  `except Exception: pass` around `smac.optimize()` is removed; only the
+  documented configuration-space-exhausted condition is treated as non-fatal.
+- **RunResults persistence (breaking layout)**: `results.save` / `RunResults.load`
+  now use a versioned `manifest.json` (schema v1) mapping logical keys to
+  opaque files under `frames/` and `json/`. User keys never enter filesystem
+  paths; checksums are verified on load; incomplete/corrupt saves fail
+  clearly. Preferred format is `format="parquet"` with optional
+  `allow_fallback=True`. Full contract certificates (violations, not just
+  counts) are persisted. Legacy 0.4.x directories still load with a migration
+  warning. Manifest commit uses exclusive random temps + `O_NOFOLLOW` /
+  `fsync` / `os.replace` (no predictable `manifest.json.tmp` symlink escape).
+- **Optional deps / lazy viz (breaking install surface)**: core package no
+  longer depends on matplotlib, seaborn, or scikit-optimize. Plot helpers live
+  under `ambr[viz]`; SMAC stays under `ambr[advanced]`. `import ambr` does not
+  load matplotlib — `plot_grid` / `plot_timeseries` / `HAS_MATPLOTLIB` resolve
+  via lazy `__getattr__`. `ambr.viz` no longer calls `matplotlib.use("Agg")`;
+  set `MPLBACKEND=Agg` in CI and docs builds instead.
+- **Virus example usability**: uses `run_step()` (not bare `step`/`update`),
+  `model.rng` only, UI gated behind `__main__`, `--headless` three-step smoke,
+  `anywidget` in `ambr[examples]`, and background-thread status reports
+  failures instead of always showing "Completed".
+- **Real release gates** (`.github/workflows/release.yml`): validate
+  `vX.Y.Z == project.version` and prove the version is absent from PyPI;
+  build the wheel once and test only that artifact (CPU matrix + CUDA);
+  CUDA missing is **NOT VERIFIED** (never soft-green); SHA-pinned Actions;
+  least-privilege permissions (`id-token: write` only on publish); protected
+  `pypi` environment for maintainer approval; SBOM + provenance attestation;
+  GPU hardware evidence artifact. See `docs/release_gates.rst`.
+- **GPU nightly**: no longer soft-skips green without CUDA — reports
+  **NOT VERIFIED** and fails; uploads hardware evidence when a GPU runner is
+  configured (`GPU_RUNNER`).
+- **GPU teardown**: `end_execution` always clears `model._execution` even if
+  sync/synchronize fails; simulation exceptions are not masked by teardown
+  errors.
+- **Run provenance**: `results.info` now records AMBER/Python versions,
+  fully-qualified model class, parameters/seed, start/end timestamps and
+  status, run UUID, config hash, Polars/NumPy/CuPy/CUDA versions, device and
+  execution lane, optional git/app revision (`AMBER_GIT_REVISION` /
+  build-info only — never CWD `git rev-parse`).
+- **ParallelRunner**: returns ordered `RunOutcome` records
+  (`success`/`failed`/`timeout`) with error type/message/traceback; hard
+  process terminate on timeout; JSON checkpoints with `trust_checkpoint`;
+  `fail_fast`, `retry`, `max_in_flight`, checkpoint/resume.
+- **Docs CI + maintenance**: `sphinx-build -W` in CI; fixed malformed RST
+  tables; absolute GitHub/RTD URLs in the PyPI README; `SECURITY.md`,
+  `CODEOWNERS`, Dependabot, `pip-audit`, issue templates; min/latest
+  dependency lanes; Python **3.10–3.13** hard-gated (3.14 not advertised until
+  release matrix covers it); dropped EOL **3.9**.
+
+### Notes
+
+- Supported Python: **3.10–3.13** (release wheel test matrix matches).
+- Tag ``v0.5.0`` from ``main`` after ``dev`` merge; release workflow refuses
+  re-publishing existing PyPI versions.
+
 ## v0.4.7 - 2026-08-05
 
 Patch over 0.4.6: remove paper-campaign machine labels from user-facing docs

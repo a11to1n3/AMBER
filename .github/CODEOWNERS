@@ -1,0 +1,8 @@
+# Default owners for the whole repository
+*       @a11to1n3
+
+# Critical paths
+/src/ambr/                 @a11to1n3
+/.github/                  @a11to1n3
+/pyproject.toml            @a11to1n3
+/docs/                     @a11to1n3

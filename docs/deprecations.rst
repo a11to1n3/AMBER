@@ -38,8 +38,7 @@ Canonical → legacy table
      - ``wrap=`` / ``.wrap``
    * - Prefer not using ``Population.create_batch_context()``
      - batch context helper (use view ``set``)
-   * - ``model.cpu(mode=...).run()`` / ``model.gpu().run()``
-     or ``run(device=...)``
+   * - ``model.cpu(mode=...).run()`` / ``model.gpu().run()`` or ``run(device=...)``
      - ``run(backend=...)`` (alias of device placement)
    * - ``Experiment(model_type=..., sample=...)``
      - ``Experiment(model_class=..., parameters=...)``

@@ -14,6 +14,10 @@ import os
 import sys
 from importlib.metadata import PackageNotFoundError, version as metadata_version
 
+# Headless backend for any docs that exercise ambr.viz / matplotlib.
+# The library itself never calls matplotlib.use().
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 sys.path.insert(0, os.path.abspath('../src'))
 
 # -- Project information -----------------------------------------------------
@@ -26,7 +30,7 @@ author = 'a11to1n3'
 try:
     release = metadata_version('ambr')
 except PackageNotFoundError:
-    release = '0.4.7'
+    release = '0.5.0'
 version = release
 
 # -- General configuration ---------------------------------------------------

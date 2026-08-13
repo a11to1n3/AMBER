@@ -15,17 +15,22 @@ Key features:
 Example:
     >>> import ambr as am
     >>>
-    >>> class SimpleModel(am.Model):
+    >>> class WealthModel(am.Model):
     ...     def setup(self):
-    ...         for i in range(10):
-    ...             agent = am.Agent(self, i)
-    ...             self.add_agent(agent)
-    ...
-    ...     def step(self):
-    ...         self.record_model('agent_count', len(self.agents))
+    ...         n = int(self.p.get("n", 50))
+    ...         self.add_agents(n, wealth=1)
+    ...     def step_vectorized(self):
+    ...         donors = self.agents.where(self.agents.wealth > 0)
+    ...         donors.wealth -= 1
+    ...         self.agents.at[
+    ...             self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
+    ...         ].scatter_add(wealth=1)
+    ...     def update(self):
+    ...         self.record_model("total", int(self.agents.wealth.sum()))
     >>>
-    >>> model = SimpleModel({'steps': 5})
-    >>> results = model.run()
+    >>> results = WealthModel(
+    ...     {"n": 50, "steps": 20, "seed": 1, "show_progress": False}
+    ... ).cpu(mode="vectorized").run()
 """
 
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
@@ -59,6 +64,7 @@ from .optimization import (
 from .performance import (
     SpatialIndex,
     ParallelRunner,
+    RunOutcome,
     vectorized_move,
     vectorized_wealth_transfer,
     vectorized_random_velocities,
@@ -86,15 +92,38 @@ from .scheduling import (
     normalize_activation,
     shuffled_ids,
 )
-from .viz import HAS_MATPLOTLIB, plot_grid, plot_timeseries
+
+# Viz helpers are lazy — see ``__getattr__`` — so ``import ambr`` does not
+# pull matplotlib / force a backend.
 
 try:
     __version__ = _metadata_version('ambr')
 except _PackageNotFoundError:
-    __version__ = '0.4.7'
+    __version__ = '0.5.0'
+
+_VIZ_EXPORTS = frozenset({"plot_grid", "plot_timeseries", "HAS_MATPLOTLIB"})
+
+
+def __getattr__(name: str):
+    """Lazily resolve optional visualization helpers.
+
+    ``plot_grid``, ``plot_timeseries``, and ``HAS_MATPLOTLIB`` load
+    :mod:`ambr.viz` (and matplotlib) on first access only. Install with
+    ``pip install 'ambr[viz]'``.
+    """
+    if name in _VIZ_EXPORTS:
+        from . import viz
+
+        return getattr(viz, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__) | set(_VIZ_EXPORTS))
+
 
 __author__ = 'a11to1n3'
-__email__ = 'citation.needed@example.com'
+__email__ = 'anh-duy.pham@uni-wuerzburg.de'
 __url__ = 'https://github.com/a11to1n3/AMBER'
 
 __all__ = [
@@ -130,6 +159,7 @@ __all__ = [
     # Performance utilities
     'SpatialIndex',
     'ParallelRunner',
+    'RunOutcome',
     'vectorized_move',
     'vectorized_wealth_transfer',
     'vectorized_random_velocities',

@@ -13,24 +13,40 @@ Key Features:
 - Easy result interpretation
 
 Requirements:
-    pip install smac ConfigSpace
+    pip install 'ambr[advanced]'          # SMAC + ConfigSpace
+    pip install 'ambr[advanced,viz]'      # plus matplotlib for plots
+
+Default ``__main__`` is a short search (10 trials x 15 steps). Pass
+``--full`` for SMAC vs random comparison.
 """
+
+import argparse
 
 import ambr as am
 import numpy as np
 
 
-def _require_matplotlib():
-    """Lazy import so the model smoke path works without a working Matplotlib."""
+_VIZ_WARNED = False
+
+
+def _try_matplotlib():
+    """Return pyplot, or None if matplotlib is missing / ABI-incompatible.
+
+    Search completes without viz extras. Plots need ``ambr[advanced,viz]``.
+    """
+    global _VIZ_WARNED
     try:
         import matplotlib.pyplot as plt
         return plt
-    except ImportError as exc:
-        raise ImportError(
-            "Plotting requires a NumPy-compatible matplotlib.\n"
-            "  pip install -U 'matplotlib>=3.8'\n"
-            f"Underlying error: {exc!r}"
-        ) from exc
+    except Exception as exc:
+        if not _VIZ_WARNED:
+            print(
+                "Skipping plots — install visualization extras:\n"
+                "  pip install 'ambr[advanced,viz]'\n"
+                f"Underlying error: {exc!r}"
+            )
+            _VIZ_WARNED = True
+        return None
 
 
 class SimpleWealthModel(am.Model):
@@ -121,32 +137,39 @@ def simple_objective(model: SimpleWealthModel) -> float:
     return abs(final_gini - target_gini)
 
 
-def run_simple_optimization():
+def run_simple_optimization(n_trials: int = 10, steps: int = 15, seed: int = 42):
     """Run a simple SMAC optimization."""
-    print("🚀 Simple SMAC Calibration Example")
+    print("Simple SMAC Calibration Example")
     print("=" * 35)
+    print(f"Budget: n_trials={n_trials}, steps={steps} (pass --full for comparison)")
 
     # Step 1: Create parameter space
     param_space = create_simple_parameter_space()
-    print("✓ Parameter space created")
+    print("Parameter space created")
 
-    # Step 2: Create optimizer
+    # Step 2: Create optimizer (fixed_params: non-search model knobs)
     optimizer = am.SMACOptimizer(
         model_type=SimpleWealthModel,
         param_space=param_space,
         objective=simple_objective,
-        n_trials=20,  # Small number for quick demo
-        seed=42
+        n_trials=n_trials,
+        seed=seed,
+        fixed_params={
+            "n_agents": 100,
+            "steps": steps,
+            "seed": seed,
+            "show_progress": False,
+        },
     )
-    print("✓ Optimizer created")
+    print("Optimizer created")
 
     # Step 3: Run optimization
-    print("\n🔍 Running optimization...")
+    print("\nRunning optimization...")
     results = optimizer.optimize()
 
     # Step 4: Show results
-    print("\n🎯 Results:")
-    print(f"Best objective value: {results['best_objective']:.4f}")
+    print("\nResults:")
+    print(f"SMAC incumbent cost: {results['best_objective']:.4f}")
     print("\nBest parameters:")
     for param, value in results['best_config'].items():
         print(f"  {param}: {value:.4f}")
@@ -156,34 +179,37 @@ def run_simple_optimization():
 
 def analyze_simple_results(optimizer, results):
     """Analyze and visualize the simple optimization results."""
-    print("\n📊 Analysis:")
+    print("\nAnalysis:")
 
-    # Get optimization history
+    # History columns: search-space knobs + cost/objective, time, trial
     history = results['history']
+    objectives = history['cost'].to_list()  # same as history['objective']
+    print(f"n_evaluations: {results['n_evaluations']}")
+    print(f"SMAC incumbent cost: {results.get('best_objective'):.4f}")
+    print(f"Minimum trial cost (history): {min(objectives):.4f}")
+    print(f"Started with cost: {objectives[0]:.4f}")
 
-    # Show improvement over time
-    objectives = history['objective'].to_list()
-    print(f"Started with objective: {objectives[0]:.4f}")
-    print(f"Ended with objective: {min(objectives):.4f}")
-    print(f"Improvement: {objectives[0] - min(objectives):.4f}")
+    # Replay the incumbent with the same pinned model seed as search.
+    best_params = {
+        "n_agents": 100,
+        "steps": int(optimizer.fixed_params.get("steps", 15)),
+        "seed": int(optimizer.fixed_params.get("seed", 42)),
+        "show_progress": False,
+        **results["best_config"],
+    }
 
-    # Test the best configuration
-    best_params = results['best_config'].copy()
-    best_params.update({
-        'n_agents': 100,  # Fixed parameter
-        'steps': 50,      # Fixed parameter
-        'show_progress': False
-    })
-
-    print(f"\n🧪 Testing best configuration...")
+    print("\nTesting best configuration (same seed as search)...")
     model = SimpleWealthModel(best_params)
     model_results = model.run()
 
     final_gini = model_results['model']['gini_coefficient'].tail(1).item()
     print(f"Final Gini coefficient: {final_gini:.4f} (target: 0.4)")
 
-    # Simple visualization (optional dependency)
-    plt = _require_matplotlib()
+    # Simple visualization (optional: ambr[advanced,viz])
+    plt = _try_matplotlib()
+    if plt is None:
+        return
+
     plt.figure(figsize=(12, 4))
 
     # Plot 1: Optimization progress
@@ -191,7 +217,7 @@ def analyze_simple_results(optimizer, results):
     plt.plot(objectives, 'b-o', markersize=4)
     plt.axhline(y=min(objectives), color='r', linestyle='--', alpha=0.7)
     plt.xlabel('Trial')
-    plt.ylabel('Objective Value')
+    plt.ylabel('Cost (objective)')
     plt.title('Optimization Progress')
     plt.grid(True, alpha=0.3)
 
@@ -207,11 +233,9 @@ def analyze_simple_results(optimizer, results):
     plt.legend()
     plt.grid(True, alpha=0.3)
 
-    # Plot 3: Final wealth distribution
+    # Plot 3: Final wealth distribution (results.agents is end-of-run state)
     plt.subplot(1, 3, 3)
-    final_wealth = model_results['agents'].filter(
-        model_results['agents']['step'] == model_results['agents']['step'].max()
-    )['wealth'].to_list()
+    final_wealth = model_results.agents['wealth'].to_list()
 
     plt.hist(final_wealth, bins=15, alpha=0.7, edgecolor='black', color='lightblue')
     plt.xlabel('Wealth')
@@ -224,34 +248,37 @@ def analyze_simple_results(optimizer, results):
     plt.show()
 
 
-def compare_with_random_search():
+def compare_with_random_search(n_trials: int = 20, steps: int = 50, seed: int = 42):
     """Compare SMAC with simple random search."""
-    print("\n🔄 Comparing SMAC vs Random Search")
+    print("\nComparing SMAC vs Random Search")
     print("=" * 35)
 
     param_space = create_simple_parameter_space()
 
-    # SMAC optimization (already done above, but let's do a fresh one)
+    fixed = {"n_agents": 100, "steps": steps, "seed": seed, "show_progress": False}
+
+    # SMAC Bayesian vs RandomFacade (strategy='random')
     smac_optimizer = am.SMACOptimizer(
         model_type=SimpleWealthModel,
         param_space=param_space,
         objective=simple_objective,
-        n_trials=20,
-        seed=42,
-        strategy='bayesian'
+        n_trials=n_trials,
+        seed=seed,
+        strategy="bayesian",
+        fixed_params=fixed,
     )
 
     smac_results = smac_optimizer.optimize()
     smac_best = smac_results['best_objective']
 
-    # Random search for comparison
     random_optimizer = am.SMACOptimizer(
         model_type=SimpleWealthModel,
         param_space=param_space,
         objective=simple_objective,
-        n_trials=20,
-        seed=42,
-        strategy='random'  # Use random search instead
+        n_trials=n_trials,
+        seed=seed,
+        strategy="random",  # RandomFacade (not Bayesian)
+        fixed_params=fixed,
     )
 
     random_results = random_optimizer.optimize()
@@ -262,23 +289,26 @@ def compare_with_random_search():
 
     if smac_best < random_best:
         improvement = ((random_best - smac_best) / random_best) * 100
-        print(f"SMAC is {improvement:.1f}% better! 🎉")
+        print(f"SMAC is {improvement:.1f}% better.")
     else:
         print("Random search performed similarly (this can happen with simple problems)")
 
-    # Visualize comparison
-    plt = _require_matplotlib()
+    # Visualize comparison (optional: ambr[advanced,viz])
+    plt = _try_matplotlib()
+    if plt is None:
+        return
+
     plt.figure(figsize=(10, 4))
 
-    # Plot optimization curves
+    # Plot optimization curves (history uses cost; objective is an alias)
     plt.subplot(1, 2, 1)
-    smac_objectives = smac_results['history']['objective'].to_list()
-    random_objectives = random_results['history']['objective'].to_list()
+    smac_objectives = smac_results['history']['cost'].to_list()
+    random_objectives = random_results['history']['cost'].to_list()
 
     plt.plot(smac_objectives, 'b-o', label='SMAC (Bayesian)', markersize=4)
     plt.plot(random_objectives, 'r-s', label='Random Search', markersize=4)
     plt.xlabel('Trial')
-    plt.ylabel('Objective Value')
+    plt.ylabel('Cost (objective)')
     plt.title('SMAC vs Random Search')
     plt.legend()
     plt.grid(True, alpha=0.3)
@@ -300,7 +330,7 @@ def compare_with_random_search():
     plt.ylabel('Transfer Fraction')
     plt.title('Parameter Space Exploration')
     plt.legend()
-    plt.colorbar(label='Objective Value')
+    plt.colorbar(label='Cost')
     plt.grid(True, alpha=0.3)
 
     plt.tight_layout()
@@ -309,6 +339,14 @@ def compare_with_random_search():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="AMBER simple SMAC calibration demo")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Also run SMAC vs random comparison (extra 2 x n_trials evaluations)",
+    )
+    args = parser.parse_args()
+
     print("Simple SMAC Calibration with AMBER")
     print("=" * 35)
 
@@ -338,9 +376,17 @@ if __name__ == "__main__":
         raise SystemExit(0)
 
     print("This example optimizes a simple wealth transfer model for moderate inequality.")
-    optimizer, results = run_simple_optimization()
-    analyze_simple_results(optimizer, results)
-    compare_with_random_search()
+    if _try_matplotlib() is None:
+        print("Preflight: matplotlib missing — optimization will run; plots skipped.")
+        print("For plots: pip install 'ambr[advanced,viz]'")
+    if args.full:
+        optimizer, results = run_simple_optimization(n_trials=20, steps=50, seed=42)
+        analyze_simple_results(optimizer, results)
+        compare_with_random_search(n_trials=20, steps=50, seed=42)
+    else:
+        optimizer, results = run_simple_optimization(n_trials=10, steps=15, seed=42)
+        analyze_simple_results(optimizer, results)
+        print("Skipped SMAC vs random comparison (pass --full).")
 
-    print("\n✅ Simple SMAC example completed!")
-    print("📁 Results saved as 'simple_smac_results.png' and 'smac_vs_random.png' when matplotlib works.")
+    print("\nSimple SMAC example completed.")
+    print("PNG outputs written when matplotlib is available.")

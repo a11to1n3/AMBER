@@ -148,6 +148,7 @@ class TestPackageInitialization:
             'SMACOptimizer', 'MultiObjectiveSMAC', 'SMACParameterSpace',
             # New exports
             'Population', 'BatchUpdateContext', 'SpatialIndex', 'ParallelRunner',
+            'RunOutcome',
             'check_performance_deps', 'vectorized_move', 'vectorized_wealth_transfer',
             'vectorized_random_velocities', 'HAS_SCIPY', 'HAS_NUMBA',
             'HAS_SMAC',

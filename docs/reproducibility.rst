@@ -42,13 +42,29 @@ Recommended practice
 Seed semantics (summary)
 ------------------------
 
-==========  =========================================================
-API         Role
-==========  =========================================================
-``seed``    Model parameter → seeds ``self.random`` and ``self.rng``
-``self.rng`` Canonical NumPy ``Generator`` (prefer this)
-``self.random`` stdlib Random (AgentPy-shaped)
-``nprandom`` Legacy alias of ``rng`` (deprecated → 1.0)
-==========  =========================================================
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - API
+     - Role
+   * - ``seed``
+     - Model parameter → seeds ``self.random`` and ``self.rng``
+   * - ``self.rng``
+     - Canonical NumPy ``Generator`` (prefer this)
+   * - ``self.random``
+     - stdlib Random (AgentPy-shaped)
+   * - ``nprandom``
+     - Legacy alias of ``rng`` (deprecated → 1.0)
+
+``results.info`` provenance
+---------------------------
+
+Each successful ``Model.run()`` records a structured ``results.info`` dict
+including AMBER/Python versions, fully-qualified model class, parameters and
+seed, start/end timestamps, completion status, run UUID, configuration hash,
+Polars/NumPy/(optional) CuPy/CUDA versions, device and execution lane, and
+optional application/git revision (``AMBER_APP_REVISION`` /
+``AMBER_GIT_REVISION``).
 
 See also :doc:`going_faster`, :doc:`api/contract`, :doc:`benchmarks`.

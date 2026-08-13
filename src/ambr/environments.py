@@ -673,98 +673,121 @@ class NetworkEnvironment(Environment):
         """Remove a node from the network."""
         self.graph.remove_node(node_id)
 
-    def get_neighbors(self, node_or_agent_id) -> List[int]:
-        """Get neighboring nodes or agents in the network."""
-        if isinstance(node_or_agent_id, int) and self.graph.has_node(node_or_agent_id):
-            # Direct node ID
+    def _population_df(self) -> Optional[pl.DataFrame]:
+        """Live population frame when available (prefer ``model.agents_df``)."""
+        if self.model is not None and hasattr(self.model, "agents_df"):
+            return self.model.agents_df
+        return getattr(self, "df", None)
+
+    def _agent_node_id(self, agent_id) -> tuple:
+        """Resolve agent → graph node without crashing on missing columns.
+
+        Returns ``(is_agent, node_id)``:
+
+        * ``is_agent=False`` — no matching agent row; caller may use graph-node path
+        * ``is_agent=True, node_id=None`` — agent exists but is unplaced / no
+          ``node_id`` column yet (do **not** fall through to graph node ``id``)
+        * ``is_agent=True, node_id=<int>`` — agent placed on that node
+        """
+        df = self._population_df()
+        if df is None or df.is_empty() or "id" not in df.columns:
+            return False, None
+        rows = df.filter(pl.col("id") == agent_id)
+        if rows.is_empty():
+            return False, None
+        if "node_id" not in rows.columns:
+            return True, None
+        node_id = rows["node_id"].item()
+        return True, node_id
+
+    def _resolve_to_node(self, node_or_agent_id, *, as_node: bool = False):
+        """Map agent-or-node id → graph node id (agent-first unless ``as_node``).
+
+        Returns ``(resolved, ok)`` where ``ok=False`` means unplaced agent
+        (caller should not treat the raw id as a graph node).
+        """
+        if as_node:
+            return node_or_agent_id, True
+        is_agent, node_id = self._agent_node_id(node_or_agent_id)
+        if is_agent:
+            return node_id, node_id is not None
+        return node_or_agent_id, True
+
+    def get_neighbors(self, node_or_agent_id, *, as_node: bool = False) -> List[int]:
+        """Get neighboring **nodes** or **agents** in the network.
+
+        When agent and graph node IDs overlap (common with ``0..n-1``), agent
+        identity wins unless ``as_node=True``:
+
+        * **Agent path** (default if ``id`` is a known agent): return neighbor
+          **agent ids** (via their ``node_id`` placement). Unplaced agents /
+          missing ``node_id`` column → empty list (never crash, never treat as
+          graph node).
+        * **Node path** (``as_node=True``, or id is not a population agent):
+          return neighbor **graph node ids**.
+        """
+        if not as_node:
+            is_agent, node_id = self._agent_node_id(node_or_agent_id)
+            if is_agent:
+                if node_id is None or not self.graph.has_node(node_id):
+                    return []
+                neighbor_nodes = list(self.graph.neighbors(node_id))
+                df = self._population_df()
+                if (
+                    df is None
+                    or df.is_empty()
+                    or "node_id" not in df.columns
+                    or "id" not in df.columns
+                ):
+                    return []
+                return df.filter(pl.col("node_id").is_in(neighbor_nodes))[
+                    "id"
+                ].to_list()
+
+        if self.graph.has_node(node_or_agent_id):
             return list(self.graph.neighbors(node_or_agent_id))
-        else:
-            # Agent ID
-            if self.df.is_empty():
-                return []
+        return []
 
-            agent_rows = self.df.filter(pl.col('id') == node_or_agent_id)
-            if agent_rows.is_empty():
-                return []
-
-            node_id = agent_rows['node_id'].item()
-            if node_id is None:
-                return []
-
-            # Get neighbors from graph
-            neighbor_nodes = list(self.graph.neighbors(node_id))
-
-            # Convert node IDs to agent IDs
-            return self.df.filter(pl.col('node_id').is_in(neighbor_nodes))['id'].to_list()
-
-    def get_distance(self, node1_or_agent1, node2_or_agent2) -> float:
-        """Calculate shortest path distance between two nodes or agents."""
-        # Handle different input types
-        if isinstance(node1_or_agent1, int) and self.graph.has_node(node1_or_agent1):
-            node1, node2 = node1_or_agent1, node2_or_agent2
-        else:
-            # Agent IDs
-            if self.df.is_empty():
-                return float('inf')
-
-            agent1_rows = self.df.filter(pl.col('id') == node1_or_agent1)
-            agent2_rows = self.df.filter(pl.col('id') == node2_or_agent2)
-
-            if agent1_rows.is_empty() or agent2_rows.is_empty():
-                return float('inf')
-
-            node1 = agent1_rows['node_id'].item()
-            node2 = agent2_rows['node_id'].item()
-
-            if node1 is None or node2 is None:
-                return float('inf')
-
+    def get_distance(
+        self, node1_or_agent1, node2_or_agent2, *, as_node: bool = False
+    ) -> float:
+        """Shortest-path distance (agent-first; see :meth:`get_neighbors`)."""
+        node1, ok1 = self._resolve_to_node(node1_or_agent1, as_node=as_node)
+        node2, ok2 = self._resolve_to_node(node2_or_agent2, as_node=as_node)
+        if not ok1 or not ok2 or node1 is None or node2 is None:
+            return float("inf")
+        if not self.graph.has_node(node1) or not self.graph.has_node(node2):
+            return float("inf")
         try:
             return nx.shortest_path_length(self.graph, node1, node2)
         except nx.NetworkXNoPath:
-            return float('inf')
+            return float("inf")
 
-    def get_degree(self, node_or_agent_id):
-        """Get the degree of a node or agent."""
-        if isinstance(node_or_agent_id, int) and self.graph.has_node(node_or_agent_id):
+    def get_degree(self, node_or_agent_id, *, as_node: bool = False):
+        """Degree of a node or agent (agent-first unless ``as_node``)."""
+        if not as_node:
+            is_agent, node_id = self._agent_node_id(node_or_agent_id)
+            if is_agent:
+                if node_id is None or not self.graph.has_node(node_id):
+                    return 0
+                return self.graph.degree(node_id)
+        if self.graph.has_node(node_or_agent_id):
             return self.graph.degree(node_or_agent_id)
-        else:
-            # Agent ID
-            if self.df.is_empty():
-                return 0
+        return 0
 
-            agent_rows = self.df.filter(pl.col('id') == node_or_agent_id)
-            if agent_rows.is_empty():
-                return 0
-
-            node_id = agent_rows['node_id'].item()
-            if node_id is None or not self.graph.has_node(node_id):
-                return 0
-
-            return self.graph.degree(node_id)
-
-    def get_clustering(self, node_or_agent_id=None):
-        """Get clustering coefficient for a node, agent, or the entire network."""
+    def get_clustering(self, node_or_agent_id=None, *, as_node: bool = False):
+        """Clustering coefficient (agent-first unless ``as_node``)."""
         if node_or_agent_id is None:
-            # Return overall clustering
             return nx.average_clustering(self.graph)
-        elif isinstance(node_or_agent_id, int) and self.graph.has_node(node_or_agent_id):
-            # Direct node ID
+        if not as_node:
+            is_agent, node_id = self._agent_node_id(node_or_agent_id)
+            if is_agent:
+                if node_id is None or not self.graph.has_node(node_id):
+                    return 0.0
+                return nx.clustering(self.graph, node_id)
+        if self.graph.has_node(node_or_agent_id):
             return nx.clustering(self.graph, node_or_agent_id)
-        else:
-            # Agent ID
-            if self.df.is_empty():
-                return 0.0
-
-            agent_rows = self.df.filter(pl.col('id') == node_or_agent_id)
-            if agent_rows.is_empty():
-                return 0.0
-
-            node_id = agent_rows['node_id'].item()
-            if node_id is None or not self.graph.has_node(node_id):
-                return 0.0
-
-            return nx.clustering(self.graph, node_id)
+        return 0.0
 
     def random_node(self):
         """Get a random node from the network."""
@@ -792,50 +815,39 @@ class NetworkEnvironment(Environment):
                 .alias('node_id')
             ])
 
-    def add_edge(self, node1_or_agent1, node2_or_agent2, **attr) -> None:
-        """Add an edge between two nodes or agents."""
-        if isinstance(node1_or_agent1, int) and self.graph.has_node(node1_or_agent1):
-            # Direct node IDs
-            node1, node2 = node1_or_agent1, node2_or_agent2
-        else:
-            # Agent IDs
-            if self.df.is_empty():
-                raise ValueError("No agents in environment")
-
-            agent1_rows = self.df.filter(pl.col('id') == node1_or_agent1)
-            agent2_rows = self.df.filter(pl.col('id') == node2_or_agent2)
-
-            if agent1_rows.is_empty() or agent2_rows.is_empty():
+    def add_edge(
+        self, node1_or_agent1, node2_or_agent2, *, as_node: bool = False, **attr
+    ) -> None:
+        """Add an edge between two nodes or agents (agent-first unless ``as_node``)."""
+        if as_node:
+            self.graph.add_edge(node1_or_agent1, node2_or_agent2, **attr)
+            return
+        is_a1, n1 = self._agent_node_id(node1_or_agent1)
+        is_a2, n2 = self._agent_node_id(node2_or_agent2)
+        if is_a1 or is_a2:
+            # Agent mode: both endpoints must be known, placed agents.
+            if not is_a1 or not is_a2:
                 raise ValueError("One or both agents not found")
-
-            node1 = agent1_rows['node_id'].item()
-            node2 = agent2_rows['node_id'].item()
-
-            if node1 is None or node2 is None:
+            if n1 is None or n2 is None:
                 raise ValueError("Both agents must be assigned to nodes")
-
-        self.graph.add_edge(node1, node2, **attr)
-
-    def remove_edge(self, node1_or_agent1, node2_or_agent2) -> None:
-        """Remove an edge between two nodes or agents."""
-        if isinstance(node1_or_agent1, int) and self.graph.has_node(node1_or_agent1):
-            # Direct node IDs
-            node1, node2 = node1_or_agent1, node2_or_agent2
+            self.graph.add_edge(n1, n2, **attr)
         else:
-            # Agent IDs
-            if self.df.is_empty():
-                raise ValueError("No agents in environment")
+            self.graph.add_edge(node1_or_agent1, node2_or_agent2, **attr)
 
-            agent1_rows = self.df.filter(pl.col('id') == node1_or_agent1)
-            agent2_rows = self.df.filter(pl.col('id') == node2_or_agent2)
-
-            if agent1_rows.is_empty() or agent2_rows.is_empty():
+    def remove_edge(
+        self, node1_or_agent1, node2_or_agent2, *, as_node: bool = False
+    ) -> None:
+        """Remove an edge between two nodes or agents (agent-first unless ``as_node``)."""
+        if as_node:
+            self.graph.remove_edge(node1_or_agent1, node2_or_agent2)
+            return
+        is_a1, n1 = self._agent_node_id(node1_or_agent1)
+        is_a2, n2 = self._agent_node_id(node2_or_agent2)
+        if is_a1 or is_a2:
+            if not is_a1 or not is_a2:
                 raise ValueError("One or both agents not found")
-
-            node1 = agent1_rows['node_id'].item()
-            node2 = agent2_rows['node_id'].item()
-
-            if node1 is None or node2 is None:
+            if n1 is None or n2 is None:
                 raise ValueError("Both agents must be assigned to nodes")
-
-        self.graph.remove_edge(node1, node2)
+            self.graph.remove_edge(n1, n2)
+        else:
+            self.graph.remove_edge(node1_or_agent1, node2_or_agent2)

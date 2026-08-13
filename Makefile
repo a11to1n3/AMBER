@@ -63,8 +63,8 @@ pre-commit-install:  ## Install local git hooks (nbstripout, ruff)
 pre-commit-run:  ## Run pre-commit on all files
 	pre-commit run --all-files
 
-docs:  ## Build Sphinx HTML docs into docs/_build/html
-	python -m sphinx -b html docs docs/_build/html
+docs:  ## Build Sphinx HTML docs (warnings are errors)
+	python -m sphinx -W --keep-going -b html docs docs/_build/html
 
 package: clean  ## Build source and wheel distributions
 	python -m build
@@ -72,9 +72,9 @@ package: clean  ## Build source and wheel distributions
 check-dist: package  ## Validate built distributions
 	python -m twine check dist/*
 
-release-check: check-dist test  ## Validate package artifacts and tests before tagging
+release-check: lint type-check docs check-dist test  ## Definition-of-done gate before tagging
 
-check-all: lint type-check test  ## Run all checks (lint, type-check, test)
+check-all: lint type-check docs test  ## Run all checks (lint, type-check, docs, test)
 
 dev-install:  ## Install in development mode with all dependencies
 	pip install -e ".[dev]"

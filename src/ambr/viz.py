@@ -1,11 +1,13 @@
-"""Lightweight plotting helpers (optional use; matplotlib already a core dep).
-
-Install is covered by the base ``ambr`` dependency on matplotlib. The
-``ambr[viz]`` extra is an alias for documentation ("I want plotting helpers").
+"""Lightweight plotting helpers (optional; install ``ambr[viz]``).
 
 These helpers are **not** a Solara/dashboard product — they export common
 charts from :class:`~ambr.results.RunResults` / agent tables so tutorials
 do not need boilerplate.
+
+This module is loaded lazily via :func:`ambr.__getattr__` so a plain
+``import ambr`` never touches matplotlib. Callers (or CI / docs builds)
+should set ``MPLBACKEND=Agg`` when a non-interactive backend is required;
+this module does **not** call ``matplotlib.use(...)``.
 """
 
 from __future__ import annotations
@@ -15,9 +17,6 @@ from typing import Any, List, Optional, Sequence
 __all__ = ["plot_timeseries", "plot_grid", "HAS_MATPLOTLIB"]
 
 try:
-    import matplotlib
-
-    matplotlib.use("Agg", force=False)
     import matplotlib.pyplot as plt
 
     # Probe a real backend symbol — some envs import half-broken matplotlib.

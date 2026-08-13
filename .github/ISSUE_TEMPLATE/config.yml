@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/a11to1n3/AMBER/security/advisories/new
+    about: Please report security issues privately (see SECURITY.md).
+  - name: Documentation
+    url: https://ambr.readthedocs.io/
+    about: Browse the Sphinx docs on Read the Docs.

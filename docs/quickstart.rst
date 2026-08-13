@@ -53,15 +53,18 @@ Lane A — AgentPy-shaped (intuitive first model)
        def setup(self):
            self.agents = am.AgentList(self, self.p.n, WealthAgent)
 
-       def step(self):
+       def step_oop(self):
+           # Explicit OOP lane — called only under cpu(mode="oop")
            self.agents.transfer()  # call the method on every agent
 
        def update(self):
            self.record_model('total', int(self.agents.wealth.sum()))
 
-   results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).run()
-   print(results.model)     # or results['model']
-   print(results.agents.head())
+   # mode="oop" so provenance reports execution_lane cpu/oop (not vectorized)
+   results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).cpu(mode="oop").run()
+   print(results.model.tail(3).to_dicts())     # ASCII-safe (also results['model'])
+   print(results.agents.head().to_dicts())
+   print(results.info.get("mode"), results.info.get("execution_lane"))
 
 Lane B — vectorized (fast path at scale)
 ----------------------------------------
@@ -145,8 +148,9 @@ vectorized way:
            self.agents.at[recipients].scatter_add(wealth=1)
 
        def update(self):
-           # record_model must run in update() (or via model_reporters);
-           # values recorded only inside step() are reset before the row is saved.
+           # Prefer update() / model_reporters for post-step aggregates.
+           # record_model inside step() is also retained (later stages win on
+           # duplicate keys: step → model_reporters → update).
            self.record_model('total_wealth', int(self.agents.wealth.sum()))
 
    # Prefer GPU when available (NVIDIA + CuPy); else CPU vectorized.
@@ -159,7 +163,7 @@ vectorized way:
 
    # Inspect the results
    print("Final wealth distribution (first 10 agents):")
-   print(results['agents'].select(['id', 'wealth']).head(10))
+   print(results['agents'].select(['id', 'wealth']).head(10).to_dicts())
 
 That's the whole idiom. No per-agent loops, no ``update_agent_data`` calls,
 and no ``.item()`` ceremonies. ``step_vectorized()`` is a handful of view-API
@@ -174,7 +178,9 @@ The model returns a dictionary with three keys:
 
 * ``agents`` — a Polars DataFrame of agent state at the end of the run
 * ``model`` — a Polars DataFrame of the model-level metrics you reported
-* ``info`` — a small dict with ``steps`` and ``run_time``
+* ``info`` — a Python dict of run provenance (``steps``, ``run_time``,
+  ``run_uuid``, ``model_class``, ``parameters``, ``seed``,
+  ``execution_lane``, library versions, …). Not a DataFrame.
 
 .. code-block:: python
 
@@ -240,10 +246,10 @@ Let's enhance the model with a 20×20 grid:
 Model-level analytics
 ---------------------
 
-Aggregate metrics go through ``self.record_model`` inside ``update()`` (or,
-declaratively, a class-level ``model_reporters`` dict). Values written only
-inside ``step()`` / ``step_vectorized()`` are discarded when the step row is
-built — ``update()`` is the imperative recording hook:
+Aggregate metrics go through ``self.record_model`` (often inside ``update()``)
+or a class-level ``model_reporters`` dict. Values written inside ``step()`` /
+``step_vectorized()`` are **retained**; on duplicate keys the later stage
+wins: ``step()`` → declarative ``model_reporters`` → ``update()``.
 
 .. code-block:: python
 
@@ -262,9 +268,8 @@ built — ``update()`` is the imperative recording hook:
            self.agents.at[recipients].scatter_add(wealth=1)
 
        def update(self):
-           # Imperative metrics belong in update() (after step); step-body
-           # record_model calls are wiped when the step row is finalized.
-           # Prefer model_reporters for simple declarative aggregates.
+           # Post-step aggregates (update wins over reporters / step on the
+           # same key). Prefer model_reporters for simple declarative metrics.
            wealth = self.agents.wealth
            self.record_model('mean_wealth', float(wealth.mean()))
            self.record_model('wealth_std', float(wealth.std() or 0.0))
@@ -282,7 +287,7 @@ built — ``update()`` is the imperative recording hook:
    results = AnalyticalWealthModel(
        {'steps': 50, 'seed': 42, 'show_progress': False}
    ).run()
-   print(results.model.tail())
+   print(results.model.tail(3).to_dicts())
 
 When per-agent loops are OK
 ---------------------------

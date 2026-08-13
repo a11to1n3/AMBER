@@ -4,13 +4,19 @@ Installation
 Requirements
 ------------
 
-AMBER requires Python 3.9 or higher and the following dependencies:
+AMBER is officially tested and supported on Python 3.10–3.13
+(``requires-python = ">=3.10"``). 3.14+ may install but is not a
+declared support target until the release wheel matrix covers it.
+
+Core dependencies:
 
 * **polars** >= 0.20.0 - High-performance DataFrame library
-* **numpy** >= 1.20.0 - Numerical computing
+* **numpy** >= 1.21.0 - Numerical computing
 * **networkx** >= 2.5 - Graph and network analysis
-* **matplotlib** >= 3.3.0 - Plotting and visualization
-* **seaborn** >= 0.11.0 - Statistical data visualization
+
+Optional plotting (``ambr[viz]``) pulls in **matplotlib** >= 3.3.0.
+CI and documentation builds should set ``MPLBACKEND=Agg`` when a
+non-interactive backend is required; AMBER never forces a matplotlib backend.
 
 Install from PyPI
 ------------------
@@ -77,7 +83,10 @@ AMBER extras (install what you need):
    # SMAC Bayesian / multi-objective optimization (pins scikit-learn for SMAC 2.4)
    pip install 'ambr[advanced]'
 
-   # Plot helpers alias (matplotlib is already a core dependency)
+   # SMAC examples that plot results (RandomForest search + matplotlib)
+   pip install 'ambr[advanced,viz]'
+
+   # Plot helpers (matplotlib; import ambr never pulls it until plot_* is used)
    pip install 'ambr[viz]'
 
    # Interactive example notebooks
@@ -117,7 +126,9 @@ Common Issues
 
 .. code-block:: bash
 
-   pip install --upgrade polars numpy networkx matplotlib seaborn
+   pip install --upgrade polars numpy networkx
+   # optional plotting:
+   # pip install 'ambr[viz]'
 
 **Performance Issues**: For large simulations, consider:
 
@@ -148,5 +159,5 @@ If you encounter issues:
 
 1. Check the `GitHub Issues <https://github.com/a11to1n3/AMBER/issues>`_
 2. Read the documentation thoroughly
-3. Ask questions in the community forums
-4. Report bugs with minimal reproducible examples
+3. Open a new issue with a minimal reproducible example
+   (there is no separate community forum)

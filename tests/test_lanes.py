@@ -12,6 +12,8 @@ def test_status_and_recommend():
     assert "lanes" in s
     assert "vectorized" in s["lanes"]
     assert "cpu_jit" in s["lanes"]
+    assert "gpu_native" in s["lanes"]
+    assert "gpu().run()" in s["lanes"]["gpu_native"]
     tip = recommend(10_000)
     assert "vectorized" in tip.lower() or "oop" in tip.lower() or "numba" in tip.lower()
     tip_big = recommend(2_000_000)
@@ -25,6 +27,8 @@ def test_print_status_smoke(capsys):
     out = capsys.readouterr().out
     assert "GPU:" in out
     assert "Lanes:" in out
+    assert "gpu_native" in out
+    assert "gpu().run()" in out
 
 
 class _Drift(ArrayKernelModel):

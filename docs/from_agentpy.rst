@@ -74,22 +74,28 @@ AMBER (same idea)::
    results = WealthModel(
        {'agents': 50, 'steps': 20, 'seed': 1, 'show_progress': False}
    ).run()
-   print(results.model)    # attribute access (also results['model'])
-   print(results.agents)
+   print(results.model.tail(3).to_dicts())    # attribute access (also results['model'])
+   print(results.agents.head().to_dicts())
 
 Results: AgentPy ``DataDict`` vs AMBER ``RunResults``
-----------------------------------------------------
+-----------------------------------------------------
 
-===============================  ==============================================
-AgentPy                          AMBER
-===============================  ==============================================
-``results.variables.Model``      ``results.model`` (Polars DataFrame)
-``results.agents`` / variables   ``results.agents`` end-of-run table; history via
-                                 ``agent_reporters`` → long ``agent_vars``
-``results.info``                 ``results.info`` dict (also device/mode)
-save/load                        ``results.save(path)`` / ``RunResults.load``
-arrange / Sobol helpers          Polars + external SALib / your notebook
-===============================  ==============================================
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - AgentPy
+     - AMBER
+   * - ``results.variables.Model``
+     - ``results.model`` (Polars DataFrame)
+   * - ``results.agents`` / variables
+     - ``results.agents`` end-of-run table; history via ``agent_reporters`` → long ``agent_vars``
+   * - ``results.info``
+     - ``results.info`` provenance dict (device, mode, UUID, versions, …)
+   * - save/load
+     - ``results.save(path)`` / ``RunResults.load``
+   * - arrange / Sobol helpers
+     - Polars + external SALib / your notebook
 
 ::
 

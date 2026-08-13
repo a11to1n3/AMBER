@@ -13,6 +13,9 @@ from ambr.optimization import (
     random_search,
     bayesian_optimization,
     HAS_SMAC,
+    _is_search_exhausted,
+    _extract_metric_value,
+    _failure_record,
 )
 
 
@@ -227,7 +230,7 @@ class TestObjectiveFunction:
         assert result == 5
 
     def test_objective_function_missing_metric(self):
-        """Test objective function with missing metric."""
+        """Missing metrics raise KeyError (strict by default)."""
         class TestModel(am.Model):
             def step(self):
                 pass  # Don't record anything
@@ -235,10 +238,80 @@ class TestObjectiveFunction:
         parameters = {'steps': 1}
 
         with patch('builtins.print'):
-            result = objective_function(TestModel, parameters, 'nonexistent_metric')
+            with pytest.raises(KeyError, match="nonexistent_metric"):
+                objective_function(TestModel, parameters, 'nonexistent_metric')
 
-        # Should return 0 when metric doesn't exist
-        assert result == 0
+    def test_objective_function_empty_metric_raises(self):
+        """Metric column present but all-null / empty values raise ValueError."""
+        class TestModel(am.Model):
+            def step(self):
+                pass
+
+            def update(self):
+                # Record a null-like absence by never writing a usable value:
+                # force an empty series by writing only then dropping via NaN path.
+                self.record_model('metric', float('nan'))
+
+        parameters = {'steps': 1}
+        with patch('builtins.print'):
+            with pytest.raises(ValueError, match="non-finite"):
+                objective_function(TestModel, parameters, 'metric')
+
+    def test_objective_function_iterations_must_be_positive(self):
+        class TestModel(am.Model):
+            def step(self):
+                pass
+
+            def update(self):
+                self.record_model('x', 1.0)
+
+        with pytest.raises(ValueError, match="iterations"):
+            objective_function(TestModel, {'steps': 1}, 'x', iterations=0)
+
+    def test_objective_function_non_numeric_raises(self):
+        class TestModel(am.Model):
+            def step(self):
+                pass
+
+            def update(self):
+                self.record_model('label', 'not-a-number')
+
+        with patch('builtins.print'):
+            with pytest.raises(ValueError, match="non-numeric"):
+                objective_function(TestModel, {'steps': 1}, 'label')
+
+
+class TestStrictMetricHelpers:
+    """Unit tests for strict metric extraction and SMAC error classification."""
+
+    def test_extract_metric_value_last_finite(self):
+        import polars as pl
+
+        df = pl.DataFrame({"score": [1.0, 2.5, 3.0]})
+        assert _extract_metric_value(df, "score") == 3.0
+
+    def test_extract_metric_value_missing_column(self):
+        import polars as pl
+
+        df = pl.DataFrame({"other": [1.0]})
+        with pytest.raises(KeyError, match="score"):
+            _extract_metric_value(df, "score")
+
+    def test_is_search_exhausted_only_known_markers(self):
+        assert _is_search_exhausted(RuntimeError("Configuration space exhausted"))
+        assert _is_search_exhausted(StopIteration("no more configurations available"))
+        assert not _is_search_exhausted(RuntimeError("CUDA out of memory"))
+        assert not _is_search_exhausted(ValueError("bad metric"))
+
+    def test_failure_record_structure(self):
+        try:
+            raise ValueError("unit-test failure")
+        except ValueError as exc:
+            rec = _failure_record({"a": 1}, exc)
+        assert rec["configuration"] == {"a": 1}
+        assert rec["exception_type"] == "ValueError"
+        assert "unit-test failure" in rec["message"]
+        assert "ValueError" in rec["traceback"]
 
 
 class TestGridSearch:

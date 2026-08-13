@@ -1,8 +1,18 @@
-"""CI smoke: execute self-contained Python fences from README and key docs.
+"""CI smoke: execute **self-contained** Python fences from selected docs.
+
+This suite is a **regression smoke**, not a proof that every tutorial or
+example script is end-to-end runnable:
+
+* Only the paths in ``DOC_PATHS`` are scanned (not all of ``docs/``).
+* Fences on ``FRAGMENT_ALLOWLIST`` are syntax-checked only (multi-cell
+  continuations, incomplete recipes).
+* ``HEAVY_ALLOWLIST`` fences are syntax-only unless ``AMBER_DOC_FENCE_FULL=1``.
+* Full calibration scripts under ``examples/smac_*.py`` and multi-cell
+  tutorial programs are **not** executed here — run those scripts (or
+  ``scripts/run_gpu_claims.py`` for GPU) separately.
 
 Intentional API fragments (method bodies, incomplete context) are allowlisted.
-Large-N samples are scaled down in CI so the matrix stays fast; full-scale GPU
-claims are verified with ``scripts/run_gpu_claims.py`` on a CUDA host.
+Large-N samples are scaled down in CI so the matrix stays fast.
 """
 
 from __future__ import annotations
@@ -23,16 +33,22 @@ ROOT = Path(__file__).resolve().parents[1]
 DOC_PATHS = [
     "README.md",
     "docs/quickstart.rst",
+    "docs/tutorial.rst",
     "docs/installation.rst",
     "docs/going_faster.rst",
+    "docs/from_agentpy.rst",
     "docs/index.rst",
     "docs/api/agent.rst",
+    "docs/api/base.rst",
     "docs/api/contract.rst",
     "docs/api/environments.rst",
+    "docs/api/experiment.rst",
     "docs/api/gpu.rst",
     "docs/api/gpu_ensemble.rst",
     "docs/api/model.rst",
     "docs/api/optimization.rst",
+    "docs/api/performance.rst",
+    "docs/api/results.rst",
 ]
 
 # Fence ids that are intentional fragments or multi-cell continuations.
@@ -48,8 +64,18 @@ FRAGMENT_ALLOWLIST = {
     "docs/quickstart.rst:3",
     "docs/going_faster.rst:0",  # step body fragment in RST
     "docs/api/agent.rst:2",
+    "docs/api/base.rst:0",  # class sketch without run()
+    "docs/api/base.rst:1",  # Agent sketch without model shell
     "docs/api/sequences.rst:0",
     "docs/api/sequences.rst:1",
+    # Tutorial multi-cell continuations (need prior class definitions).
+    "docs/tutorial.rst:1",  # runs WealthModel from prior fence
+    "docs/tutorial.rst:3",  # continues SpatialWealthModel
+    "docs/tutorial.rst:5",  # plots AnalyticalWealthModel + plt
+    "docs/tutorial.rst:7",  # random_search needs prior model+space
+    "docs/tutorial.rst:9",  # experiment_results from prior fence
+    # ParallelRunner fence is executed via spawn-safe module import (see
+    # _run_code); not allowlisted.
 }
 
 # Fences that are complete but too heavy for every CI matrix cell.
@@ -102,17 +128,26 @@ def _collect_fences() -> list[tuple[str, str]]:
 
 def _is_self_contained(code: str) -> bool:
     """Heuristic: has imports and either defines a runnable model or status/print."""
+    # Explicit multi-cell / continuation markers must never run alone.
+    if re.search(
+        r"(?i)continues? (the )?(previous|prior|part)|paste both blocks|"
+        r"must be defined in the previous",
+        code,
+    ):
+        return False
     has_import = bool(re.search(r"^\s*(import|from)\s", code, re.M))
     if not has_import:
         return False
-    if "class " in code and (".run(" in code or "grid_search(" in code):
+    if "class " in code and (".run(" in code or "grid_search(" in code or "Experiment(" in code):
         return True
     if "print_status" in code or "recommend(" in code:
         return True
     if "GPUEnsembleRunner" in code or "grid_search(" in code:
         return True
     if "print(" in code and "ambr" in code and "class " not in code:
-        # version / status snippets
+        # version / status snippets — only if they don't reference undefined models
+        if re.search(r"\b[A-Z][A-Za-z0-9_]*Model\b", code):
+            return False
         return True
     return False
 
@@ -147,28 +182,58 @@ def _run_code(code: str, timeout: float = 90.0) -> None:
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
     }
-    # Write as real UTF-8 bytes (NamedTemporaryFile text mode uses locale encoding
-    # on Windows and can mangle non-ASCII into cp1252, then SyntaxError on \x97).
     body = "# -*- coding: utf-8 -*-\n" + code
-    fd, path = tempfile.mkstemp(suffix=".py")
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(body.encode("utf-8"))
-        proc = subprocess.run(
-            [sys.executable, "-X", "utf8", path],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            env=env,
-            cwd=str(ROOT),
-        )
-    finally:
+
+    # ParallelRunner uses spawn: the model class must be importable by name.
+    # Running a one-shot temp script as __main__ fails child import. For fences
+    # that use ParallelRunner, write a real module on PYTHONPATH and call main().
+    if "ParallelRunner" in code:
+        tmpdir = tempfile.mkdtemp(prefix="amber_doc_fence_")
         try:
-            os.unlink(path)
-        except OSError:
-            pass
+            mod_path = Path(tmpdir) / "amber_doc_parallel_demo.py"
+            mod_path.write_text(body, encoding="utf-8")
+            env["PYTHONPATH"] = tmpdir + os.pathsep + env["PYTHONPATH"]
+            runner = (
+                "import amber_doc_parallel_demo as m\n"
+                "if hasattr(m, 'main'):\n"
+                "    m.main()\n"
+                "else:\n"
+                "    raise SystemExit('ParallelRunner fence must define main()')\n"
+            )
+            proc = subprocess.run(
+                [sys.executable, "-X", "utf8", "-c", runner],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                env=env,
+                cwd=str(ROOT),
+            )
+        finally:
+            import shutil
+
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    else:
+        fd, path = tempfile.mkstemp(suffix=".py")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(body.encode("utf-8"))
+            proc = subprocess.run(
+                [sys.executable, "-X", "utf8", path],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                env=env,
+                cwd=str(ROOT),
+            )
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
     if proc.returncode != 0:
         raise AssertionError(
             f"exit={proc.returncode}\n"
@@ -178,6 +243,113 @@ def _run_code(code: str, timeout: float = 90.0) -> None:
 
 
 FENCES = _collect_fences()
+
+_PRINT_CALL = re.compile(r"(?<![\w.])print\s*\(", re.M)
+_DF_MARKERS = (
+    ".head(",
+    ".tail(",
+    ".select(",
+    ".group_by(",
+    ".groupby(",
+    "['model']",
+    '["model"]',
+    "['agents']",
+    '["agents"]',
+    ".model",
+    ".agents",
+)
+_DF_ASSIGN = re.compile(
+    r"^(\w+)\s*=\s*(?:.|\n)*?(?:\.head\(|\.tail\(|\.select\(|\.group_by\(|"
+    r"\.groupby\(|results\[|res\[|\.model|\.agents)",
+    re.M,
+)
+
+
+def _split_top_level_args(inner: str) -> list[str]:
+    parts: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    quote = None
+    for ch in inner:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+            continue
+        if ch in "([{":
+            depth += 1
+            buf.append(ch)
+            continue
+        if ch in ")]}":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+            continue
+        if ch == "," and depth == 0:
+            part = "".join(buf).strip()
+            if part:
+                parts.append(part)
+            buf = []
+            continue
+        buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def _print_args(code: str) -> list[str]:
+    """Return each top-level argument of every ``print(...)`` call."""
+    args: list[str] = []
+    for match in _PRINT_CALL.finditer(code):
+        start = match.end()
+        depth = 1
+        i = start
+        while i < len(code) and depth:
+            ch = code[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            i += 1
+        if depth == 0:
+            args.extend(_split_top_level_args(code[start : i - 1]))
+    return args
+
+
+def _assigned_dataframe_names(code: str) -> set[str]:
+    return {m.group(1) for m in _DF_ASSIGN.finditer(code)}
+
+
+@pytest.mark.unit
+def test_doc_fences_print_dataframes_via_to_dicts():
+    """Windows CP1252 cannot encode Polars box-drawing ``print(df)``."""
+    offenders: list[str] = []
+    for fence_id, code in FENCES:
+        df_names = _assigned_dataframe_names(code)
+        for arg in _print_args(code):
+            compact = re.sub(r"\s+", "", arg)
+            if compact.startswith(("'", '"')) and compact.endswith(("'", '"')):
+                continue
+            if ".to_dicts()" in compact or ".to_dict(" in compact:
+                continue
+            if compact.endswith((".shape", ".columns", ".height", ".width", ".schema", ".dtypes")):
+                continue
+            if arg in ("results.info", "res.info") or arg.endswith("['info']") or arg.endswith('["info"]'):
+                continue
+            if arg.startswith("results.info") or arg.startswith("res.info"):
+                continue
+            looks_df = any(marker in compact for marker in _DF_MARKERS)
+            looks_df = looks_df or arg in df_names
+            if looks_df:
+                offenders.append(f"{fence_id}: print({arg})")
+    assert not offenders, (
+        "Doc fences must print DataFrames via .to_dicts() (ASCII-safe):\n"
+        + "\n".join(offenders)
+    )
 
 
 @pytest.mark.unit

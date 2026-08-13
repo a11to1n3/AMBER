@@ -6,14 +6,17 @@ on:
   pull_request:
     branches: [ main, master, dev ]
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Ruff + mypy
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - name: Set up Python 3.12
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
       with:
         python-version: "3.12"
     - name: Install lint tools
@@ -25,38 +28,68 @@ jobs:
     - name: Mypy (gradual module set)
       run: mypy
 
+  docs:
+    name: Sphinx (-W)
+    runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - name: Set up Python 3.12
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: "3.12"
+    - name: Install docs deps
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,docs,viz]"
+    - name: Build HTML (warnings are errors)
+      run: |
+        sphinx-build -W --keep-going -b html docs docs/_build/html
+
   test-suite:
-    name: Run Tests
+    name: Tests
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
-
+        # Supported: 3.10–3.13 (hard-gated). 3.14 is not yet a declared
+        # support target — do not advertise until release wheel matrix covers it.
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      MPLBACKEND: Agg
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
       with:
         python-version: ${{ matrix.python-version }}
+        allow-prereleases: true
 
     - name: Install dependencies
       shell: bash
       run: |
         python -m pip install --upgrade pip
-        # Core test extras. On one matrix cell also install [perf] (Numba)
-        # so scatter JIT paths are exercised in CI without slowing every job.
         if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.python-version }}" = "3.12" ]; then
-          pip install -e ".[dev,advanced,perf]"
+          pip install -e ".[dev,advanced,perf,viz]"
         else
-          pip install -e ".[dev,advanced]"
+          pip install -e ".[dev,advanced,viz]"
         fi
 
     - name: Run tests with coverage
       run: |
         pytest tests/ --cov=src/ambr --cov-report=xml --cov-report=term-missing -v --tb=short
+
+    - name: Tutorial / example smokes
+      shell: bash
+      run: |
+        # Doc fences (syntax + executable samples)
+        pytest tests/test_doc_fences.py tests/test_readme_examples.py -q --tb=short
+        # Headless example entry points (no GUI)
+        python examples/virus_spread_simulation.py --headless --steps 3 --n 20
+        python examples/gpu_quickstart.py
 
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
@@ -69,31 +102,113 @@ jobs:
         fail_ci_if_error: false
         verbose: true
 
+  example-notebooks:
+    name: Example notebooks
+    runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg
+      AMBER_EXECUTE_NOTEBOOKS: "1"
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - name: Set up Python 3.12
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: "3.12"
+    - name: Install package + viz
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,viz]"
+    - name: Execute example notebooks
+      run: |
+        pytest tests/test_example_notebooks.py -q --tb=short --no-cov
+
+  deps-minimum:
+    name: Minimum dependencies
+    runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - name: Set up Python 3.10
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: "3.10"
+    - name: Install lower-bound stack
+      run: |
+        python -m pip install --upgrade pip
+        # Exact declared floors from pyproject.toml dependencies
+        # (numpy>=1.21 for Python 3.10; networkx>=2.5; polars>=0.20).
+        pip install "polars==0.20.0" "numpy==1.21.6" "networkx==2.5"
+        pip install -e . --no-deps
+        pip install pytest pytest-cov pytest-mock
+    - name: Smoke tests
+      run: |
+        pytest tests/test_import_smoke.py tests/test_run_provenance.py tests/test_model.py -q --tb=short
+
+  deps-latest:
+    name: Latest dependencies
+    runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - name: Set up Python 3.13
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: "3.13"
+    - name: Install latest deps
+      run: |
+        python -m pip install --upgrade pip
+        pip install -U polars numpy networkx
+        pip install -e ".[dev,viz]"
+    - name: Smoke tests
+      run: |
+        pytest tests/test_import_smoke.py tests/test_run_provenance.py tests/test_reporters.py -q --tb=short
+
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - name: Set up Python 3.12
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: "3.12"
+    - name: Install package + audit tool
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,advanced,viz]"
+        pip install pip-audit
+    - name: Audit installed environment
+      run: |
+        pip-audit --progress-spinner=off
+
   test-badges:
     runs-on: ubuntu-latest
-    needs: [test-suite, lint]
+    needs: [test-suite, lint, docs, example-notebooks]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Set up Python 3.12
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
       with:
         python-version: 3.12
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev,advanced,perf]"
+        pip install -e ".[dev,advanced,perf,viz]"
 
     - name: Run tests with coverage for badge
+      env:
+        MPLBACKEND: Agg
       run: |
         pytest tests/ --cov=src/ambr --cov-report=term-missing --cov-report=xml --cov-fail-under=0
 
     - name: Generate badges
       run: |
-        # Test status
         if pytest tests/ --tb=no -q; then
           echo "TESTS_STATUS=passing" >> $GITHUB_ENV
           echo "TESTS_COLOR=brightgreen" >> $GITHUB_ENV
@@ -101,7 +216,6 @@ jobs:
           echo "TESTS_STATUS=failing" >> $GITHUB_ENV
           echo "TESTS_COLOR=red" >> $GITHUB_ENV
         fi
-        # Coverage percentage from the XML report
         COVERAGE=$(python -c "
         import xml.etree.ElementTree as ET
         tree = ET.parse('coverage.xml')
@@ -110,7 +224,6 @@ jobs:
         " 2>/dev/null || echo "0")
         echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
         echo "Coverage: $COVERAGE%"
-        # Download badges from shields.io
         curl -sL "https://img.shields.io/badge/tests-${{ env.TESTS_STATUS }}-${{ env.TESTS_COLOR }}" > tests-badge.svg
         curl -sL "https://img.shields.io/badge/coverage-${COVERAGE}%25-brightgreen" > coverage-badge.svg
 

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml/badge.svg)](https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/a11to1n3/AMBER/graph/badge.svg)](https://codecov.io/gh/a11to1n3/AMBER)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://img.shields.io/pypi/v/ambr.svg)](https://pypi.org/project/ambr/)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3_Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
@@ -47,11 +47,11 @@ python scripts/run_gpu_claims.py --quick  # fast smoke
 ### Headline comparison (committed evidence)
 
 **Single source of truth for the README table (do not mix other tables):**  
-[`benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json`](benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json)  
+[`benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json)  
 (summary:
-[`summary_table_snapshot_correct_10run_10m.md`](benchmarks/results/summary_table_snapshot_correct_10run_10m.md)).
+[`summary_table_snapshot_correct_10run_10m.md`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/results/summary_table_snapshot_correct_10run_10m.md)).
 
-Other files under [`benchmarks/results/`](benchmarks/results/) (including
+Other files under [`benchmarks/results/`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/results/) (including
 `summary_table.md`) are **exploratory / historical** and may use different
 protocols — never combine them with the headline table without an explicit
 caption.
@@ -77,24 +77,25 @@ of byte-identical dynamics across frameworks.
   the FLAME harness; do not treat ~63× as a pure step-kernel speedup.
 - Multi-framework scale-out charts (Mesa, mesa-frames, Agents.jl, …) are
   **exploratory** and live under
-  [`benchmarks/results/`](benchmarks/results/); some cells OOM or hit
+  [`benchmarks/results/`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/results/); some cells OOM or hit
   budgets — missing cells are not zeros.
-- Reproducer: [`benchmarks/run_all_frameworks.py`](benchmarks/run_all_frameworks.py).  
-  Correctness gates: [`benchmarks/correctness_check.py`](benchmarks/correctness_check.py).  
-  Details: [`benchmarks/README.md`](benchmarks/README.md).
+- Reproducer: [`benchmarks/run_all_frameworks.py`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/run_all_frameworks.py).  
+  Correctness gates: [`benchmarks/correctness_check.py`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/correctness_check.py).  
+  Details: [`benchmarks/README.md`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/README.md).
 
-![Framework scaling chart](benchmarks/results/scaling_chart.png)
+![Framework scaling chart](https://raw.githubusercontent.com/a11to1n3/AMBER/main/benchmarks/results/scaling_chart.png)
 
 **API:** implement `step_vectorized()` (or legacy `step()`); place with
 `.cpu(mode="vectorized")` or `.gpu()`. GPU is vectorized-only. Private
 optimized GPU loops require an explicit
 `approve_fast_path(evidence)` label (caller-attested provenance; AMBER
 checks presence of the label, not the evidence content) and
-`contract="off"` — see [`docs/going_faster.rst`](docs/going_faster.rst).
+`contract="off"` — see [`docs/going_faster.rst`](https://ambr.readthedocs.io/en/latest/going_faster.html).
 
 Default CI has no CUDA. Optional **GPU claims** workflow
-(`.github/workflows/gpu-nightly.yml`) soft-skips without a GPU and runs
-`scripts/run_gpu_claims.py --quick` on self-hosted CUDA runners.
+(`.github/workflows/gpu-nightly.yml`) **hard-fails as NOT VERIFIED** without
+a GPU (never soft-green) and runs `scripts/run_gpu_claims.py --quick` on
+self-hosted CUDA runners (`GPU_RUNNER` repository variable).
 
 ## 🚀 Quick Start
 
@@ -118,14 +119,16 @@ class WealthAgent(am.Agent):
 class WealthModel(am.Model):
     def setup(self):
         self.agents = am.AgentList(self, self.p.n, WealthAgent)
-    def step(self):
+    def step_oop(self):
+        # Explicit OOP lane (default mode is vectorized)
         self.agents.transfer()
     def update(self):
         self.record_model('total', int(self.agents.wealth.sum()))
 
-results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).run()
-print(results.model)      # also results['model']
-print(results.agents.head())
+results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).cpu(mode="oop").run()
+print(results.model.tail(3).to_dicts())      # also results['model']
+print(results.agents.head().to_dicts())
+print(results.info.get("mode"), results.info.get("execution_lane"))
 ```
 
 **Vectorized (columnar; best at large N):**
@@ -152,14 +155,14 @@ class WealthModel(am.Model):
 _m = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
 results = _m.gpu().run() if am.GPU_AVAILABLE else _m.cpu(mode="vectorized").run()
 print(results.info)
-print(results.model.tail(5))
-print(results.agents.head(10))
+print(results.model.tail(5).to_dicts())
+print(results.agents.head(10).to_dicts())
 ```
 
-Coming from AgentPy? See [`docs/from_agentpy.rst`](docs/from_agentpy.rst).
+Coming from AgentPy? See [`docs/from_agentpy.rst`](https://ambr.readthedocs.io/en/latest/from_agentpy.html).
 
 **Going faster / GPU** — same `Model` class; pick placement and lane hooks (see
-[`docs/going_faster.rst`](docs/going_faster.rst)):
+[`docs/going_faster.rst`](https://ambr.readthedocs.io/en/latest/going_faster.html)):
 
 ```python
 import ambr as am
@@ -203,30 +206,18 @@ print(Drift({"n": 100_000, "steps": 20, "show_progress": False}).run().info)
 the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).
 
-> **New in 0.4.7:** GPU claim script renamed to
-> [`scripts/run_gpu_claims.py`](scripts/run_gpu_claims.py); user-facing docs
-> scrubbed of paper-campaign machine labels. Upgrade with
-> `pip install -U 'ambr>=0.4.7'`. See the [changelog](CHANGELOG.md).
+> **New in 0.5.0:** production-candidate. **Breaking / install:** matplotlib
+> moved to `ambr[viz]`; scikit-optimize was removed and replaced by SMAC
+> under `ambr[advanced]` (SMAC + ConfigSpace + scikit-learn). Python
+> **3.10–3.13** only. **API:** `record_model` inside `step()` is kept;
+> missing optimization metrics raise; SMAC defaults to `on_error='raise'`;
+> `RunResults.save` uses a versioned manifest. Upgrade with
+> `pip install -U 'ambr>=0.5.0'`. Full list:
+> [CHANGELOG.md](https://github.com/a11to1n3/AMBER/blob/main/CHANGELOG.md).
 >
-> **0.4.6:** claim-honest public samples (view API + `GPU_AVAILABLE`
-> branching), [doc-fence / README smokes](tests/test_doc_fences.py), OOP
-> [activation helpers](docs/api/scheduling.rst), [viz helpers](docs/api/viz.rst),
-> [RunResults save/load](docs/api/results.rst), [reproducibility policy](docs/reproducibility.rst),
-> and [1.0 freeze prep](docs/roadmap_1_0.rst).
->
-> **0.4.5:** honest 10M headline snapshot, `ambr[gpu]`, `CITATION.cff`.
->
-> **0.4.4:** honest [execution lanes](docs/going_faster.rst)
-> (`step_vectorized` / `step_oop`; GPU is vectorized-only), operational
-> [contract](#-snapshot-view-contract) wording (monitor, not schedule proof),
-> and opt-in `approve_fast_path(evidence)` for private GPU loops.
->
-> **0.4.3:** Keras-style **`model.cpu(mode=...)` / `model.gpu()`** placement
-> with device-resident columns for the vectorized view API.
->
-> **0.4.1–0.4:** AgentPy-shaped UX, progressive speed lanes, Numba
-> (`ambr[perf]`), snapshot-view contract, GPU ensemble calibration, canonical
-> verbs (legacy spellings still work until 1.0).
+> **0.4.7:** GPU claim script renamed to
+> [`scripts/run_gpu_claims.py`](https://github.com/a11to1n3/AMBER/blob/main/scripts/run_gpu_claims.py);
+> paper-campaign machine labels removed from user-facing docs.
 
 ## ⚡ Vectorized View API
 
@@ -246,9 +237,9 @@ def step(self):
     self.agents.at[[1, 1, 3]].scatter_add(wealth=1)  # agent 1 gets +2, agent 3 gets +1
 ```
 
-## 🧭 Canonical API (0.4)
+## Canonical API (0.5)
 
-AMBER 0.4 settles on one obvious verb per task. The legacy spellings still work
+AMBER 0.5 settles on one obvious verb per task. The legacy spellings still work
 (they emit a `DeprecationWarning` and are scheduled for removal in **1.0**); set
 `AMBER_SUPPRESS_DEPRECATIONS=1` to silence them in benchmark / reproducibility runs.
 Batch performance comes from these verbs (columnar writes), not from extra public
@@ -421,8 +412,9 @@ print(best_params, results[0]["objective"])
 ```
 
 Beyond `grid_search`, AMBER ships `random_search`, `bayesian_optimization`
-(SMAC Gaussian-process), and `SMACOptimizer` (random-forest surrogate) — plus the
-GPU batched ensemble above for derivative-free calibration at scale.
+(SMAC RandomForest surrogate; GP is unsupported), and `SMACOptimizer`
+(same RandomForest stack) — plus the GPU batched ensemble above for
+derivative-free calibration at scale.
 
 ## 📦 Installation
 
@@ -430,13 +422,16 @@ GPU batched ensemble above for derivative-free calibration at scale.
 pip install ambr
 
 # Optional extras
-pip install 'ambr[perf]'       # Numba CPU scatter (recommended on Mac)
-pip install 'ambr[advanced]'   # SMAC optimization
+pip install 'ambr[perf]'              # Numba CPU scatter (recommended on Mac)
+pip install 'ambr[gpu]'               # NVIDIA + CuPy (not Metal/MPS)
+pip install 'ambr[viz]'               # matplotlib plot helpers
+pip install 'ambr[advanced]'          # SMAC optimization
+pip install 'ambr[advanced,viz]'      # SMAC + matplotlib (example plots)
 ```
 
 ```python
 import ambr as am
-print(am.__version__)   # 0.4.7+
+print(am.__version__)   # 0.5.0+
 am.print_status()
 ```
 
@@ -476,14 +471,14 @@ Working examples are available in the `examples/` directory:
 ## 📖 Documentation
 
 - **Docs**: https://ambr.readthedocs.io/
-- **Paper**: https://arxiv.org/abs/2601.16292 — package vs paper claims: [docs/paper_and_package.rst](docs/paper_and_package.rst)
-- **Going faster** (lanes / Numba / GPU): [docs/going_faster.rst](docs/going_faster.rst)
-- **Environments & Schelling**: [docs/environments_schelling.rst](docs/environments_schelling.rst)
-- **From AgentPy**: [docs/from_agentpy.rst](docs/from_agentpy.rst)
-- **Deprecations (→ 1.0)**: [docs/deprecations.rst](docs/deprecations.rst)
-- **Versioning / 1.0 roadmap**: [docs/versioning.rst](docs/versioning.rst), [docs/roadmap_1_0.rst](docs/roadmap_1_0.rst)
-- **Public API surface**: [docs/public_api.rst](docs/public_api.rst)
-- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
+- **Paper**: https://arxiv.org/abs/2601.16292 — package vs paper claims: [docs/paper_and_package.rst](https://ambr.readthedocs.io/en/latest/paper_and_package.html)
+- **Going faster** (lanes / Numba / GPU): [docs/going_faster.rst](https://ambr.readthedocs.io/en/latest/going_faster.html)
+- **Environments & Schelling**: [docs/environments_schelling.rst](https://ambr.readthedocs.io/en/latest/environments_schelling.html)
+- **From AgentPy**: [docs/from_agentpy.rst](https://ambr.readthedocs.io/en/latest/from_agentpy.html)
+- **Deprecations (→ 1.0)**: [docs/deprecations.rst](https://ambr.readthedocs.io/en/latest/deprecations.html)
+- **Versioning / 1.0 roadmap**: [docs/versioning.rst](https://ambr.readthedocs.io/en/latest/versioning.html), [docs/roadmap_1_0.rst](https://ambr.readthedocs.io/en/latest/roadmap_1_0.html)
+- **Public API surface**: [docs/public_api.rst](https://ambr.readthedocs.io/en/latest/public_api.html)
+- **Changelog**: [CHANGELOG.md](https://github.com/a11to1n3/AMBER/blob/main/CHANGELOG.md)
 
 ## 📝 How to cite?
 
@@ -500,16 +495,16 @@ If you use AMBER in academic work, please cite the paper:
 
 Paper: https://arxiv.org/abs/2601.16292
 
-For the **software**, this repository also ships [`CITATION.cff`](CITATION.cff)
+For the **software**, this repository also ships [`CITATION.cff`](https://github.com/a11to1n3/AMBER/blob/main/CITATION.cff)
 (GitHub “Cite this repository”). Manuscript drafts and build artifacts are
 **not** kept in the library tree — only the public paper citation and software
 metadata.
 
 ## 🤝 Contributing
 
-We welcome contributions! See [docs/contributing.rst](docs/contributing.rst)
+We welcome contributions! See [docs/contributing.rst](https://ambr.readthedocs.io/en/latest/contributing.html)
 (or the Contributing page on Read the Docs).
 
 ## 📄 License
 
-This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](https://github.com/a11to1n3/AMBER/blob/main/LICENSE) file for details.

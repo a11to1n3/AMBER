@@ -7,7 +7,30 @@ The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
 [Unreleased]
-------------
+-------------
+
+[0.5.0] - 2026-08-13
+--------------------
+
+Production-candidate cut. **Requires a new PyPI version** (0.4.7 is already
+published). Full item list: ``CHANGELOG.md``.
+
+Highlights:
+
+* Step recordings inside ``step()`` are retained; optimization metrics are
+  strict; SMAC defaults to ``on_error='raise'``.
+* ``RunResults.save`` uses a versioned manifest; ``import ambr`` does not
+  load matplotlib (``ambr[viz]`` / ``ambr[advanced]`` extras).
+* Real release/GPU gates (CUDA missing is **NOT VERIFIED**, never soft-green).
+* First-run honesty: README extras include ``gpu`` / ``viz`` / ``advanced``;
+  DataFrame prints are ASCII (``.to_dicts()``); SMAC examples are short,
+  seeded, and skip plots without matplotlib.
+* ``MultiObjectiveSMAC.strategy`` is forwarded; incumbent re-scoring uses a
+  pinned model seed; ``deterministic`` is true only when that seed is not
+  ``None``.
+
+Supported Python: **officially tested 3.10–3.13**. Nightly GPU workflow
+fails as **NOT VERIFIED** without CUDA.
 
 [0.4.7] - 2026-08-05
 --------------------

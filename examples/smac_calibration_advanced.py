@@ -6,14 +6,20 @@ SMAC Calibration Example - Advanced Multi-Objective Optimization
 Multi-objective SMAC calibration of a Schelling-style segregation model
 using AMBER's :class:`~ambr.optimization.MultiObjectiveSMAC`.
 
-Key features:
-- Multi-objective optimization with Pareto frontiers
-- ``SMACParameterSpace`` parameter ranges
-- Grid helpers on :class:`~ambr.environments.GridEnvironment`
-- Canonical agent writes (``agents.at[id].set(...)``)
+``n_trials`` is **per objective**, not a global budget. Four objectives
+with ``n_trials=3`` is 12 SMAC evaluations (plus a few re-scores of
+incumbents). Each evaluation uses ``fixed_params`` (``steps``,
+``grid_size``, …). Omitting ``steps`` falls back to ``Model.run``'s
+implicit 100-step default and is far too slow for this model.
+
+This is independent scalar SMAC per objective + a post-hoc non-dominated
+set. It is not ParEGO / EHVI; ``strategy`` must be a
+:class:`~ambr.optimization.SMACOptimizer` strategy
+(``bayesian`` / ``random`` / ``algorithm_configuration``).
 
 Requirements:
-    pip install smac ConfigSpace
+    pip install 'ambr[advanced]'          # SMAC + ConfigSpace
+    pip install 'ambr[advanced,viz]'      # plus matplotlib for plots
 
 For a lighter single-objective vectorized wealth example, see
 ``smac_calibration_basic.py``.
@@ -25,6 +31,26 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import ambr as am
 import numpy as np
+
+
+_VIZ_WARNED = False
+
+
+def _try_matplotlib():
+    """Return pyplot, or None if matplotlib is missing / ABI-incompatible."""
+    global _VIZ_WARNED
+    try:
+        import matplotlib.pyplot as plt
+        return plt
+    except Exception as exc:
+        if not _VIZ_WARNED:
+            print(
+                "Skipping plots — install visualization extras:\n"
+                "  pip install 'ambr[advanced,viz]'\n"
+                f"Underlying error: {exc!r}"
+            )
+            _VIZ_WARNED = True
+        return None
 
 
 def _as_tuple(pos) -> Optional[Tuple]:
@@ -235,17 +261,24 @@ class SegregationModel(am.Model):
         return total_moves / (n * self.t)
 
 
+# Horizon / world size stay out of the search space so every trial is cheap.
+# Model.run() defaults to 100 steps when ``steps`` is omitted — do not rely on that.
+DEMO_FIXED_PARAMS = {
+    "grid_size": 10,
+    "steps": 8,
+    "seed": 42,
+    "show_progress": False,
+    "agent_type_distribution": "binary",
+    "neighborhood_radius": 1,
+    "search_radius": 3,
+    "max_location_evaluations": 6,
+}
+
+
 def create_advanced_parameter_space():
-    """Parameter space for multi-objective Schelling calibration."""
+    """Search knobs only. World size and step count live in DEMO_FIXED_PARAMS."""
     param_space = am.SMACParameterSpace()
-    param_space.add_parameter("grid_size", param_type="int", bounds=(10, 30), default=15)
-    param_space.add_parameter("density", param_type="float", bounds=(0.6, 0.9), default=0.75)
-    param_space.add_parameter(
-        "agent_type_distribution",
-        param_type="categorical",
-        choices=["binary", "three_types", "uniform"],
-        default="binary",
-    )
+    param_space.add_parameter("density", param_type="float", bounds=(0.6, 0.85), default=0.75)
     param_space.add_parameter(
         "type_A_fraction", param_type="float", bounds=(0.3, 0.7), default=0.5
     )
@@ -253,28 +286,7 @@ def create_advanced_parameter_space():
         "base_tolerance", param_type="float", bounds=(0.1, 0.8), default=0.3
     )
     param_space.add_parameter(
-        "tolerance_multiplier_A", param_type="float", bounds=(0.5, 2.0), default=1.0
-    )
-    param_space.add_parameter(
-        "tolerance_multiplier_B", param_type="float", bounds=(0.5, 2.0), default=1.0
-    )
-    param_space.add_parameter(
         "base_mobility", param_type="float", bounds=(0.01, 0.3), default=0.1
-    )
-    param_space.add_parameter(
-        "mobility_multiplier_A", param_type="float", bounds=(0.5, 2.0), default=1.0
-    )
-    param_space.add_parameter(
-        "mobility_multiplier_B", param_type="float", bounds=(0.5, 2.0), default=1.0
-    )
-    param_space.add_parameter(
-        "neighborhood_radius", param_type="int", bounds=(1, 2), default=1
-    )
-    param_space.add_parameter(
-        "search_radius", param_type="int", bounds=(2, 6), default=3
-    )
-    param_space.add_parameter(
-        "max_location_evaluations", param_type="int", bounds=(5, 15), default=8
     )
     return param_space
 
@@ -302,8 +314,13 @@ def satisfaction_objective(model: SegregationModel) -> float:
     return abs(_final_metric(model, "satisfaction_mean") - 0.7)
 
 
-def run_multi_objective_optimization(n_trials: int = 40, seed: int = 42):
-    """Run multi-objective SMAC (requires smac + ConfigSpace)."""
+def run_multi_objective_optimization(n_trials: int = 3, seed: int = 42):
+    """Run per-objective SMAC (requires smac + ConfigSpace).
+
+    ``n_trials`` is the budget **for each objective**. Four objectives
+    therefore mean ``4 * n_trials`` SMAC evaluations, each
+    ``DEMO_FIXED_PARAMS['steps']`` long.
+    """
     print("Starting Multi-Objective SMAC Calibration with AMBER")
     print("=" * 55)
 
@@ -314,18 +331,31 @@ def run_multi_objective_optimization(n_trials: int = 40, seed: int = 42):
         "mobility": mobility_objective,
         "satisfaction": satisfaction_objective,
     }
+    n_obj = len(objectives)
+    print(
+        f"Per-objective budget: n_trials={n_trials} × {n_obj} objectives "
+        f"= {n_trials * n_obj} SMAC evaluations"
+    )
+    print(
+        f"Fixed per evaluation: steps={DEMO_FIXED_PARAMS['steps']}, "
+        f"grid_size={DEMO_FIXED_PARAMS['grid_size']}"
+    )
+    print("strategy='bayesian' is forwarded to each scalar SMACOptimizer.")
+    print("Pareto front is assembled afterwards (not a search strategy).")
+
     optimizer = am.MultiObjectiveSMAC(
         model_type=SegregationModel,
         param_space=param_space,
         objectives=objectives,
         n_trials=n_trials,
         seed=seed,
-        strategy="pareto",
+        strategy="bayesian",
+        fixed_params=DEMO_FIXED_PARAMS,
     )
     print("Starting multi-objective optimization...")
     results = optimizer.optimize()
 
-    print(f"\nMulti-Objective Optimization Results:")
+    print("\nMulti-Objective Optimization Results:")
     print("=" * 45)
     print(f"Total trials: {results['n_evaluations']}")
     print(f"Pareto front size: {len(results['pareto_front'])}")
@@ -334,40 +364,10 @@ def run_multi_objective_optimization(n_trials: int = 40, seed: int = 42):
 
 def analyze_pareto_frontier(optimizer, results):
     """Analyze and visualize the Pareto frontier."""
-    # Plotting is optional and should not prevent importing or smoke-testing
-    # the model when Matplotlib is absent (or installed in another ABI env).
-    import matplotlib.pyplot as plt
-
     print("\nAnalyzing Pareto Frontier...")
     pareto_front = results["pareto_front"]
     history = results["history"]
     objective_names = ["segregation", "clustering", "mobility", "satisfaction"]
-
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    pairs = [
-        ("segregation", "clustering"),
-        ("segregation", "mobility"),
-        ("clustering", "satisfaction"),
-        ("mobility", "satisfaction"),
-    ]
-    for ax, (obj1, obj2) in zip(axes.ravel(), pairs):
-        ax.scatter(history[obj1].to_list(), history[obj2].to_list(), alpha=0.35, s=20)
-        ax.scatter(
-            pareto_front[obj1].to_list(),
-            pareto_front[obj2].to_list(),
-            c="red",
-            s=60,
-            alpha=0.85,
-            label="Pareto",
-        )
-        ax.set_xlabel(obj1)
-        ax.set_ylabel(obj2)
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig("amber_multi_objective_analysis.png", dpi=150, bbox_inches="tight")
-    print("Saved amber_multi_objective_analysis.png")
 
     ideal = np.min(pareto_front[objective_names].to_numpy(), axis=0)
     distances = np.sum((pareto_front[objective_names].to_numpy() - ideal) ** 2, axis=1)
@@ -376,6 +376,32 @@ def analyze_pareto_frontier(optimizer, results):
     print("Best compromise objectives:")
     for obj in objective_names:
         print(f"  {obj}: {best_solution[obj]:.4f}")
+
+    plt = _try_matplotlib()
+    if plt is None:
+        return best_solution
+
+    # history is long-format (one objective filled per row). Plot each
+    # objective vs its own trial index; pairwise clouds would be all-null.
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    for ax, name in zip(axes.ravel(), objective_names):
+        series = history.select(["trial", name]).drop_nulls() if "trial" in history.columns else history.select(name).drop_nulls()
+        if "trial" in series.columns:
+            ax.plot(series["trial"].to_list(), series[name].to_list(), "o-", alpha=0.7)
+            ax.set_xlabel("trial")
+        else:
+            ax.plot(series[name].to_list(), "o-", alpha=0.7)
+            ax.set_xlabel("row")
+        ax.set_ylabel(name)
+        ax.set_title(f"{name} (per-objective search)")
+        if name in pareto_front.columns:
+            for val in pareto_front[name].to_list():
+                ax.axhline(val, color="red", ls="--", alpha=0.5)
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig("amber_multi_objective_analysis.png", dpi=150, bbox_inches="tight")
+    print("Saved amber_multi_objective_analysis.png")
     return best_solution
 
 
@@ -412,9 +438,12 @@ if __name__ == "__main__":
         import smac  # noqa: F401
     except ImportError:
         print("smac/ConfigSpace not installed — skipping multi-objective section")
-        print("Install with: pip install smac ConfigSpace")
+        print("Install with: pip install 'ambr[advanced]'")
         raise SystemExit(0)
 
-    optimizer, results = run_multi_objective_optimization(n_trials=20, seed=42)
+    if _try_matplotlib() is None:
+        print("Preflight: matplotlib missing — optimization will run; plots skipped.")
+        print("For plots: pip install 'ambr[advanced,viz]'")
+    optimizer, results = run_multi_objective_optimization(n_trials=3, seed=42)
     analyze_pareto_frontier(optimizer, results)
     print("\nAdvanced AMBER SMAC calibration example completed.")

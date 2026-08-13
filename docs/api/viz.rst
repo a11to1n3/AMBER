@@ -10,15 +10,15 @@ Lightweight matplotlib charts from :class:`~ambr.results.RunResults`. This is
 **not** a Solara/dashboard product — use these for tutorials and notebooks,
 or bring your own UI.
 
-Install (matplotlib is already a core dependency; the extra is a doc alias)::
+Install matplotlib via the optional extra (not a core dependency)::
 
    pip install 'ambr[viz]'
 
-Example::
+In CI / headless docs builds set ``MPLBACKEND=Agg`` (the library never calls
+``matplotlib.use`` itself). Example::
 
+   # export MPLBACKEND=Agg   # CI / headless
    import ambr as am
-   import matplotlib
-   matplotlib.use("Agg")
 
    class M(am.Model):
        model_reporters = {"total": lambda m: int(m.agents.wealth.sum())}

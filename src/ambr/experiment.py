@@ -28,7 +28,20 @@ class IntRange:
         return f"IntRange({self.start}, {self.end})"
 
 class Sample:
-    """Container for parameter combinations."""
+    """Container for parameter combinations.
+
+    **Not a Cartesian product and not independent random sampling.**
+    For each index ``i`` in ``0 .. n-1``:
+
+    * scalar values are copied into every combination;
+    * list values are taken as ``list[i % len(list)]`` (lists stay
+      **index-aligned / zipped**, not crossed);
+    * :class:`IntRange` values are spread deterministically across
+      ``[start, end)`` (midpoint when ``n == 1``).
+
+    For a full grid use :func:`~ambr.grid_search`; for independent random
+    draws use :func:`~ambr.random_search`.
+    """
 
     def __init__(self, parameters: Dict[str, Any], n: int):
         """Initialize a new parameter sample.
@@ -42,7 +55,7 @@ class Sample:
         self.combinations = self._generate_combinations()
 
     def _generate_combinations(self) -> List[Dict[str, Any]]:
-        """Generate parameter combinations."""
+        """Generate parameter combinations (zip/cycle semantics; see class doc)."""
         if self.n == 0:
             return []
 
@@ -95,10 +108,11 @@ class Experiment:
 
         Experiment(model_class=MyModel, parameters=sample, iterations=1)
 
-    Returns a dict of Polars frames (``info``, ``parameters``, ``agents``,
-    ``model``) — **not** a pandas object and **not** automatic multi-process
-    parallelism. For CPU process pools use :class:`~ambr.performance.ParallelRunner`;
-    for many short GPU replicates use :class:`~ambr.gpu_ensemble.GPUEnsembleRunner`.
+    Returns a dict with ``parameters`` / ``agents`` / ``model`` as Polars
+    frames and ``info`` as a **Python dict** (not a frame) — **not** a
+    pandas object and **not** automatic multi-process parallelism. For CPU
+    process pools use :class:`~ambr.performance.ParallelRunner`; for many
+    short GPU replicates use :class:`~ambr.gpu_ensemble.GPUEnsembleRunner`.
     """
 
     def __init__(
@@ -204,8 +218,16 @@ class Experiment:
                 'iterations': self.iterations
             },
             'parameters': pl.DataFrame(self.sample.combinations),
-            'agents': pl.concat(all_agents_data) if all_agents_data else pl.DataFrame(),
-            'model': pl.concat(all_model_data) if all_model_data else pl.DataFrame()
+            'agents': (
+                pl.concat(all_agents_data, how="diagonal_relaxed")
+                if all_agents_data
+                else pl.DataFrame()
+            ),
+            'model': (
+                pl.concat(all_model_data, how="diagonal_relaxed")
+                if all_model_data
+                else pl.DataFrame()
+            ),
         }
 
         return combined

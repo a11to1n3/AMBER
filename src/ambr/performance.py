@@ -16,10 +16,21 @@ Numba is the recommended CPU accelerator on Mac (no CUDA). Import
 
 from __future__ import annotations
 
-from typing import List, Tuple, Optional, Dict, Any, Type
-import numpy as np
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import base64
+import hashlib
+import io
+import json
+import os
+import secrets
+import stat
+import time
+import traceback as _traceback_mod
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 import multiprocessing as mp
+
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # Optional dependencies (soft imports — never fail module load)
@@ -403,20 +414,484 @@ def fast_random_walk_step(
 # =============================================================================
 
 
-def _run_single_simulation(params: Dict[str, Any], model_class: Type) -> Dict[str, Any]:
-    """Worker function for parallel simulation."""
-    model = model_class(params)
-    results = model.run()
+RunStatus = Literal["success", "failed", "timeout", "cancelled"]
+
+
+@dataclass
+class RunOutcome:
+    """Structured per-run outcome from :class:`ParallelRunner` (input order).
+
+    Attributes
+    ----------
+    index:
+        Position in the original ``param_list``.
+    status:
+        ``success``, ``failed``, ``timeout``, or ``cancelled`` (never-run /
+        fail_fast-cancelled slots — not user exception names).
+    params:
+        Parameter dict used for this run.
+    result:
+        On success: mapping with ``model`` / ``agents`` / ``info`` (and
+        ``params``). ``None`` on failure/timeout/cancel.
+    error_type / error_message / traceback:
+        Populated when ``status`` is not ``success``.
+    attempts:
+        Number of attempts used (1 + retries).
+    """
+
+    index: int
+    status: RunStatus
+    params: Dict[str, Any]
+    result: Optional[Dict[str, Any]] = None
+    error_type: Optional[str] = None
+    error_message: Optional[str] = None
+    traceback: Optional[str] = None
+    attempts: int = 1
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RunOutcome":
+        status = data["status"]
+        # Legacy checkpoints wrote fail_fast slots as status=failed +
+        # error_type="Cancelled". Normalize on load.
+        if (
+            status == "failed"
+            and data.get("error_type") == "Cancelled"
+            and not data.get("traceback")
+        ):
+            status = "cancelled"
+        return cls(
+            index=int(data["index"]),
+            status=status,  # type: ignore[arg-type]
+            params=dict(data.get("params") or {}),
+            result=data.get("result"),
+            error_type=data.get("error_type"),
+            error_message=data.get("error_message"),
+            traceback=data.get("traceback"),
+            attempts=int(data.get("attempts", 1)),
+        )
+
+
+# Current writer schema (Arrow IPC frames + revision-aware fingerprint).
+# Schema 1: lossy record JSON frames.
+# Schema 2: Arrow IPC frames (polars_ipc_b64).
+# Schema 3: + workload fingerprint / model_class metadata.
+# Schema 4: + code-revision fields in fingerprint; cancelled status.
+_CHECKPOINT_SCHEMA = 4
+_LEGACY_CHECKPOINT_SCHEMAS = frozenset({1, 2, 3})
+
+
+class CheckpointSerializationError(ValueError):
+    """Raised when a result frame cannot be encoded losslessly for a checkpoint."""
+
+
+def _serialize_frame(df: Any) -> Optional[Dict[str, Any]]:
+    """Type-preserving encoding of a Polars frame (Arrow IPC + base64).
+
+    Record-based JSON (schema 1) loses dtypes. Schema 2+ uses Arrow IPC so
+    UInt8 / Datetime / Categorical round-trip. Encoding failures raise
+    :class:`CheckpointSerializationError` instead of silently storing
+    ``repr(df)`` (which reloads as a string and destroys frame structure).
+
+    Writers always emit this under :data:`_CHECKPOINT_SCHEMA` (not schema 1)
+    so legacy schema-1-only readers reject the file instead of treating the
+    payload dict as a DataFrame.
+    """
+    if df is None:
+        return None
+    import polars as pl
+
+    if not isinstance(df, pl.DataFrame):
+        raise CheckpointSerializationError(
+            "Checkpoint frames must be Polars DataFrames; "
+            f"got {type(df).__name__}"
+        )
+    try:
+        buf = io.BytesIO()
+        df.write_ipc(buf)
+    except Exception as exc:
+        dtypes = [f"{c}:{dt}" for c, dt in zip(df.columns, df.dtypes)]
+        raise CheckpointSerializationError(
+            "Failed to encode DataFrame as Arrow IPC for checkpoint "
+            f"(dtypes=[{', '.join(dtypes)}]). "
+            "Object / unsupported columns cannot be checkpointed losslessly. "
+            f"Underlying error: {exc}"
+        ) from exc
     return {
-        "params": params,
-        "model": results.get("model"),
-        "agents": results.get("agents"),
-        "info": results.get("info"),
+        "_kind": "polars_ipc_b64",
+        "columns": list(df.columns),
+        "dtypes": [str(dt) for dt in df.dtypes],
+        "data": base64.b64encode(buf.getvalue()).decode("ascii"),
     }
 
 
+def _deserialize_frame(payload: Any, *, schema_version: int) -> Any:
+    """Decode a frame payload for a known checkpoint schema version."""
+    if payload is None:
+        return None
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"Checkpoint frame payload must be an object, got {type(payload).__name__}"
+        )
+    kind = payload.get("_kind")
+    if kind == "polars_ipc_b64":
+        # Canonical representation for schema 2+. Early schema-1 writers
+        # (historical intermediate commits) also emitted IPC while still
+        # labeling schema_version=1 — accept that hybrid so real checkpoints
+        # remain readable. Schema 1 may also use polars_records (lossy).
+        import polars as pl
+
+        try:
+            raw = base64.b64decode(payload["data"])
+            return pl.read_ipc(io.BytesIO(raw))
+        except Exception as exc:
+            raise ValueError(
+                f"Failed to decode polars_ipc_b64 checkpoint frame: {exc}"
+            ) from exc
+    if kind == "polars_records":
+        # Only schema 1 used lossy record JSON; schema 2+ is IPC-only.
+        if schema_version != 1:
+            raise ValueError(
+                f"Frame kind 'polars_records' is only valid for "
+                f"schema_version=1; got schema_version={schema_version}"
+            )
+        # Schema 1: lossy record JSON (dtypes not preserved).
+        import polars as pl
+
+        rows = payload.get("rows") or []
+        if not rows:
+            cols = payload.get("columns") or []
+            return pl.DataFrame({c: [] for c in cols}) if cols else pl.DataFrame()
+        return pl.DataFrame(rows)
+    if kind == "repr":
+        raise ValueError(
+            "Checkpoint frame kind 'repr' is no longer supported "
+            "(destroyed DataFrame structure). Re-run the experiment."
+        )
+    raise ValueError(
+        f"Unknown checkpoint frame kind {kind!r} "
+        f"(schema_version={schema_version})"
+    )
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Exclusive random-temp write + fsync + replace (symlink-safe)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    tmp = path.parent / f".{path.name}.{secrets.token_hex(16)}.tmp"
+    fd = None
+    try:
+        fd = os.open(str(tmp), flags, 0o644)
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise OSError(f"Refusing non-regular checkpoint temp: {tmp}")
+        written = 0
+        while written < len(data):
+            n = os.write(fd, data[written:])
+            if n <= 0:
+                raise OSError(f"Short write to {tmp}")
+            written += n
+        os.fsync(fd)
+        os.close(fd)
+        fd = None
+        st = os.lstat(tmp)
+        if not stat.S_ISREG(st.st_mode):
+            raise OSError(f"Checkpoint temp is not a regular file: {tmp}")
+        os.replace(str(tmp), str(path))
+        try:
+            dir_fd = os.open(str(path.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            if tmp.exists() or tmp.is_symlink():
+                tmp.unlink()
+        except OSError:
+            pass
+
+
+def _serialize_result(result: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if result is None:
+        return None
+    return {
+        "params": result.get("params"),
+        "info": result.get("info"),
+        "model": _serialize_frame(result.get("model")),
+        "agents": _serialize_frame(result.get("agents")),
+    }
+
+
+def _deserialize_result(
+    data: Optional[Dict[str, Any]], *, schema_version: int
+) -> Optional[Dict[str, Any]]:
+    if data is None:
+        return None
+    return {
+        "params": data.get("params"),
+        "info": data.get("info"),
+        "model": _deserialize_frame(data.get("model"), schema_version=schema_version),
+        "agents": _deserialize_frame(
+            data.get("agents"), schema_version=schema_version
+        ),
+    }
+
+
+def _qualified_model_name(model_class: Type) -> str:
+    return f"{model_class.__module__}.{model_class.__qualname__}"
+
+
+def _stable_json(obj: Any) -> str:
+    return json.dumps(obj, sort_keys=True, default=str, separators=(",", ":"))
+
+
+def _ambr_version_string() -> Optional[str]:
+    try:
+        from . import __version__ as ver
+
+        return str(ver) if ver is not None else None
+    except Exception:
+        return None
+
+
+def _ambr_revision_string() -> Optional[str]:
+    """AMBER package revision (env / build stamp — never CWD git)."""
+    try:
+        from .provenance import _ambr_git_revision
+
+        return _ambr_git_revision()
+    except Exception:
+        return None
+
+
+def _application_revision_string() -> Optional[str]:
+    """Caller application revision (``AMBER_APP_REVISION``)."""
+    try:
+        from .provenance import _application_revision
+
+        return _application_revision()
+    except Exception:
+        return None
+
+
+def _model_source_digest(model_class: Type) -> Optional[str]:
+    """SHA-256 of the model class source, when available.
+
+    Interactive / C-extension classes without source return ``None``; callers
+    should then supply :paramref:`ParallelRunner.workload_revision` or set
+    ``AMBER_APP_REVISION`` / ``AMBER_WORKLOAD_REVISION`` so code edits still
+    invalidate fingerprints.
+    """
+    try:
+        import inspect
+
+        src = inspect.getsource(model_class)
+    except (OSError, TypeError):
+        return None
+    return hashlib.sha256(src.encode("utf-8")).hexdigest()
+
+
+def _resolve_workload_revision(
+    explicit: Optional[str] = None,
+) -> Optional[str]:
+    """Explicit arg > ``AMBER_WORKLOAD_REVISION`` > ``AMBER_APP_REVISION``."""
+    if explicit is not None:
+        text = str(explicit).strip()
+        return text or None
+    env = os.environ.get("AMBER_WORKLOAD_REVISION")
+    if env is not None and env.strip():
+        return env.strip()
+    return _application_revision_string()
+
+
+def _workload_identity(
+    model_class: Type,
+    param_list: List[Dict[str, Any]],
+    *,
+    workload_revision: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Fields that identify a ParallelRunner workload for resume safety."""
+    return {
+        "model_class": _qualified_model_name(model_class),
+        "n": len(param_list),
+        "params": param_list,
+        "ambr_version": _ambr_version_string(),
+        "ambr_revision": _ambr_revision_string(),
+        "model_source_digest": _model_source_digest(model_class),
+        "workload_revision": _resolve_workload_revision(workload_revision),
+    }
+
+
+def _workload_fingerprint_v3(
+    model_class: Type,
+    param_list: List[Dict[str, Any]],
+) -> str:
+    """Schema-3 fingerprint: model class name + param list only.
+
+    Schema 3 writers hashed only these fields. Resume must recompute with the
+    same algorithm or every otherwise-identical schema-3 checkpoint fails.
+    """
+    payload = {
+        "model_class": _qualified_model_name(model_class),
+        "n": len(param_list),
+        "params": param_list,
+    }
+    return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
+
+
+def _workload_fingerprint(
+    model_class: Type,
+    param_list: List[Dict[str, Any]],
+    *,
+    workload_revision: Optional[str] = None,
+) -> str:
+    """Hash of model identity, params, and code-revision inputs (schema 4+).
+
+    Includes AMBER version/revision, a source digest of ``model_class`` when
+    available, and an optional caller-supplied workload revision so editing
+    model code or the library between a partial run and resume invalidates
+    the fingerprint instead of mixing old outcomes with new code.
+    """
+    payload = _workload_identity(
+        model_class, param_list, workload_revision=workload_revision
+    )
+    return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
+
+
+def _expected_workload_fingerprint(
+    model_class: Type,
+    param_list: List[Dict[str, Any]],
+    *,
+    schema_version: int,
+    workload_revision: Optional[str] = None,
+) -> str:
+    """Fingerprint the current run would have under ``schema_version``."""
+    if int(schema_version) <= 3:
+        return _workload_fingerprint_v3(model_class, param_list)
+    return _workload_fingerprint(
+        model_class, param_list, workload_revision=workload_revision
+    )
+
+
+def _params_match(saved: Any, requested: Dict[str, Any]) -> bool:
+    if not isinstance(saved, dict):
+        return False
+    return _stable_json(saved) == _stable_json(requested)
+
+
+def _is_cancelled_outcome(outcome: RunOutcome) -> bool:
+    """Never-run / fail_fast-cancelled slots must not block resume.
+
+    Identified by ``status == "cancelled"`` only — never by matching a user
+    exception class named ``Cancelled`` (those are real ``failed`` outcomes).
+    """
+    return outcome.status == "cancelled"
+
+
+def _run_single_simulation(
+    index: int,
+    params: Dict[str, Any],
+    model_class: Type,
+) -> Dict[str, Any]:
+    """Worker: run one simulation and return a picklable outcome dict."""
+    try:
+        model = model_class(params)
+        results = model.run()
+        return {
+            "index": index,
+            "status": "success",
+            "params": params,
+            "result": {
+                "params": params,
+                "model": results.get("model"),
+                "agents": results.get("agents"),
+                "info": results.get("info"),
+            },
+            "error_type": None,
+            "error_message": None,
+            "traceback": None,
+            "attempts": 1,
+        }
+    except Exception as exc:
+        return {
+            "index": index,
+            "status": "failed",
+            "params": params,
+            "result": None,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "traceback": "".join(
+                _traceback_mod.format_exception(type(exc), exc, exc.__traceback__)
+            ),
+            "attempts": 1,
+        }
+
+
+def _process_worker(
+    conn: Any,
+    index: int,
+    params: Dict[str, Any],
+    model_class: Type,
+) -> None:
+    """Child process entry: run one simulation and send the outcome dict."""
+    try:
+        conn.send(_run_single_simulation(index, params, model_class))
+    except Exception as exc:  # pragma: no cover - extremely defensive
+        conn.send(
+            {
+                "index": index,
+                "status": "failed",
+                "params": params,
+                "result": None,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "traceback": "".join(
+                    _traceback_mod.format_exception(
+                        type(exc), exc, exc.__traceback__
+                    )
+                ),
+                "attempts": 1,
+            }
+        )
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _terminate_process(proc: mp.Process, grace: float = 1.0) -> None:
+    """Hard-kill a worker process (terminate → kill)."""
+    if not proc.is_alive():
+        proc.join(timeout=grace)
+        return
+    proc.terminate()
+    proc.join(timeout=grace)
+    if proc.is_alive():
+        try:
+            proc.kill()  # Python 3.7+
+        except AttributeError:  # pragma: no cover
+            pass
+        proc.join(timeout=grace)
+
+
 class ParallelRunner:
-    """Run multiple independent simulations in **CPU process pools**.
+    """Run multiple independent simulations in **CPU processes**.
 
     Important
     ---------
@@ -425,95 +900,572 @@ class ParallelRunner:
       sweeps, or :class:`~ambr.gpu_ensemble.GPUEnsembleRunner` for GPU batches)
       when you want many runs.
     * Uses ``multiprocessing`` with the ``spawn`` context — models and params
-      must be picklable.
+      must be picklable. Each task runs in its **own process** so ``timeout``
+      can hard-terminate hung workers (``Process.terminate`` / ``kill``).
     * Does **not** use the GPU. For many short GPU replicates, prefer
       :class:`~ambr.gpu_ensemble.GPUEnsembleRunner`.
+    * Returns a list of :class:`RunOutcome` **in input order** (not completion
+      order). Failures and timeouts are structured, never silent.
+    * Checkpoints are **JSON** (no ``pickle``). Resume requires
+      ``trust_checkpoint=True`` and a schema-validated file.
 
     Usage::
 
         runner = ParallelRunner(MyModel, n_workers=4)
-        results = runner.run([
-            {"n": 100, "steps": 20, "seed": 0, "show_progress": False},
-            {"n": 100, "steps": 20, "seed": 1, "show_progress": False},
-        ])
+        outcomes = runner.run(
+            [
+                {"n": 100, "steps": 20, "seed": 0, "show_progress": False},
+                {"n": 100, "steps": 20, "seed": 1, "show_progress": False},
+            ],
+            fail_fast=False,
+            timeout=120,
+            retry=1,
+            max_in_flight=8,
+        )
+        for o in outcomes:
+            if o.status == "success":
+                print(o.index, o.result["info"]["run_uuid"])
     """
 
-    def __init__(self, model_class: Type, n_workers: int = None):
+    def __init__(
+        self,
+        model_class: Type,
+        n_workers: int = None,
+        *,
+        workload_revision: Optional[str] = None,
+    ):
         """
         Initialize parallel runner.
 
         Args:
             model_class: Model class to instantiate
-            n_workers: Number of parallel workers (default: CPU count)
+            n_workers: Maximum concurrent worker processes (default: CPU count).
+                Must be ``>= 1``.
+            workload_revision: Optional caller-supplied code revision string
+                folded into the checkpoint workload fingerprint. Use when the
+                model class source is unavailable (interactive defs) or when
+                application code outside ``model_class`` affects results.
+                Falls back to ``AMBER_WORKLOAD_REVISION`` then
+                ``AMBER_APP_REVISION`` when omitted.
         """
         self.model_class = model_class
-        self.n_workers = n_workers or mp.cpu_count()
+        n = n_workers if n_workers is not None else mp.cpu_count()
+        if int(n) < 1:
+            raise ValueError(f"n_workers must be >= 1, got {n_workers!r}")
+        self.n_workers = int(n)
+        self.workload_revision = workload_revision
 
     def run(
-        self, param_list: List[Dict[str, Any]], show_progress: bool = True
-    ) -> List[Dict[str, Any]]:
-        """
-        Run simulations in parallel.
+        self,
+        param_list: List[Dict[str, Any]],
+        show_progress: bool = True,
+        *,
+        fail_fast: bool = False,
+        timeout: Optional[float] = None,
+        retry: int = 0,
+        max_in_flight: Optional[int] = None,
+        checkpoint_path: Optional[Union[str, Path]] = None,
+        resume: bool = False,
+        trust_checkpoint: bool = False,
+        allow_unverified_checkpoint: bool = False,
+    ) -> List[RunOutcome]:
+        """Run simulations in parallel; return :class:`RunOutcome` in input order.
 
         Args:
-            param_list: List of parameter dictionaries
-            show_progress: Whether to show progress
+            param_list: List of parameter dictionaries (order preserved).
+            show_progress: Print a completion counter.
+            fail_fast: Stop submitting new work after the first failure/timeout
+                and **terminate every remaining live worker**.
+            timeout: Per-run wall-clock seconds (``None`` = no limit). Timed-out
+                workers are **terminated** (not cooperatively cancelled).
+            retry: Extra attempts after a failed attempt (not applied to
+                timeouts by default).
+            max_in_flight: Optional additional cap on concurrent processes.
+                Effective concurrency is ``min(n_workers, max_in_flight)`` when
+                set; never exceeds ``n_workers``. Must be ``>= 1`` if provided.
+            checkpoint_path: Optional JSON path; completed outcomes are
+                written after each finish for crash-safe resume.
+            resume: If True and ``checkpoint_path`` exists, skip indices
+                already present **only when** the checkpoint workload
+                fingerprint and per-entry params match this run. Requires
+                ``trust_checkpoint=True``. Cancelled/never-run slots are not
+                treated as finished (they remain pending).
+            trust_checkpoint: Explicit opt-in to read a checkpoint file.
+                Checkpoints are JSON (not pickle); still only load files you
+                control.
+            allow_unverified_checkpoint: Opt into resuming schema-1/2
+                checkpoints that lack workload identity (no fingerprint /
+                ``model_class``). Default ``False`` — those files are still
+                loadable via :meth:`_load_checkpoint` for inspection/export,
+                but resume refuses them to prevent silent cross-model
+                restore when only per-index params match. Prefer re-running
+                once to rewrite as schema 4.
 
         Returns:
-            List of result dictionaries
+            ``len(param_list)`` outcomes in the same order as ``param_list``.
         """
-        results = []
         total = len(param_list)
+        outcomes: List[Optional[RunOutcome]] = [None] * total
+        max_attempts = 1 + max(0, int(retry))
+        if max_in_flight is not None and int(max_in_flight) < 1:
+            raise ValueError(
+                f"max_in_flight must be >= 1 when set, got {max_in_flight!r}"
+            )
+        # Never exceed n_workers; max_in_flight is an optional tighter cap.
+        in_flight_cap = self.n_workers
+        if max_in_flight is not None:
+            in_flight_cap = min(self.n_workers, int(max_in_flight))
+        ckpt = Path(checkpoint_path) if checkpoint_path else None
+        workload_fp = _workload_fingerprint(
+            self.model_class,
+            param_list,
+            workload_revision=self.workload_revision,
+        )
+        identity = _workload_identity(
+            self.model_class,
+            param_list,
+            workload_revision=self.workload_revision,
+        )
+        model_name = identity["model_class"]
 
-        # Use spawn context for better compatibility
-        ctx = mp.get_context("spawn")
-
-        with ProcessPoolExecutor(
-            max_workers=self.n_workers, mp_context=ctx
-        ) as executor:
-            # Submit all tasks
-            futures = {
-                executor.submit(_run_single_simulation, params, self.model_class): i
-                for i, params in enumerate(param_list)
-            }
-
-            # Collect results as they complete
-            completed = 0
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    results.append(result)
-                    completed += 1
-                    if show_progress:
-                        print(f"\rCompleted {completed}/{total} simulations", end="")
-                except Exception as e:
-                    print(f"\nSimulation failed: {e}")
-                    results.append(
-                        {"error": str(e), "params": param_list[futures[future]]}
+        if resume:
+            if not trust_checkpoint:
+                raise ValueError(
+                    "resume=True requires trust_checkpoint=True. "
+                    "Only resume from checkpoint files you control "
+                    "(JSON schema; pickle is not used)."
+                )
+            if ckpt is not None and ckpt.is_file():
+                meta, loaded = self._load_checkpoint(ckpt)
+                schema_ver = int(meta.get("schema_version") or 0)
+                saved_fp = meta.get("workload_fingerprint")
+                saved_model = meta.get("model_class")
+                # Schema 1/2 had no workload identity. Resume must not accept
+                # params-only matches (cross-model restore). Load remains ok.
+                identity_less = (
+                    schema_ver < 3
+                    or (saved_fp is None and saved_model is None)
+                )
+                if identity_less and not allow_unverified_checkpoint:
+                    raise ValueError(
+                        "Checkpoint lacks workload identity "
+                        f"(schema_version={schema_ver}, no fingerprint/"
+                        "model_class). Resume is refused by default to prevent "
+                        "silent cross-model restore. Re-run without resume to "
+                        "rewrite as schema 4, inspect via _load_checkpoint, or "
+                        "pass allow_unverified_checkpoint=True for an unsafe "
+                        "params-only migration."
                     )
-                    completed += 1
+                if not identity_less:
+                    expected_fp = _expected_workload_fingerprint(
+                        self.model_class,
+                        param_list,
+                        schema_version=schema_ver,
+                        workload_revision=self.workload_revision,
+                    )
+                    if saved_fp is None:
+                        raise ValueError(
+                            "Checkpoint schema "
+                            f"{schema_ver} is missing workload_fingerprint. "
+                            "Refuse resume; re-run without resume or use a "
+                            "complete checkpoint."
+                        )
+                    if saved_fp != expected_fp:
+                        raise ValueError(
+                            "Checkpoint workload fingerprint mismatch: the "
+                            "saved run is for a different model, parameter "
+                            "list, and/or code revision. "
+                            f"checkpoint={saved_fp!r} "
+                            f"requested={expected_fp!r} "
+                            f"(validated as schema {schema_ver}). "
+                            "Use a matching param_list/model_class or a new "
+                            "checkpoint."
+                        )
+                    if saved_model is not None and saved_model != model_name:
+                        raise ValueError(
+                            f"Checkpoint model_class mismatch: "
+                            f"checkpoint={saved_model!r} "
+                            f"requested={model_name!r}"
+                        )
+                for idx, outcome in loaded.items():
+                    if not (0 <= idx < total):
+                        continue
+                    # Cancelled / never-run slots stay pending for resume.
+                    if _is_cancelled_outcome(outcome):
+                        continue
+                    if not _params_match(outcome.params, param_list[idx]):
+                        raise ValueError(
+                            f"Checkpoint entry {idx} params do not match this "
+                            f"run (saved={outcome.params!r}, "
+                            f"requested={param_list[idx]!r})"
+                        )
+                    outcomes[idx] = outcome
+
+        pending_indices = [i for i, o in enumerate(outcomes) if o is None]
+        stop_submitting = False
+        completed_count = sum(1 for o in outcomes if o is not None)
+
+        ctx = mp.get_context("spawn")
+        # Single authoritative live-process registry. Updated immediately on
+        # every process start (initial submit *and* retries). fail_fast /
+        # finally always terminate this set — never a dual still_active list
+        # that can drop retries from cleanup.
+        # Entry: (process, parent_conn, index, attempt, started)
+        active: List[Tuple[mp.Process, Any, int, int, float]] = []
+        idx_iter = iter(pending_indices)
+
+        def _start_worker(i: int, attempt: int) -> None:
+            """Spawn one worker and register it in ``active`` immediately.
+
+            Registration happens **before** parent-side ``child_conn.close()``
+            so a close failure cannot leave a live process outside the
+            fail_fast / ``finally`` cleanup set.
+            """
+            parent_conn, child_conn = ctx.Pipe(duplex=False)
+            proc = ctx.Process(
+                target=_process_worker,
+                args=(child_conn, i, param_list[i], self.model_class),
+            )
+            proc.start()
+            # Register before any post-start cleanup on the parent pipe end so
+            # fail_fast / finally always see this process even if close raises.
+            active.append((proc, parent_conn, i, attempt, time.monotonic()))
+            child_conn.close()  # only child writes
+
+        def _submit_one() -> bool:
+            if stop_submitting:
+                return False
+            try:
+                i = next(idx_iter)
+            except StopIteration:
+                return False
+            _start_worker(i, 1)
+            return True
+
+        def _record(outcome: RunOutcome) -> None:
+            nonlocal completed_count, stop_submitting
+            outcomes[outcome.index] = outcome
+            completed_count += 1
+            if show_progress:
+                print(
+                    f"\rCompleted {completed_count}/{total} simulations",
+                    end="",
+                )
+            if ckpt is not None:
+                self._save_checkpoint(
+                    ckpt,
+                    outcomes,
+                    model_class=self.model_class,
+                    param_list=param_list,
+                    workload_fingerprint=workload_fp,
+                    workload_identity=identity,
+                )
+            # Cancelled slots are not execution failures for fail_fast.
+            if outcome.status not in ("success", "cancelled") and fail_fast:
+                stop_submitting = True
+
+        def _kill_all_live(*, cancel_unfinished: bool) -> None:
+            """Terminate every process currently in the live registry."""
+            for proc, conn, i, attempt, _started in list(active):
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                _terminate_process(proc)
+                if cancel_unfinished and outcomes[i] is None:
+                    outcomes[i] = RunOutcome(
+                        index=i,
+                        status="cancelled",
+                        params=dict(param_list[i]),
+                        error_type=None,
+                        error_message="Cancelled (fail_fast)",
+                        attempts=attempt,
+                    )
+            active.clear()
+
+        try:
+            while len(active) < in_flight_cap and _submit_one():
+                pass
+
+            while active:
+                now = time.monotonic()
+                progressed = False
+                # Snapshot for safe iteration; mutations (remove finished /
+                # append retries) go to the authoritative ``active`` list.
+                snapshot = list(active)
+
+                for entry in snapshot:
+                    if entry not in active:
+                        # Already removed earlier in this scan.
+                        continue
+                    proc, conn, i, attempt, started = entry
+
+                    # Hard wall-clock timeout → terminate the process.
+                    if timeout is not None and (now - started) >= float(timeout):
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        _terminate_process(proc)
+                        try:
+                            active.remove(entry)
+                        except ValueError:
+                            pass
+                        _record(
+                            RunOutcome(
+                                index=i,
+                                status="timeout",
+                                params=dict(param_list[i]),
+                                error_type="TimeoutError",
+                                error_message=f"Exceeded timeout={timeout}s",
+                                attempts=attempt,
+                            )
+                        )
+                        progressed = True
+                        continue
+
+                    # Non-blocking poll for a finished worker message.
+                    try:
+                        ready = conn.poll(0)
+                    except Exception:
+                        ready = False
+
+                    if ready:
+                        try:
+                            raw = conn.recv()
+                        except EOFError:
+                            raw = {
+                                "index": i,
+                                "status": "failed",
+                                "params": dict(param_list[i]),
+                                "result": None,
+                                "error_type": "EOFError",
+                                "error_message": "Worker closed pipe without result",
+                                "traceback": None,
+                                "attempts": attempt,
+                            }
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        proc.join(timeout=1.0)
+                        if proc.is_alive():
+                            _terminate_process(proc)
+                        try:
+                            active.remove(entry)
+                        except ValueError:
+                            pass
+
+                        outcome = RunOutcome.from_dict(raw)
+                        outcome.attempts = attempt
+
+                        if (
+                            outcome.status == "failed"
+                            and attempt < max_attempts
+                            and not stop_submitting
+                        ):
+                            # Retry: register in ``active`` immediately so a
+                            # later fail_fast in this same scan (or finally)
+                            # can terminate it.
+                            _start_worker(i, attempt + 1)
+                            progressed = True
+                            continue
+
+                        _record(outcome)
+                        progressed = True
+                        continue
+
+                    if not proc.is_alive():
+                        # Died without a message
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        proc.join(timeout=0.5)
+                        try:
+                            active.remove(entry)
+                        except ValueError:
+                            pass
+                        _record(
+                            RunOutcome(
+                                index=i,
+                                status="failed",
+                                params=dict(param_list[i]),
+                                error_type="WorkerDied",
+                                error_message=(
+                                    f"Worker exited with code {proc.exitcode}"
+                                ),
+                                attempts=attempt,
+                            )
+                        )
+                        progressed = True
+                        continue
+
+                    # Still running — leave in active.
+
+                if stop_submitting:
+                    # Kill the entire live registry, including retries started
+                    # mid-scan that never existed on the pre-scan snapshot.
+                    _kill_all_live(cancel_unfinished=True)
+                    break
+
+                while len(active) < in_flight_cap and _submit_one():
+                    progressed = True
+
+                if not progressed and active:
+                    # Avoid busy-spin; short sleep while workers run.
+                    time.sleep(0.05)
+        finally:
+            # Ensure no orphaned workers on unexpected exit.
+            _kill_all_live(cancel_unfinished=False)
 
         if show_progress:
-            print()  # New line after progress
+            print()
 
-        return results
+        for i, o in enumerate(outcomes):
+            if o is None:
+                outcomes[i] = RunOutcome(
+                    index=i,
+                    status="cancelled",
+                    params=dict(param_list[i]),
+                    error_type=None,
+                    error_message="Not run (fail_fast or cancelled)",
+                )
+
+        if ckpt is not None:
+            self._save_checkpoint(
+                ckpt,
+                outcomes,
+                model_class=self.model_class,
+                param_list=param_list,
+                workload_fingerprint=workload_fp,
+                workload_identity=identity,
+            )
+
+        return [o for o in outcomes if o is not None]
 
     def run_with_seeds(
-        self, base_params: Dict[str, Any], seeds: List[int], show_progress: bool = True
-    ) -> List[Dict[str, Any]]:
-        """
-        Run same parameters with different random seeds.
-
-        Args:
-            base_params: Base parameter dictionary
-            seeds: List of random seeds
-            show_progress: Whether to show progress
-
-        Returns:
-            List of result dictionaries
-        """
+        self,
+        base_params: Dict[str, Any],
+        seeds: List[int],
+        show_progress: bool = True,
+        **run_kwargs: Any,
+    ) -> List[RunOutcome]:
+        """Run the same parameters with different random seeds."""
         param_list = [{**base_params, "seed": seed} for seed in seeds]
-        return self.run(param_list, show_progress)
+        return self.run(param_list, show_progress=show_progress, **run_kwargs)
+
+    @staticmethod
+    def _save_checkpoint(
+        path: Path,
+        outcomes: List[Optional[RunOutcome]],
+        *,
+        model_class: Type,
+        param_list: List[Dict[str, Any]],
+        workload_fingerprint: str,
+        workload_identity: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Write a JSON checkpoint (never pickle — see SECURITY.md).
+
+        Uses a random exclusive temp name (not a predictable ``*.tmp`` path)
+        so a pre-planted symlink cannot redirect the write outside the
+        destination directory.
+
+        Never-run ``status=cancelled`` outcomes are **omitted** so a later
+        resume treats those indices as pending work. User failures whose
+        exception class is named ``Cancelled`` use ``status=failed`` and are
+        persisted normally.
+        """
+        identity = workload_identity or _workload_identity(
+            model_class, param_list
+        )
+        payload_outcomes: Dict[str, Any] = {}
+        for i, o in enumerate(outcomes):
+            if o is None:
+                continue
+            if _is_cancelled_outcome(o):
+                # Leave pending for resume — do not mark as finished work.
+                continue
+            d = o.to_dict()
+            d["result"] = _serialize_result(o.result)
+            payload_outcomes[str(i)] = d
+        payload = {
+            "schema_version": _CHECKPOINT_SCHEMA,
+            "format": "ambr.ParallelRunner.checkpoint+json",
+            "workload_fingerprint": workload_fingerprint,
+            "model_class": identity["model_class"],
+            "n_params": len(param_list),
+            "ambr_version": identity.get("ambr_version"),
+            "ambr_revision": identity.get("ambr_revision"),
+            "model_source_digest": identity.get("model_source_digest"),
+            "workload_revision": identity.get("workload_revision"),
+            "outcomes": payload_outcomes,
+        }
+        text = (json.dumps(payload, indent=2, default=str) + "\n").encode("utf-8")
+        _atomic_write_bytes(Path(path), text)
+
+    @staticmethod
+    def _load_checkpoint(
+        path: Path,
+    ) -> Tuple[Dict[str, Any], Dict[int, RunOutcome]]:
+        """Load a JSON checkpoint. Raises on unknown / unsafe formats.
+
+        Returns ``(metadata, outcomes_by_index)``. Cancelled entries are not
+        restored (callers treat those indices as pending).
+        """
+        try:
+            raw_text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"Checkpoint {path} is not UTF-8 JSON. "
+                "Pickle checkpoints are not supported (RCE risk)."
+            ) from exc
+        try:
+            payload = json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Checkpoint {path} is not valid JSON. "
+                "Pickle checkpoints are not supported (RCE risk)."
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ValueError("Checkpoint root must be a JSON object")
+        version = payload.get("schema_version")
+        supported = {_CHECKPOINT_SCHEMA} | _LEGACY_CHECKPOINT_SCHEMAS
+        if version not in supported:
+            raise ValueError(
+                f"Unsupported checkpoint schema_version={version!r}; "
+                f"supported={sorted(supported)}"
+            )
+        if payload.get("format") != "ambr.ParallelRunner.checkpoint+json":
+            raise ValueError(
+                f"Unsupported checkpoint format={payload.get('format')!r}"
+            )
+        outcomes_raw = payload.get("outcomes")
+        if not isinstance(outcomes_raw, dict):
+            raise ValueError("Checkpoint 'outcomes' must be an object")
+        out: Dict[int, RunOutcome] = {}
+        for k, v in outcomes_raw.items():
+            if not isinstance(v, dict):
+                continue
+            data = dict(v)
+            data["result"] = _deserialize_result(
+                data.get("result"), schema_version=int(version)
+            )
+            outcome = RunOutcome.from_dict(data)
+            if _is_cancelled_outcome(outcome):
+                continue
+            out[int(k)] = outcome
+        meta = {
+            "schema_version": version,
+            "workload_fingerprint": payload.get("workload_fingerprint"),
+            "model_class": payload.get("model_class"),
+            "n_params": payload.get("n_params"),
+            "ambr_version": payload.get("ambr_version"),
+            "ambr_revision": payload.get("ambr_revision"),
+            "model_source_digest": payload.get("model_source_digest"),
+            "workload_revision": payload.get("workload_revision"),
+        }
+        return meta, out
 
 
 # =============================================================================
@@ -677,6 +1629,7 @@ def install_performance_deps():
 __all__ = [
     "SpatialIndex",
     "ParallelRunner",
+    "RunOutcome",
     # Scatter (vectorized write path)
     "scatter_add_1d",
     "scatter_write_1d",

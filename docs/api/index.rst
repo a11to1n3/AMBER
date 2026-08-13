@@ -48,10 +48,9 @@ Quick Reference
 
 **Core Classes:**
 
-* :class:`ambr.Model` - Base class for all agent-based models
-* :class:`ambr.Agent` - Individual agent with behaviors and properties
-* :class:`ambr.BaseAgent` - Abstract base class for custom agents
-* :class:`ambr.BaseModel` - Abstract base class for custom models
+* :class:`ambr.Model` - Base class for user models (``setup`` / ``step`` / ``run``)
+* :class:`ambr.Agent` - User-facing agent (``setup``, DataFrame-synced attributes)
+* :class:`ambr.BaseModel` / :class:`ambr.BaseAgent` - Low-level primitives (prefer ``Model`` / ``Agent``)
 * :class:`ambr.Population` - SoA memory manager for high-performance state handling
 * :class:`ambr.RunResults` - Dict-like ``model.run()`` result with attribute access
 
@@ -69,7 +68,7 @@ Quick Reference
 
 * :func:`ambr.grid_search` - Exhaustive parameter space search
 * :func:`ambr.random_search` - Random parameter sampling
-* :func:`ambr.bayesian_optimization` - Bayesian optimization of model parameters
+* :func:`ambr.bayesian_optimization` - SMAC RandomForest Bayesian optimization
 
 **Experiments:**
 
@@ -110,7 +109,7 @@ Quick Reference
 * :func:`ambr.smac_batch_calibrate` - SMAC over a batched ensemble
   (``ambr[advanced]``)
 
-**Activation & viz (0.4.6):**
+**Activation & viz (0.5):**
 
 * :func:`ambr.activate` / :meth:`ambr.Model.activate_agents` - OOP activation
   helpers (not a schedule proof); see :doc:`scheduling`

@@ -123,7 +123,7 @@ def main():
         }
     )
     res = m.run()
-    print(res.model.tail())
+    print(res.model.tail().to_dicts())
     print("final happy_frac:", float(res.model["happy_frac"][-1]))
 
 
