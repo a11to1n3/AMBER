@@ -79,7 +79,7 @@ Create your first model:
    else:
        results = model.cpu(mode="vectorized").run()
    print(results.info)
-   print(results.model)       # also results['model']
+   print(results.model.tail(3).to_dicts())       # also results['model']
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.

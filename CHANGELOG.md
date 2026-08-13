@@ -37,6 +37,10 @@ release-gate series. **Requires a new PyPI version** (0.4.7 already published).
   without the injected trial seed.
 - **Install wording**: officially tested/supported on Python 3.10–3.13
   (``requires-python`` remains ``>=3.10``; 3.14+ is not a declared target).
+- **README extras**: document standalone ``ambr[gpu]`` and ``ambr[viz]``.
+  Remaining README / Sphinx DataFrame prints use ``.to_dicts()``.
+  Tutorial fences (spatial inspect + experiment summary) included; CI
+  scans doc fences for ``print(df)`` without ``.to_dicts()``.
 
 - **MultiObjectiveSMAC strategy**: `strategy` is validated and forwarded to
   each scalar `SMACOptimizer` (`bayesian` / `random` /

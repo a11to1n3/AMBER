@@ -146,7 +146,7 @@ Then either:
 
    res = Drift({"n": 1_000_000, "steps": 100, "seed": 0}).run()
    print(res.info)   # shows array_module / device
-   print(res.model.tail())
+   print(res.model.tail(3).to_dicts())
 
 ``ArrayKernelModel`` runs on **NumPy** if no GPU is present (automatic fallback).
 

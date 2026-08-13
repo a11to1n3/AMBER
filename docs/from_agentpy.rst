@@ -74,8 +74,8 @@ AMBER (same idea)::
    results = WealthModel(
        {'agents': 50, 'steps': 20, 'seed': 1, 'show_progress': False}
    ).run()
-   print(results.model)    # attribute access (also results['model'])
-   print(results.agents)
+   print(results.model.tail(3).to_dicts())    # attribute access (also results['model'])
+   print(results.agents.head().to_dicts())
 
 Results: AgentPy ``DataDict`` vs AMBER ``RunResults``
 -----------------------------------------------------

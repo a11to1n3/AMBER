@@ -126,8 +126,8 @@ class WealthModel(am.Model):
         self.record_model('total', int(self.agents.wealth.sum()))
 
 results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).cpu(mode="oop").run()
-print(results.model)      # also results['model']
-print(results.agents.head())
+print(results.model.tail(3).to_dicts())      # also results['model']
+print(results.agents.head().to_dicts())
 print(results.info.get("mode"), results.info.get("execution_lane"))
 ```
 
@@ -155,8 +155,8 @@ class WealthModel(am.Model):
 _m = WealthModel({'steps': 100, 'seed': 42, 'show_progress': False})
 results = _m.gpu().run() if am.GPU_AVAILABLE else _m.cpu(mode="vectorized").run()
 print(results.info)
-print(results.model.tail(5))
-print(results.agents.head(10))
+print(results.model.tail(5).to_dicts())
+print(results.agents.head(10).to_dicts())
 ```
 
 Coming from AgentPy? See [`docs/from_agentpy.rst`](https://ambr.readthedocs.io/en/latest/from_agentpy.html).
@@ -423,6 +423,8 @@ pip install ambr
 
 # Optional extras
 pip install 'ambr[perf]'              # Numba CPU scatter (recommended on Mac)
+pip install 'ambr[gpu]'               # NVIDIA + CuPy (not Metal/MPS)
+pip install 'ambr[viz]'               # matplotlib plot helpers
 pip install 'ambr[advanced]'          # SMAC optimization
 pip install 'ambr[advanced,viz]'      # SMAC + matplotlib (example plots)
 ```

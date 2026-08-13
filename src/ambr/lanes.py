@@ -153,7 +153,7 @@ class ArrayKernelModel:
                 return {"mean_x": float(am.to_host(state["x"].mean()))}
 
         res = Drift({"n": 100_000, "steps": 50, "seed": 0}).run()
-        print(res.model)  # per-step metrics if metrics() defined
+        print(res.model.tail(3).to_dicts())  # per-step metrics if metrics() defined
     """
 
     def __init__(self, parameters: Optional[Dict[str, Any]] = None):
