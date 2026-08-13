@@ -1,8 +1,8 @@
 Release gates
 =============
 
-Tag-driven releases (``vX.Y.Z``) use ``.github/workflows/release.yml`` with
-strict gates. Soft-green skips are not allowed for GPU verification.
+Tag-driven releases (``vX.Y.Z``) use ``.github/workflows/release.yml``.
+Publish waits on the CPU wheel matrix, not on GitHub CUDA.
 
 Pipeline
 --------
@@ -16,11 +16,14 @@ Pipeline
    environment and hide ``src/ambr`` so imports cannot resolve from the tree.
 4. **CPU matrix** — OS × Python matrix runs package-surface / quickstart
    checks and the full pytest suite against the wheel.
-5. **CUDA tests** — require a real NVIDIA runner (repository variable
-   ``GPU_RUNNER``). Missing ``nvidia-smi`` / CuPy is **NOT VERIFIED** and
-   fails the job (never soft-skips green). Hardware evidence (GPU model,
-   driver, CUDA probe, CuPy, Python, AMBER commit, test log) is uploaded
-   as an artifact.
+5. **CUDA tests (optional)** — run only when repository variable
+   ``GPU_RUNNER`` is set to a single self-hosted runner label. The job
+   does **not** block publish. An unset variable skips the job; that is
+   **not** a CUDA pass. **0.5.0:** GPU claims were verified locally on an
+   NVIDIA RTX 3090 (Ubuntu x86_64, driver 560.35.05, CuPy 14.1.1) at
+   ``ce79082`` via ``scripts/run_gpu_claims.py --quick`` (7/7 PASS) and
+   the GPU pytest modules (25 passed, 2 expected skips). Not verified by
+   GitHub Actions.
 6. **SBOM** — SPDX SBOM generated from the built wheel during the build job.
 7. **Protected publish** — GitHub Environment ``pypi`` with **required
    reviewers** (maintainer approval). Only the publish job has
@@ -34,10 +37,10 @@ Maintainer setup
 * PyPI trusted publisher: owner ``a11to1n3``, repo ``AMBER``, workflow
   ``release.yml``, environment ``pypi``.
 * GitHub Environment ``pypi``: enable required reviewers.
-* Repository variable ``GPU_RUNNER``: a **single** self-hosted runner label
-  with CUDA (for example ``cuda``). The ``runs-on`` expression is scalar, so
-  do not set ``self-hosted,gpu``. Without this, the CUDA gate **and** the
-  nightly GPU workflow fail as **NOT VERIFIED** (never soft-green).
+* Optional repository variable ``GPU_RUNNER``: a **single** self-hosted
+  runner label with CUDA (for example ``cuda``). The ``runs-on`` expression
+  is scalar, so do not set ``self-hosted,gpu``. If unset, GitHub CUDA jobs
+  are skipped and publish still proceeds.
 
 Security defaults
 -----------------
@@ -63,7 +66,9 @@ Before tagging **0.5.0** (and later production tags), require **all** of::
 Plus:
 
 * Fresh wheel installation passes CPU quick starts.
-* Real CUDA verification passes.
+* GPU lane: local claim script + GPU pytest on a real NVIDIA host, **or**
+  a GitHub ``GPU_RUNNER`` job. 0.5.0 used the local RTX 3090 run above.
+  Do not claim GitHub CUDA verification unless that job actually ran.
 * Persistence traversal/staleness tests pass.
 * Importing AMBER does not alter Matplotlib configuration.
 * Intentional model/optimizer failures remain visible and diagnosable.

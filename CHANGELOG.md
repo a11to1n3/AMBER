@@ -188,14 +188,14 @@ release-gate series. **Requires a new PyPI version** (0.4.7 already published).
   failures instead of always showing "Completed".
 - **Real release gates** (`.github/workflows/release.yml`): validate
   `vX.Y.Z == project.version` and prove the version is absent from PyPI;
-  build the wheel once and test only that artifact (CPU matrix + CUDA);
-  CUDA missing is **NOT VERIFIED** (never soft-green); SHA-pinned Actions;
+  build the wheel once and test only that artifact (CPU matrix required;
+  GitHub CUDA optional and **not** a publish gate); SHA-pinned Actions;
   least-privilege permissions (`id-token: write` only on publish); protected
-  `pypi` environment for maintainer approval; SBOM + provenance attestation;
-  GPU hardware evidence artifact. See `docs/release_gates.rst`.
-- **GPU nightly**: no longer soft-skips green without CUDA — reports
-  **NOT VERIFIED** and fails; uploads hardware evidence when a GPU runner is
-  configured (`GPU_RUNNER`).
+  `pypi` environment for maintainer approval; SBOM + provenance attestation.
+  GPU hardware evidence is uploaded only when `GPU_RUNNER` is set and the
+  optional CUDA job runs. See `docs/release_gates.rst`.
+- **GPU nightly**: runs only when `GPU_RUNNER` is set; otherwise the job is
+  skipped (not a CUDA pass). Uploads hardware evidence when a runner exists.
 - **GPU teardown**: `end_execution` always clears `model._execution` even if
   sync/synchronize fails; simulation exceptions are not masked by teardown
   errors.
@@ -217,8 +217,13 @@ release-gate series. **Requires a new PyPI version** (0.4.7 already published).
 ### Notes
 
 - Supported Python: **3.10–3.13** (release wheel test matrix matches).
-- Tag ``v0.5.0`` from ``main`` after ``dev`` merge; release workflow refuses
-  re-publishing existing PyPI versions.
+- **0.5.0 GPU:** local verification on NVIDIA RTX 3090 (Ubuntu x86_64,
+  driver 560.35.05, CuPy 14.1.1) at ``ce79082`` —
+  ``scripts/run_gpu_claims.py --quick`` 7/7 PASS; GPU pytest 25 passed,
+  2 expected skips. **Not** verified by GitHub Actions. Publish does not
+  wait on the optional CUDA job.
+- Tag ``v0.5.0`` from ``main`` after this workflow/docs change; release
+  workflow refuses re-publishing existing PyPI versions.
 
 ## v0.4.7 - 2026-08-05
 
