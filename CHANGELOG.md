@@ -191,8 +191,9 @@ release-gate series. **Requires a new PyPI version** (0.4.7 already published).
   build the wheel once and test only that artifact (CPU matrix required;
   GitHub CUDA optional and **not** a publish gate); SHA-pinned Actions;
   least-privilege permissions (`id-token: write` only on publish); protected
-  `pypi` environment for maintainer approval; SBOM + provenance attestation;
-  GPU hardware evidence artifact. See `docs/release_gates.rst`.
+  `pypi` environment for maintainer approval; SBOM + provenance attestation.
+  GPU hardware evidence is uploaded only when `GPU_RUNNER` is set and the
+  optional CUDA job runs. See `docs/release_gates.rst`.
 - **GPU nightly**: runs only when `GPU_RUNNER` is set; otherwise the job is
   skipped (not a CUDA pass). Uploads hardware evidence when a runner exists.
 - **GPU teardown**: `end_execution` always clears `model._execution` even if
