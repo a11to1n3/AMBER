@@ -83,8 +83,8 @@ Create your first model:
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for what is new in **0.5.0** (step-data integrity,
-versioned RunResults, strict optimization, real release/GPU gates, provenance).
+See :doc:`changelog` for **0.5.0** (step-data integrity, versioned RunResults,
+strict optimization, extras / first-run honesty, real release/GPU gates).
 Earlier 0.4.x notes: 0.4.7 label scrub; 0.4.6 doc-fence CI / RunResults I/O /
 1.0 prep; 0.4.5 ``ambr[gpu]``; 0.4.4 lanes and the operational contract.
 

@@ -4,8 +4,8 @@ Versioning policy (SemVer)
 AMBER uses `Semantic Versioning <https://semver.org/>`_ with an explicit
 **pre-1.0** and **post-1.0** contract.
 
-Before 1.0 (current: 0.x)
--------------------------
+Before 1.0 (current released line: **0.5.x**)
+---------------------------------------------------
 
 * ``0.MAJOR.PATCH`` in practice: **breaking changes may land in minor bumps**
   (e.g. ``0.4 → 0.5``) when required for honesty or API cleanup.
