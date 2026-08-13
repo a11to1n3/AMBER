@@ -76,7 +76,9 @@ Parameter Optimization & Calibration
    - Script: ``examples/smac_calibration_basic.py``
 
 **Multi-Objective SMAC Optimization**
-   MultiObjectiveSMAC / Pareto-style examples.
+   Independent per-objective ``SMACOptimizer`` searches plus a post-hoc
+   non-dominated set. ``n_trials`` is per objective; pass ``fixed_params``
+   for ``steps`` / ``grid_size`` (do not rely on the 100-step default).
 
    - Script: ``examples/smac_calibration_advanced.py``
 

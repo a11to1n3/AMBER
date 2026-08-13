@@ -155,3 +155,25 @@ Requires ``pip install 'ambr[advanced]'`` (SMAC + ConfigSpace).
 
 Full scripts: ``examples/smac_calibration_simple.py``,
 ``examples/smac_calibration_basic.py``.
+
+MultiObjectiveSMAC
+------------------
+
+.. autoclass:: ambr.MultiObjectiveSMAC
+   :members:
+   :undoc-members:
+
+Independent **per-objective** :class:`ambr.SMACOptimizer` searches, then a
+post-hoc non-dominated set. This is **not** ParEGO / EHVI.
+
+* ``n_trials`` is the budget **for each objective** (total SMAC evaluations
+  ``≈ n_trials × len(objectives)``).
+* ``strategy`` is forwarded to each scalar optimizer: ``bayesian``
+  (default), ``random``, ``algorithm_configuration``. ``strategy='pareto'``
+  raises ``ValueError`` — the Pareto front is always assembled afterwards.
+* ``fixed_params`` are merged into every trial **and** into incumbent
+  re-scoring. Pass ``steps`` here; otherwise :meth:`Model.run` defaults to
+  100 steps per evaluation.
+
+Demo script: ``examples/smac_calibration_advanced.py`` (3 trials × 4
+objectives, ``steps=8``).

@@ -6,11 +6,16 @@ SMAC Calibration Example - Advanced Multi-Objective Optimization
 Multi-objective SMAC calibration of a Schelling-style segregation model
 using AMBER's :class:`~ambr.optimization.MultiObjectiveSMAC`.
 
-Key features:
-- Multi-objective optimization with Pareto frontiers
-- ``SMACParameterSpace`` parameter ranges
-- Grid helpers on :class:`~ambr.environments.GridEnvironment`
-- Canonical agent writes (``agents.at[id].set(...)``)
+``n_trials`` is **per objective**, not a global budget. Four objectives
+with ``n_trials=3`` is 12 SMAC evaluations (plus a few re-scores of
+incumbents). Each evaluation uses ``fixed_params`` (``steps``,
+``grid_size``, …). Omitting ``steps`` falls back to ``Model.run``'s
+implicit 100-step default and is far too slow for this model.
+
+This is independent scalar SMAC per objective + a post-hoc non-dominated
+set. It is not ParEGO / EHVI; ``strategy`` must be a
+:class:`~ambr.optimization.SMACOptimizer` strategy
+(``bayesian`` / ``random`` / ``algorithm_configuration``).
 
 Requirements:
     pip install 'ambr[advanced]'          # SMAC + ConfigSpace
@@ -256,17 +261,23 @@ class SegregationModel(am.Model):
         return total_moves / (n * self.t)
 
 
+# Horizon / world size stay out of the search space so every trial is cheap.
+# Model.run() defaults to 100 steps when ``steps`` is omitted — do not rely on that.
+DEMO_FIXED_PARAMS = {
+    "grid_size": 10,
+    "steps": 8,
+    "show_progress": False,
+    "agent_type_distribution": "binary",
+    "neighborhood_radius": 1,
+    "search_radius": 3,
+    "max_location_evaluations": 6,
+}
+
+
 def create_advanced_parameter_space():
-    """Parameter space for multi-objective Schelling calibration."""
+    """Search knobs only. World size and step count live in DEMO_FIXED_PARAMS."""
     param_space = am.SMACParameterSpace()
-    param_space.add_parameter("grid_size", param_type="int", bounds=(10, 30), default=15)
-    param_space.add_parameter("density", param_type="float", bounds=(0.6, 0.9), default=0.75)
-    param_space.add_parameter(
-        "agent_type_distribution",
-        param_type="categorical",
-        choices=["binary", "three_types", "uniform"],
-        default="binary",
-    )
+    param_space.add_parameter("density", param_type="float", bounds=(0.6, 0.85), default=0.75)
     param_space.add_parameter(
         "type_A_fraction", param_type="float", bounds=(0.3, 0.7), default=0.5
     )
@@ -274,28 +285,7 @@ def create_advanced_parameter_space():
         "base_tolerance", param_type="float", bounds=(0.1, 0.8), default=0.3
     )
     param_space.add_parameter(
-        "tolerance_multiplier_A", param_type="float", bounds=(0.5, 2.0), default=1.0
-    )
-    param_space.add_parameter(
-        "tolerance_multiplier_B", param_type="float", bounds=(0.5, 2.0), default=1.0
-    )
-    param_space.add_parameter(
         "base_mobility", param_type="float", bounds=(0.01, 0.3), default=0.1
-    )
-    param_space.add_parameter(
-        "mobility_multiplier_A", param_type="float", bounds=(0.5, 2.0), default=1.0
-    )
-    param_space.add_parameter(
-        "mobility_multiplier_B", param_type="float", bounds=(0.5, 2.0), default=1.0
-    )
-    param_space.add_parameter(
-        "neighborhood_radius", param_type="int", bounds=(1, 2), default=1
-    )
-    param_space.add_parameter(
-        "search_radius", param_type="int", bounds=(2, 6), default=3
-    )
-    param_space.add_parameter(
-        "max_location_evaluations", param_type="int", bounds=(5, 15), default=8
     )
     return param_space
 
@@ -323,8 +313,13 @@ def satisfaction_objective(model: SegregationModel) -> float:
     return abs(_final_metric(model, "satisfaction_mean") - 0.7)
 
 
-def run_multi_objective_optimization(n_trials: int = 40, seed: int = 42):
-    """Run multi-objective SMAC (requires smac + ConfigSpace)."""
+def run_multi_objective_optimization(n_trials: int = 3, seed: int = 42):
+    """Run per-objective SMAC (requires smac + ConfigSpace).
+
+    ``n_trials`` is the budget **for each objective**. Four objectives
+    therefore mean ``4 * n_trials`` SMAC evaluations, each
+    ``DEMO_FIXED_PARAMS['steps']`` long.
+    """
     print("Starting Multi-Objective SMAC Calibration with AMBER")
     print("=" * 55)
 
@@ -335,18 +330,31 @@ def run_multi_objective_optimization(n_trials: int = 40, seed: int = 42):
         "mobility": mobility_objective,
         "satisfaction": satisfaction_objective,
     }
+    n_obj = len(objectives)
+    print(
+        f"Per-objective budget: n_trials={n_trials} × {n_obj} objectives "
+        f"= {n_trials * n_obj} SMAC evaluations"
+    )
+    print(
+        f"Fixed per evaluation: steps={DEMO_FIXED_PARAMS['steps']}, "
+        f"grid_size={DEMO_FIXED_PARAMS['grid_size']}"
+    )
+    print("strategy='bayesian' is forwarded to each scalar SMACOptimizer.")
+    print("Pareto front is assembled afterwards (not a search strategy).")
+
     optimizer = am.MultiObjectiveSMAC(
         model_type=SegregationModel,
         param_space=param_space,
         objectives=objectives,
         n_trials=n_trials,
         seed=seed,
-        strategy="pareto",
+        strategy="bayesian",
+        fixed_params=DEMO_FIXED_PARAMS,
     )
     print("Starting multi-objective optimization...")
     results = optimizer.optimize()
 
-    print(f"\nMulti-Objective Optimization Results:")
+    print("\nMulti-Objective Optimization Results:")
     print("=" * 45)
     print(f"Total trials: {results['n_evaluations']}")
     print(f"Pareto front size: {len(results['pareto_front'])}")
@@ -439,6 +447,6 @@ if __name__ == "__main__":
     if _try_matplotlib() is None:
         print("Preflight: matplotlib missing — optimization will run; plots skipped.")
         print("For plots: pip install 'ambr[advanced,viz]'")
-    optimizer, results = run_multi_objective_optimization(n_trials=20, seed=42)
+    optimizer, results = run_multi_objective_optimization(n_trials=3, seed=42)
     analyze_pareto_frontier(optimizer, results)
     print("\nAdvanced AMBER SMAC calibration example completed.")

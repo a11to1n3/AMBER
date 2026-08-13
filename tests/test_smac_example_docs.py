@@ -26,3 +26,8 @@ def test_smac_examples_document_viz_extra_and_optional_plots(path: Path):
     # Plotting must be skippable — never a hard ImportError on the success path.
     assert "_try_matplotlib" in text
     assert "raise ImportError" not in text
+    if path.name == "smac_calibration_advanced.py":
+        assert "per objective" in text.lower() or "per-objective" in text.lower()
+        assert "strategy=\"pareto\"" not in text
+        assert "fixed_params" in text
+        assert "steps" in text

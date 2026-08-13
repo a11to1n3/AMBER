@@ -1461,13 +1461,23 @@ class SMACOptimizer:
             self._shutdown_parallel_resources()
             self._cleanup_output_dir()
 
-class MultiObjectiveSMAC:
-    """Multi-objective optimization by running one SMAC search per objective.
+_MO_STRATEGIES = ("bayesian", "random", "algorithm_configuration")
 
-    Each named objective is optimized independently with a scalar SMAC facade
-    (same evaluate path as :class:`SMACOptimizer`). Histories are merged and a
-    simple non-dominated set is returned as ``pareto_front``. Suitable for
-    small multi-objective calibration examples; not a full ParEGO/EHVI MOBO.
+
+class MultiObjectiveSMAC:
+    """Independent per-objective SMAC searches plus a post-hoc Pareto set.
+
+    This is **not** a joint multi-objective BO method (no ParEGO / EHVI /
+    ``strategy='pareto'`` search). Each named objective gets its own
+    :class:`SMACOptimizer` with ``n_trials`` evaluations. Total SMAC
+    evaluations are therefore ``n_trials * len(objectives)``. After those
+    searches, incumbents are re-scored on every objective and the
+    non-dominated subset is returned as ``pareto_front``.
+
+    ``strategy`` is forwarded to each scalar optimizer: ``bayesian``
+    (default), ``random``, or ``algorithm_configuration``. Horizon knobs
+    such as ``steps`` belong in ``fixed_params`` — otherwise
+    :meth:`Model.run` defaults to 100 steps per evaluation.
     """
 
     def __init__(
@@ -1478,8 +1488,9 @@ class MultiObjectiveSMAC:
         n_trials: int = 100,
         n_workers: int = 1,
         seed: Optional[int] = None,
-        strategy: str = "pareto",
+        strategy: str = "bayesian",
         use_multi_fidelity: bool = False,
+        fixed_params: Optional[Dict[str, Any]] = None,
     ):
         _check_smac()
         if use_multi_fidelity:
@@ -1489,6 +1500,19 @@ class MultiObjectiveSMAC:
             )
         if not objectives:
             raise ValueError("objectives must be a non-empty dict")
+        if strategy == "pareto":
+            raise ValueError(
+                "strategy='pareto' is not a search strategy. "
+                "MultiObjectiveSMAC always assembles a post-hoc non-dominated "
+                "set from per-objective incumbents. Pass strategy='bayesian' "
+                "(default), 'random', or 'algorithm_configuration' to control "
+                "each scalar SMACOptimizer."
+            )
+        if strategy not in _MO_STRATEGIES:
+            raise ValueError(
+                f"Unknown strategy: {strategy!r}. "
+                "Supported: 'bayesian', 'random', 'algorithm_configuration'."
+            )
 
         self.model_type = model_type
         self.param_space = param_space
@@ -1497,6 +1521,7 @@ class MultiObjectiveSMAC:
         self.n_workers = n_workers
         self.seed = seed
         self.strategy = strategy
+        self.fixed_params: Dict[str, Any] = dict(fixed_params or {})
         # Built on first optimize() so construction stays cheap for smoke tests.
         self._optimizers: Optional[Dict[str, SMACOptimizer]] = None
 
@@ -1514,7 +1539,8 @@ class MultiObjectiveSMAC:
                 n_trials=self.n_trials,
                 n_workers=self.n_workers,
                 seed=seed,
-                strategy="bayesian",
+                strategy=self.strategy,
+                fixed_params=self.fixed_params,
             )
         self._optimizers = opts
         return opts
@@ -1523,7 +1549,8 @@ class MultiObjectiveSMAC:
         """Run per-objective SMAC and assemble a Pareto set.
 
         Returns:
-            ``n_evaluations``, ``pareto_front`` (configs + objective costs),
+            ``n_evaluations`` (sum of per-objective SMAC trials),
+            ``pareto_front`` (configs + objective costs),
             ``history`` (long-format rows), ``single_objective_results``.
         """
         optimizers = self._ensure_optimizers()
@@ -1576,7 +1603,7 @@ class MultiObjectiveSMAC:
             if key in seen:
                 continue
             seen.add(key)
-            params = {**cfg, "show_progress": False}
+            params = {**self.fixed_params, **cfg, "show_progress": False}
             try:
                 model = self.model_type(params)
                 model.results = model.run()
