@@ -1,7 +1,8 @@
 # GPU claim verification — requires a real CUDA runner.
 #
 # Missing CUDA is NOT VERIFIED (exit 1), never soft-green. Configure
-# repository variable GPU_RUNNER to self-hosted label(s) with NVIDIA + CuPy.
+# repository variable GPU_RUNNER to a single self-hosted runner label
+# (e.g. cuda) on a machine with NVIDIA + CuPy.
 # Locally:
 #   python scripts/run_gpu_claims.py --quick
 

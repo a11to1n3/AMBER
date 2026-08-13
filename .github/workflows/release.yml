@@ -12,8 +12,10 @@ name: Release
 #      https://pypi.org/manage/project/ambr/settings/publishing/
 #        Owner: a11to1n3  Repository: AMBER  Workflow: release.yml  Environment: pypi
 #   2. GitHub Environment "pypi" with required reviewers (maintainer approval)
-#   3. Repository variable GPU_RUNNER = self-hosted label(s) for a CUDA machine
-#      (e.g. "self-hosted,gpu"). Missing CUDA → job fails as NOT VERIFIED.
+#   3. Repository variable GPU_RUNNER = a single self-hosted runner label
+#      for a CUDA machine (e.g. "cuda"). runs-on is a scalar expression, so
+#      do not use a comma list such as "self-hosted,gpu". Missing CUDA →
+#      job fails as NOT VERIFIED.
 #
 # Security:
 #   - Actions pinned to full commit SHAs
