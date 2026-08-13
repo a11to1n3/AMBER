@@ -9,6 +9,19 @@ release-gate series. **Requires a new PyPI version** (0.4.7 already published).
 
 ### Fixed
 
+- **MultiObjectiveSMAC seed**: optimizer ``seed`` (or ``fixed_params['seed']``)
+  is applied to every trial and to incumbent re-scoring so Pareto values match
+  the searched front on stochastic models.
+- **Experiment concat**: ``agents`` / ``model`` frames use
+  ``diagonal_relaxed`` so param-gated extra columns do not raise ShapeError.
+- **Virus example**: live ``agents_df`` is the unique-id population table
+  (no per-step history concat).
+- **SMAC basic example**: default ``__main__`` is 10 trials × 15 steps;
+  ``--full`` restores the long comparison/importance workflow.
+- **README / UX**: 0.5.0 upgrade note; ``help(ambr)`` matches the vectorized
+  quickstart; ParallelRunner documented as core; GPU quickstart CI no longer
+  ``|| true``.
+
 - **MultiObjectiveSMAC strategy**: `strategy` is validated and forwarded to
   each scalar `SMACOptimizer` (`bayesian` / `random` /
   `algorithm_configuration`). `strategy='pareto'` now raises `ValueError`

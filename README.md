@@ -206,30 +206,17 @@ print(Drift({"n": 100_000, "steps": 20, "show_progress": False}).run().info)
 the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).
 
-> **New in 0.4.7:** GPU claim script renamed to
-> [`scripts/run_gpu_claims.py`](https://github.com/a11to1n3/AMBER/blob/main/scripts/run_gpu_claims.py); user-facing docs
-> scrubbed of paper-campaign machine labels. Upgrade with
-> `pip install -U 'ambr>=0.4.7'`. See the [changelog](https://github.com/a11to1n3/AMBER/blob/main/CHANGELOG.md).
+> **New in 0.5.0:** production-candidate. **Breaking / install:** matplotlib
+> and scikit-optimize are no longer core (`ambr[viz]`, `ambr[advanced]`);
+> Python **3.10–3.13** only. **API:** `record_model` inside `step()` is kept;
+> missing optimization metrics raise; SMAC defaults to `on_error='raise'`;
+> `RunResults.save` uses a versioned manifest. Upgrade with
+> `pip install -U 'ambr>=0.5.0'`. Full list:
+> [CHANGELOG.md](https://github.com/a11to1n3/AMBER/blob/main/CHANGELOG.md).
 >
-> **0.4.6:** claim-honest public samples (view API + `GPU_AVAILABLE`
-> branching), [doc-fence / README smokes](https://github.com/a11to1n3/AMBER/blob/main/tests/test_doc_fences.py), OOP
-> [activation helpers](https://ambr.readthedocs.io/en/latest/api/scheduling.html), [viz helpers](https://ambr.readthedocs.io/en/latest/api/viz.html),
-> [RunResults save/load](https://ambr.readthedocs.io/en/latest/api/results.html), [reproducibility policy](https://ambr.readthedocs.io/en/latest/reproducibility.html),
-> and [1.0 freeze prep](https://ambr.readthedocs.io/en/latest/roadmap_1_0.html).
->
-> **0.4.5:** honest 10M headline snapshot, `ambr[gpu]`, `CITATION.cff`.
->
-> **0.4.4:** honest [execution lanes](https://ambr.readthedocs.io/en/latest/going_faster.html)
-> (`step_vectorized` / `step_oop`; GPU is vectorized-only), operational
-> [contract](#-snapshot-view-contract) wording (monitor, not schedule proof),
-> and opt-in `approve_fast_path(evidence)` for private GPU loops.
->
-> **0.4.3:** Keras-style **`model.cpu(mode=...)` / `model.gpu()`** placement
-> with device-resident columns for the vectorized view API.
->
-> **0.4.1–0.4:** AgentPy-shaped UX, progressive speed lanes, Numba
-> (`ambr[perf]`), snapshot-view contract, GPU ensemble calibration, canonical
-> verbs (legacy spellings still work until 1.0).
+> **0.4.7:** GPU claim script renamed to
+> [`scripts/run_gpu_claims.py`](https://github.com/a11to1n3/AMBER/blob/main/scripts/run_gpu_claims.py);
+> paper-campaign machine labels removed from user-facing docs.
 
 ## ⚡ Vectorized View API
 

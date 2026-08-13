@@ -155,5 +155,5 @@ If you encounter issues:
 
 1. Check the `GitHub Issues <https://github.com/a11to1n3/AMBER/issues>`_
 2. Read the documentation thoroughly
-3. Ask questions in the community forums
-4. Report bugs with minimal reproducible examples
+3. Open a new issue with a minimal reproducible example
+   (there is no separate community forum)

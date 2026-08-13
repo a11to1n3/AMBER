@@ -124,3 +124,49 @@ def test_multiobjective_fixed_params_used_when_rescoring_incumbents():
     out = mo.optimize()
     assert out["n_evaluations"] == 2
     assert out["pareto_front"].height >= 1
+
+
+def test_multiobjective_rescore_uses_optimizer_seed():
+    """Pareto values must match a rerun with the same model seed."""
+
+    class _Stochastic(am.Model):
+        params = {"steps": (int, 3), "show_progress": (bool, False)}
+
+        def setup(self):
+            n = 8
+            self.add_agents(n, x=self.rng.random(n))
+
+        def step(self):
+            self.agents.x = self.agents.x + float(self.p.get("x", 0.0)) + self.rng.random(8) * 0.01
+
+        def update(self):
+            if self.t > 0:
+                self.record_model("a", float(self.agents.x.mean()))
+
+    def obj(model: am.Model) -> float:
+        return float(model.results["model"]["a"].tail(1).item())
+
+    space = SMACParameterSpace()
+    space.add_parameter("x", param_type="float", bounds=(0.0, 1.0), default=0.2)
+    mo = MultiObjectiveSMAC(
+        model_type=_Stochastic,
+        param_space=space,
+        objectives={"a": obj},
+        n_trials=2,
+        seed=7,
+        strategy="random",
+        fixed_params={"steps": 3, "show_progress": False},
+    )
+    assert mo.fixed_params.get("seed") == 7
+    out = mo.optimize()
+    row = out["pareto_front"].row(0, named=True)
+    replay = _Stochastic(
+        {
+            "x": row["x"],
+            "steps": 3,
+            "seed": 7,
+            "show_progress": False,
+        }
+    )
+    replay.results = replay.run()
+    assert abs(obj(replay) - float(row["a"])) < 1e-12

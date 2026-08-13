@@ -23,7 +23,7 @@ body:
     attributes:
       label: AMBER version
       description: Output of `python -c "import ambr; print(ambr.__version__)"`
-      placeholder: "0.4.7"
+      placeholder: "0.5.0"
     validations:
       required: true
 

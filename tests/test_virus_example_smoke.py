@@ -22,6 +22,9 @@ def test_virus_run_headless_three_steps():
     assert model.t == 3
     assert len(model.infected_history) >= 1
     assert model.susceptible_history[-1] + model.infected_history[-1] + model.recovered_history[-1] == 25
+    # Live table is one row per agent, not a concatenated history log.
+    assert model.agents_df["id"].n_unique() == model.agents_df.height
+    assert model.agents_df.height == 25
 
 
 @pytest.mark.unit
@@ -49,3 +52,4 @@ def test_virus_uses_run_step_not_manual_step_update():
     # No module-global random; use model.rng only
     assert "import random" not in text
     assert "model.rng" in text
+    assert "pl.concat" not in text

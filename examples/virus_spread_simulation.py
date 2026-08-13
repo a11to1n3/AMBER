@@ -198,26 +198,9 @@ class VirusSpreadModel(am.Model):
             agent.interact()
             agent.update_health()
 
-        if self._agents_to_update:
-            self._append_agent_snapshots()
-
-    def _append_agent_snapshots(self):
-        """Append current state rows for agents touched this step."""
-        agent_data = [
-            {
-                "id": int(agent_id),
-                "step": int(self.t),
-                "status": str(self.agent_objects[agent_id].status.value),
-                "x": float(self.agent_objects[agent_id].x),
-                "y": float(self.agent_objects[agent_id].y),
-                "infection_time": int(self.agent_objects[agent_id].infection_time),
-            }
-            for agent_id in self._agents_to_update
-        ]
-
-        if agent_data:
-            new_data = pl.DataFrame(agent_data)
-            self.agents_df = pl.concat([self.agents_df, new_data])
+        # Live agents_df is the unique-id population table, not a history log.
+        # Time series live in *_history / record_model.
+        self._record_agent_table()
 
     def update(self):
         """Post-step hook: history + optional FPS throttle."""

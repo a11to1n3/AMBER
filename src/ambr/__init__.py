@@ -15,17 +15,22 @@ Key features:
 Example:
     >>> import ambr as am
     >>>
-    >>> class SimpleModel(am.Model):
+    >>> class WealthModel(am.Model):
     ...     def setup(self):
-    ...         for i in range(10):
-    ...             agent = am.Agent(self, i)
-    ...             self.add_agent(agent)
-    ...
-    ...     def step(self):
-    ...         self.record_model('agent_count', len(self.agents))
+    ...         n = int(self.p.get("n", 50))
+    ...         self.add_agents(n, wealth=1)
+    ...     def step_vectorized(self):
+    ...         donors = self.agents.where(self.agents.wealth > 0)
+    ...         donors.wealth -= 1
+    ...         self.agents.at[
+    ...             self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
+    ...         ].scatter_add(wealth=1)
+    ...     def update(self):
+    ...         self.record_model("total", int(self.agents.wealth.sum()))
     >>>
-    >>> model = SimpleModel({'steps': 5})
-    >>> results = model.run()
+    >>> results = WealthModel(
+    ...     {"n": 50, "steps": 20, "seed": 1, "show_progress": False}
+    ... ).cpu(mode="vectorized").run()
 """
 
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError

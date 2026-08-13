@@ -1477,7 +1477,9 @@ class MultiObjectiveSMAC:
     ``strategy`` is forwarded to each scalar optimizer: ``bayesian``
     (default), ``random``, or ``algorithm_configuration``. Horizon knobs
     such as ``steps`` belong in ``fixed_params`` — otherwise
-    :meth:`Model.run` defaults to 100 steps per evaluation.
+    :meth:`Model.run` defaults to 100 steps per evaluation. If ``seed`` is
+    omitted from ``fixed_params``, the constructor ``seed`` is used for
+    every model evaluation and for incumbent re-scoring.
     """
 
     def __init__(
@@ -1522,6 +1524,11 @@ class MultiObjectiveSMAC:
         self.seed = seed
         self.strategy = strategy
         self.fixed_params: Dict[str, Any] = dict(fixed_params or {})
+        # Model RNG seed used for every trial and for incumbent re-scoring.
+        # Without this, SMAC injects a per-trial seed and the Pareto table
+        # is a fresh unseeded run (incomparable on stochastic models).
+        if "seed" not in self.fixed_params and self.seed is not None:
+            self.fixed_params["seed"] = int(self.seed)
         # Built on first optimize() so construction stays cheap for smoke tests.
         self._optimizers: Optional[Dict[str, SMACOptimizer]] = None
 
@@ -1530,7 +1537,8 @@ class MultiObjectiveSMAC:
             return self._optimizers
         opts: Dict[str, SMACOptimizer] = {}
         for i, (name, objective) in enumerate(self.objectives.items()):
-            # Distinct seeds so independent searches explore differently.
+            # Distinct *search* seeds so independent facades explore differently.
+            # The model RNG seed stays in fixed_params (same for search + rescoring).
             seed = None if self.seed is None else int(self.seed) + i * 17
             opts[name] = SMACOptimizer(
                 model_type=self.model_type,
@@ -1604,6 +1612,8 @@ class MultiObjectiveSMAC:
                 continue
             seen.add(key)
             params = {**self.fixed_params, **cfg, "show_progress": False}
+            if "seed" not in params and self.seed is not None:
+                params["seed"] = int(self.seed)
             try:
                 model = self.model_type(params)
                 model.results = model.run()
