@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v0.5.1 - 2026-08-14
+
+Patch over 0.5.0: make the release wheel test suite pass so PyPI can
+publish. **v0.5.0** is tagged but was never uploaded (CPU matrix failed).
+
+### Fixed
+
+- **Deprecation inventory vs wheel install**:
+  ``test_inventory_covers_all_warn_deprecated_sites`` scans the installed
+  ``ambr`` package when ``src/ambr`` is hidden (release job). The 0.5.0
+  tag failed every OS × Python cell on this single assertion.
+
 ## v0.5.0 - 2026-08-13
 
 Production-candidate cut of the post-0.4.7 correctness, integrity, and

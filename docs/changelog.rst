@@ -9,6 +9,12 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 -------------
 
+[0.5.1] - 2026-08-14
+--------------------
+
+Patch over 0.5.0: deprecation-inventory test scans the installed package
+when ``src/ambr`` is hidden. **v0.5.0** was tagged but never published.
+
 [0.5.0] - 2026-08-13
 --------------------
 
