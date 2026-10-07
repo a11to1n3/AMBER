@@ -15,6 +15,29 @@
   true and ``clean`` becomes false, because the trace does not establish
   order independence. Integer scatter stays clean. Integer overflow is not
   checked.
+- **Staged activation conflicts** are reported without replaying the step.
+  Replaying from a stage exit recursed and compared a mid-step frame with a
+  full rerun. The witness stays inconclusive until the step has finished,
+  and a completed replay restores monitor mode.
+- **Activation replay** reruns from the step-entry random streams and then
+  restores the forward post-step streams. A stream without restorable state
+  leaves ``divergence_witness`` as ``None``. Cross-activation read/write
+  overlap is reported, and the witness is included in contract JSON.
+- **Activation replay** restores public attribute bindings and supported
+  containers in place from the step-entry snapshot, then puts the forward
+  post-step objects back. Aliases keep their identity. A value that cannot
+  be restored leaves ``divergence_witness`` as ``None``. Nested containers
+  are compared without using an array's truth value. Alias relationships
+  use a one-to-one node mapping; when that mapping does not exist, the
+  witness stays inconclusive.
+- **Activation replay** puts the original stream objects back on their
+  bindings before restoring generator state. If that restoration fails, the
+  witness stays inconclusive. An exception from the swapped execution is
+  recorded with a reason and does not abort the forward step.
+- **Activation replay** restores the legacy ``nprandom`` adapter as well as
+  its inner generator. Random-stream restoration and supported model-state
+  restoration are both attempted on the way out, so a stream that cannot be
+  put back does not leave the swapped containers in place.
 
 ## v0.5.1 - 2026-08-14
 
