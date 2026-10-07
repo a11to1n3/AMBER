@@ -44,7 +44,9 @@ invisible to the conflict check (``Population.data = ...`` is deprecated and
 warns; prefer ``agents.col = ...`` / ``agents.set`` / ``agents.commit``).
 Cell-level dependency and commutativity reasoning remains the job of model
 analysis or tests; a clean certificate is evidence only for the operations the
-runtime seams can observe.
+runtime seams can observe. The certificate names that observed scope and the
+assumptions outside it. ``clean`` means no observed violation. It does not
+establish the conditional activation guarantee.
 """
 
 from __future__ import annotations
@@ -59,6 +61,25 @@ CONTRACT_MODES = ("off", "check", "warn", "raise")
 
 # Snapshot type: ({column: dtype-str}, id-set)
 Snapshot = Tuple[Dict[str, str], Set[Any]]
+
+#: Seams a certificate can actually see. ``clean`` means none of these
+#: reported a violation. It does not cover state outside this tuple.
+OBSERVED_SCOPE = (
+    "buffered Agent attribute writes",
+    "lane and view column commits",
+    "declared scatter reductions",
+    "column borrows",
+    "step-endpoint schema and population",
+)
+
+#: State the monitor does not trace. A clean result does not speak for these.
+OBSERVED_ASSUMPTIONS = (
+    "Custom properties, external arrays, environments, and other mutable "
+    "model state are outside the trace.",
+)
+
+#: The conditional activation guarantee is not established by this monitor.
+CONDITIONAL_GUARANTEE_NOT_ESTABLISHED = "not_established"
 
 
 class ContractViolation:
@@ -94,12 +115,17 @@ class ContractCertificate:
 
     ``ok`` is ``True`` when no *error*-severity violations were found (warnings
     do not flip it). ``clean`` is ``True`` only when there are no violations of
-    any severity.
+    any severity: no observed conflict on the seams in ``observed_scope``.
+    ``conditional_guarantee`` stays ``not_established``; a clean result does
+    not make an activation-order claim.
     """
 
     def __init__(self, step: int):
         self.step = step
         self.violations: List[ContractViolation] = []
+        self.observed_scope = OBSERVED_SCOPE
+        self.assumptions = OBSERVED_ASSUMPTIONS
+        self.conditional_guarantee = CONDITIONAL_GUARANTEE_NOT_ESTABLISHED
 
     @property
     def ok(self) -> bool:

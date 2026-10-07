@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Contract certificates** name the seams they observe, the state they
+  assume is outside the trace, and that the conditional activation
+  guarantee is not established. ``clean`` still means no observed violation.
+
 ## v0.5.1 - 2026-08-14
 
 Patch over 0.5.0: make the release wheel test suite pass so PyPI can
