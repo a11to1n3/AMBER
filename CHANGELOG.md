@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Counter tape spec 2**: mix the seed before the step in the Python
+  reference and the CUDA SIR kernel. Spec 1 aliased any keys with the same
+  ``seed XOR step``. Published spec 1 tapes are not comparable to spec 2.
+
 ## v0.5.1 - 2026-08-14
 
 Patch over 0.5.0: make the release wheel test suite pass so PyPI can
