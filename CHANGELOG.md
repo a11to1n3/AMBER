@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Staged activation conflicts** are reported without replaying the step.
+  Replaying from a stage exit recursed and compared a mid-step frame with a
+  full rerun. The witness stays inconclusive until the step has finished,
+  and a completed replay restores monitor mode.
+
 ## v0.5.1 - 2026-08-14
 
 Patch over 0.5.0: make the release wheel test suite pass so PyPI can

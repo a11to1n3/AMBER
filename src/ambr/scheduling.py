@@ -73,32 +73,53 @@ def activate(
     if not ordered:
         return
 
-    if mode == "random":
+    model = getattr(agents, "model", None)
+    if model is None:
+        model = getattr(ordered[0], "model", None)
+    override = getattr(model, "_activation_override_order", None)
+    if override is not None:
+        id_map = {getattr(agent, "id", None): agent for agent in ordered}
+        ordered = [id_map[aid] for aid in override if aid in id_map]
+    elif mode == "random":
         r = _rng_for(agents, rng)
         # Local list shuffle — do not mutate AgentList structure.
         order = list(range(len(ordered)))
         r.shuffle(order)
         ordered = [ordered[i] for i in order]
 
-    if mode == "simultaneous":
-        # Phase 1: step (stage) all agents against the pre-step population state
-        # as far as Python reference semantics allow.
-        for agent in ordered:
-            fn = getattr(agent, method, None)
+    mon = getattr(model, "_contract", None) if model is not None else None
+
+    def call(agent: Any, name: str) -> None:
+        aid = getattr(agent, "id", None)
+        traced = (
+            mon is not None
+            and getattr(mon, "active", False)
+            and not getattr(mon, "_in_replay", False)
+            and aid is not None
+        )
+        if traced:
+            mon.begin_activation(aid)
+        try:
+            fn = getattr(agent, name, None)
             if callable(fn):
                 fn()
-        # Phase 2: Mesa-style advance when present.
+        finally:
+            if traced:
+                mon.end_activation()
+
+    if mode == "simultaneous":
+        # Phase 1 is the traced sweep. advance() stays untraced, matching the
+        # historical Mesa-style second pass.
+        for agent in ordered:
+            call(agent, method)
         for agent in ordered:
             adv = getattr(agent, "advance", None)
             if callable(adv):
                 adv()
         return
 
-    # sequential (and random after reorder)
     for agent in ordered:
-        fn = getattr(agent, method, None)
-        if callable(fn):
-            fn()
+        call(agent, method)
 
 
 def shuffled_ids(agents: Any, rng: Any = None) -> np.ndarray:

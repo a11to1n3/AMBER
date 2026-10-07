@@ -16,6 +16,7 @@ but filled by :mod:`ambr._id_index`; :meth:`_bump_id_version` invalidates them.
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Type, Optional, Set, Tuple, TYPE_CHECKING
+import copy
 import polars as pl
 import warnings
 import numpy as np
@@ -84,6 +85,10 @@ class Model(BaseModel):
         # Snapshot-view contract monitor (see contract.py). Mode 'off' adds
         # zero per-write overhead.
         self._contract = ContractMonitor()
+        # Pre-step agent frame used by activation replay, and the order a
+        # replay asks stage_agents / activate to follow.
+        self._pre_step_state = None
+        self._activation_override_order = None
 
         super().__init__(parameters)  # sets self.random / self.rng / self.nprandom
         self.t = 0
@@ -437,6 +442,39 @@ class Model(BaseModel):
             rng=self.rng,
         )
 
+    def stage_agents(self, stage: str = "stage0") -> Iterable[Any]:
+        """Yield each agent inside one monitored stage.
+
+        Conflicts found before the stage closes are reported with an
+        inconclusive witness. A swap replay, when one runs, is started from
+        :meth:`run_step` only after the whole step has finished.
+        """
+        mon = self._contract
+        active = bool(getattr(mon, "active", False)) and not getattr(
+            mon, "_in_replay", False
+        )
+        if active:
+            mon.begin_stage(stage)
+        ordered = list(self.agents)
+        override = getattr(self, "_activation_override_order", None)
+        if override is not None:
+            id_map = {getattr(agent, "id", None): agent for agent in ordered}
+            ordered = [id_map[aid] for aid in override if aid in id_map]
+        try:
+            for agent in ordered:
+                aid = getattr(agent, "id", None)
+                if active and aid is not None:
+                    mon.begin_activation(aid)
+                try:
+                    yield agent
+                finally:
+                    if active and aid is not None:
+                        mon.end_activation()
+        finally:
+            self._flush_pending_writes()
+            if active:
+                mon.end_stage(model=self)
+
     def update(self):
         """Per-step hook, called after :meth:`step` with ``t`` already advanced.
 
@@ -587,9 +625,13 @@ class Model(BaseModel):
             else:
                 mon.begin_step(self._contract_snapshot())
                 try:
+                    self._pre_step_state = self.agents_df.clone()
                     step_fn()
                 finally:
-                    cert = mon.end_step(self.t, self._contract_snapshot())
+                    cert = mon.end_step(
+                        self.t, self._contract_snapshot(), model=self
+                    )
+                    self._pre_step_state = None
 
                 if mon.mode == "warn":
                     for v in cert.violations:
@@ -604,7 +646,117 @@ class Model(BaseModel):
             self._advance_and_record()
         except Exception:
             self._current_step_data = {}
+            self._pre_step_state = None
             raise
+
+    def replay_activation_swap(self, a: Any, b: Any) -> Optional[bool]:
+        """Rerun this step with activations ``a`` and ``b`` swapped.
+
+        Returns True when the agent frame diverges, False when it matches,
+        and None when the swap is not a sound witness. The forward frame,
+        pending writes, per-agent attribute cache, activation override, and
+        monitor mode are restored either way.
+        """
+        mon = self._contract
+        if getattr(mon, "_in_replay", False) or getattr(mon, "_stage_open", False):
+            return None
+        pre = getattr(self, "_pre_step_state", None)
+        if pre is None:
+            return None
+        order = list(getattr(mon, "_activation_order", []))
+        if a not in order or b not in order:
+            return None
+
+        original_post = self.agents_df.clone()
+        saved_attrs = self._snapshot_agent_attrs()
+        swapped = list(order)
+        index_a = swapped.index(a)
+        index_b = swapped.index(b)
+        swapped[index_a], swapped[index_b] = swapped[index_b], swapped[index_a]
+
+        saved_mode = mon.mode
+        saved_active = mon.active
+        saved_current = mon._current_activation
+        saved_order = list(mon._activation_order)
+        saved_reads = {key: set(value) for key, value in mon._activation_reads.items()}
+        saved_writes = {
+            key: set(value) for key, value in mon._activation_writes.items()
+        }
+        saved_stage_open = mon._stage_open
+        saved_stage = mon._current_stage
+        saved_stage_violations = list(mon._stage_violations)
+        mon._in_replay = True
+        mon.mode = "off"
+        mon.active = False
+        try:
+            self._set_frame(pre.clone())
+            self._pending_writes = {}
+            self._refresh_agent_cache(pre)
+            self._activation_override_order = swapped
+            execution = getattr(self, "_execution", None)
+            mode = (
+                execution.config.mode
+                if execution is not None
+                else self._execution_mode
+            )
+            step_fn = self.step_oop if mode == "oop" else self.step_vectorized
+            step_fn()
+            self._flush_pending_writes()
+            return not original_post.equals(self.agents_df)
+        finally:
+            self._set_frame(original_post.clone())
+            self._pending_writes = {}
+            self._activation_override_order = None
+            self._restore_agent_attrs(saved_attrs)
+            mon.mode = saved_mode
+            mon.active = saved_active
+            mon._in_replay = False
+            mon._current_activation = saved_current
+            mon._activation_order = saved_order
+            mon._activation_reads = saved_reads
+            mon._activation_writes = saved_writes
+            mon._stage_open = saved_stage_open
+            mon._current_stage = saved_stage
+            mon._stage_violations = saved_stage_violations
+
+    def _agent_objects(self) -> List[Any]:
+        return list(getattr(self.agents, "_agent_objects", ()) or ())
+
+    def _snapshot_agent_attrs(self) -> List[Tuple[Any, Dict[str, Any]]]:
+        """Copy public instance attributes so a replay can put them back."""
+        saved: List[Tuple[Any, Dict[str, Any]]] = []
+        for agent in self._agent_objects():
+            attrs: Dict[str, Any] = {}
+            for key, value in list(agent.__dict__.items()):
+                if key in ("model", "id", "p") or str(key).startswith("_"):
+                    continue
+                try:
+                    attrs[key] = copy.deepcopy(value)
+                except Exception:
+                    attrs[key] = value
+            saved.append((agent, attrs))
+        return saved
+
+    def _restore_agent_attrs(self, saved: List[Tuple[Any, Dict[str, Any]]]) -> None:
+        for agent, attrs in saved:
+            for key, value in attrs.items():
+                object.__setattr__(agent, key, value)
+
+    def _refresh_agent_cache(self, df: pl.DataFrame) -> None:
+        """Load already-present agent attributes from ``df`` without queueing."""
+        if "id" not in df.columns:
+            return
+        rows = {agent_id: index for index, agent_id in enumerate(df["id"].to_list())}
+        for agent in self._agent_objects():
+            row = rows.get(agent.id)
+            if row is None:
+                continue
+            for key in list(agent.__dict__):
+                if key in ("model", "id", "p") or str(key).startswith("_"):
+                    continue
+                if key not in df.columns:
+                    continue
+                object.__setattr__(agent, key, df[key][row])
 
     def _fast_path_is_eligible(
         self,

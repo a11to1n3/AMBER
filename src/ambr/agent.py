@@ -27,6 +27,32 @@ class Agent(BaseAgent):
     def __repr__(self):
         return f"Agent(id={self.id})"
 
+    def __getattribute__(self, name: str) -> Any:
+        """Record an ordinary attribute read while an activation is open.
+
+        Protected names, callables, and class properties are not recorded.
+        A property that touches a model buffer, and a write straight into an
+        external array, stay outside this trace.
+        """
+        value = object.__getattribute__(self, name)
+        if name in _AGENT_PROTECTED_ATTRS or name.startswith("_"):
+            return value
+        if callable(value):
+            return value
+        descriptor = getattr(type(self), name, None)
+        if isinstance(descriptor, property):
+            return value
+        try:
+            model = object.__getattribute__(self, "model")
+        except Exception:
+            return value
+        mon = getattr(model, "_contract", None)
+        if mon is not None and getattr(mon, "_current_activation", None) is not None:
+            record = getattr(mon, "record_activation_read", None)
+            if record is not None:
+                record(name, object.__getattribute__(self, "id"))
+        return value
+
     def __setattr__(self, name: str, value: Any) -> None:
         """Route non-internal attribute writes to the DataFrame.
 
@@ -46,6 +72,10 @@ class Agent(BaseAgent):
         model = getattr(self, "model", None)
         if model is not None and hasattr(model, "_queue_write"):
             model._queue_write(name, self.id, value)
+            mon = getattr(model, "_contract", None)
+            record = getattr(mon, "record_activation_write", None)
+            if record is not None:
+                record(name, self.id)
 
     def setup(self):
         """Override in subclasses to initialize agent attributes."""

@@ -45,10 +45,16 @@ warns; prefer ``agents.col = ...`` / ``agents.set`` / ``agents.commit``).
 Cell-level dependency and commutativity reasoning remains the job of model
 analysis or tests; a clean certificate is evidence only for the operations the
 runtime seams can observe.
+
+A conflict closed while a stage is still open is reported as
+``activation_race`` with ``divergence_witness is None``. Automatic replay
+runs only after the step body has finished, and a replay restores monitor
+mode before it returns.
 """
 
 from __future__ import annotations
 
+import sys
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 SEVERITY_ERROR = "error"
@@ -71,12 +77,16 @@ class ContractViolation:
         severity: str = SEVERITY_ERROR,
         columns: Optional[Iterable[str]] = None,
         ids: Optional[Iterable[Any]] = None,
+        divergence_witness: Optional[bool] = None,
     ):
         self.kind = kind
         self.detail = detail
         self.severity = severity
         self.columns: List[str] = list(columns) if columns else []
         self.ids: List[Any] = list(ids) if ids else []
+        # True/False only after a completed step-level swap. None means the
+        # witness was not run, or it was not conclusive.
+        self.divergence_witness = divergence_witness
 
     def __repr__(self) -> str:
         loc = ""
@@ -86,6 +96,8 @@ class ContractViolation:
             shown = self.ids[:8]
             more = f" (+{len(self.ids) - 8} more)" if len(self.ids) > 8 else ""
             loc += f" ids={shown}{more}"
+        if self.divergence_witness is not None:
+            loc += f" divergence_witness={self.divergence_witness}"
         return f"<ContractViolation {self.severity}:{self.kind}{loc}: {self.detail}>"
 
 
@@ -168,6 +180,15 @@ class ContractMonitor:
         # Step-entry snapshot for schema / population diff
         self._entry_schema: Optional[Dict[str, str]] = None
         self._entry_ids: Optional[Set[Any]] = None
+        # Activation trace. A stage closes this trace without replay.
+        self._current_stage: Optional[str] = None
+        self._stage_open: bool = False
+        self._stage_violations: List[ContractViolation] = []
+        self._current_activation: Any = None
+        self._activation_order: List[Any] = []
+        self._activation_reads: Dict[Any, Set[Tuple[str, Any]]] = {}
+        self._activation_writes: Dict[Any, Set[Tuple[str, Any]]] = {}
+        self._in_replay: bool = False
 
     def reset_run(self, mode: str) -> None:
         """Configure mode for a new ``Model.run`` and clear prior certificates."""
@@ -192,10 +213,23 @@ class ContractMonitor:
         self._mutable_borrows = set()
         self._reduced_cols = set()
         self._cross_path_cols = set()
+        self._current_stage = None
+        self._stage_open = False
+        self._stage_violations = []
+        self._current_activation = None
+        self._activation_order = []
+        self._activation_reads = {}
+        self._activation_writes = {}
         self.active = True
 
-    def end_step(self, step: int, snapshot: Snapshot) -> ContractCertificate:
-        """Disarm tracking and return the certificate for ``step``."""
+    def end_step(
+        self, step: int, snapshot: Snapshot, model: Optional[Any] = None
+    ) -> ContractCertificate:
+        """Disarm tracking and return the certificate for ``step``.
+
+        Replay is allowed only after the step body has finished and no stage
+        is open. An exception unwinding through this method is left alone.
+        """
         self.active = False
         exit_schema, exit_ids = snapshot
         cert = ContractCertificate(step)
@@ -204,6 +238,13 @@ class ContractMonitor:
         self._check_schema(cert, exit_schema)
         self._check_lane_conflicts(cert)
         self._check_population(cert, exit_ids)
+        if sys.exc_info()[0] is None:
+            allow_replay = not self._stage_open and not self._in_replay
+            self._check_activation_races(
+                cert, model=model, allow_replay=allow_replay
+            )
+        if self._stage_violations:
+            cert.violations.extend(self._stage_violations)
         self.certificates.append(cert)
         return cert
 
@@ -259,6 +300,67 @@ class ContractMonitor:
             return
         self.record_borrow(column)
         self._mutable_borrows.add(column)
+
+    # --- activation trace ---------------------------------------------------
+
+    def begin_stage(self, stage: str = "stage0") -> None:
+        """Start a named stage. An open trace is closed without replay."""
+        if not self.active or self._in_replay:
+            return
+        if self._activation_order:
+            self.end_stage()
+        self._current_stage = stage
+        self._stage_open = True
+
+    def end_stage(self, model: Optional[Any] = None) -> None:
+        """Close the stage and keep any conflict witness inconclusive.
+
+        Replaying here would compare this stage's frame with a full-step
+        rerun, and that rerun would enter this method again. ``model`` is
+        accepted so callers can pass the host; it is not used.
+        """
+        _ = model
+        if not self.active or self._in_replay:
+            return
+        self._stage_open = False
+        if not self._activation_order:
+            self._current_activation = None
+            return
+        temp = ContractCertificate(0)
+        self._check_activation_races(temp, model=None, allow_replay=False)
+        self._stage_violations.extend(temp.violations)
+        self._current_activation = None
+        self._activation_order = []
+        self._activation_reads = {}
+        self._activation_writes = {}
+
+    def begin_activation(self, agent_id: Any) -> None:
+        """Mark the start of one agent activation inside the open step."""
+        if not self.active or self._in_replay:
+            return
+        self._current_activation = agent_id
+        if agent_id not in self._activation_reads:
+            self._activation_order.append(agent_id)
+            self._activation_reads[agent_id] = set()
+            self._activation_writes[agent_id] = set()
+
+    def end_activation(self) -> None:
+        """Mark the end of the current activation."""
+        self._current_activation = None
+
+    def record_activation_read(self, column: str, agent_id: Any) -> None:
+        """Record an ordinary attribute read by the active activation."""
+        if not self.active or self._in_replay or self._current_activation is None:
+            return
+        act = self._current_activation
+        self._activation_reads.setdefault(act, set()).add((column, agent_id))
+
+    def record_activation_write(self, column: str, agent_id: Any) -> None:
+        """Record an ordinary attribute write by the active activation."""
+        if not self.active or self._in_replay or self._current_activation is None:
+            return
+        act = self._current_activation
+        self._activation_writes.setdefault(act, set()).add((column, agent_id))
 
     # --- internal checks ----------------------------------------------------
 
@@ -378,4 +480,69 @@ class ContractMonitor:
                 f"step-entry snapshot rather than partially-updated state.",
                 severity=SEVERITY_WARNING,
                 ids=sorted(born | died),
+            ))
+
+    def _check_activation_races(
+        self,
+        cert: ContractCertificate,
+        model: Optional[Any] = None,
+        allow_replay: bool = False,
+    ) -> None:
+        """Report two activations writing one cell.
+
+        ``allow_replay`` is false while a stage is open. The diagnostic is
+        still recorded, and ``divergence_witness`` stays ``None``.
+        """
+        if self._in_replay or not self._activation_order:
+            return
+        writers_by_cell: Dict[Tuple[str, Any], List[Any]] = {}
+        for act in self._activation_order:
+            for col, aid in self._activation_writes.get(act, ()):
+                writers = writers_by_cell.setdefault((col, aid), [])
+                if act not in writers:
+                    writers.append(act)
+        replay_fn = (
+            getattr(model, "replay_activation_swap", None) if allow_replay else None
+        )
+        replayed: Set[Tuple[Any, Any]] = set()
+        max_replays = 5
+        for cell, writers in writers_by_cell.items():
+            if len(writers) < 2:
+                continue
+            col, _aid = cell
+            a, b = writers[0], writers[1]
+            witness = None
+            note = (
+                " Witness replay was skipped because a stage is open or the "
+                "swap is not available; divergence_witness is inconclusive."
+            )
+            pair = (a, b)
+            if (
+                allow_replay
+                and callable(replay_fn)
+                and pair not in replayed
+                and len(replayed) < max_replays
+            ):
+                witness = replay_fn(a, b)
+                replayed.add(pair)
+                if witness is True:
+                    note = (
+                        " Witness replay under swapped order confirmed "
+                        "schedule divergence."
+                    )
+                elif witness is False:
+                    note = (
+                        " Witness replay under swapped order produced "
+                        "identical final state."
+                    )
+                else:
+                    note = " Witness replay was inconclusive."
+            cert.add(ContractViolation(
+                "activation_race",
+                f"Distinct activations {a} and {b} wrote the same cell {cell}."
+                f"{note}",
+                severity=SEVERITY_ERROR,
+                columns=[col],
+                ids=[a, b],
+                divergence_witness=witness,
             ))
