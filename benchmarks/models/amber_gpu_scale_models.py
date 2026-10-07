@@ -147,14 +147,15 @@ class GPUSIRBinnedModel:
 # separately (race-free), but this private path is not runtime-monitored.
 # Per-pair infection draws use the shared SplitMix64 counter tape
 # (global_seed, step, EVT_INFECTION=4, min(i,j), max(i,j), draw_index=0).
+# Spec 2 mixes global_seed before the step. Spec 1 tapes are not comparable.
 # Pure-Python reference and lock tests: tests/test_sir_counter_tape.py.
 # --------------------------------------------------------------------------- #
 
-_MODULE_VERSION = 2  # bump when _MODULE_SRC changes (forces RawModule reload)
+_MODULE_VERSION = 3  # bump when _MODULE_SRC changes (forces RawModule reload)
 
 _MODULE_SRC = r'''
 extern "C" {
-// SplitMix64 — must match tests/test_sir_counter_tape.py counter_u01 bit-for-bit.
+// SplitMix64 — must match tests/test_sir_counter_tape.py counter_u01 (spec 2).
 __device__ __forceinline__ unsigned long long mix64(unsigned long long z){
     z += 0x9E3779B97F4A7C15ULL;
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
@@ -169,7 +170,9 @@ __device__ __forceinline__ float counter_u01(
     unsigned int partner_id,
     unsigned int draw_index)
 {
-    unsigned long long x = global_seed;
+    // Mix the seed before folding the step. Spec 1 mixed (seed XOR step)
+    // first, so distinct pairs with the same XOR aliased.
+    unsigned long long x = mix64(global_seed);
     x = mix64(x ^ (unsigned long long)step);
     x = mix64(x ^ (unsigned long long)event_type);
     x = mix64(x ^ (unsigned long long)agent_id);

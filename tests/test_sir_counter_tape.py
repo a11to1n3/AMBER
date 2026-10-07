@@ -5,6 +5,10 @@ pair infection Bernoulli by
 ``(global_seed, step, EVT_INFECTION=4, min(i,j), max(i,j), draw_index=0)``.
 These tests lock the pure-Python reference (must match device ``mix64`` /
 ``counter_u01`` bit-for-bit) and the Python call-path wiring for ``global_seed``.
+
+``COUNTER_TAPE_SPEC`` 2 mixes the seed before folding the step. Spec 1 folded
+``seed XOR step`` first, so keys that shared that XOR and the remaining fields
+were identical. Draws from spec 1 are not comparable to spec 2.
 """
 
 from __future__ import annotations
@@ -24,6 +28,8 @@ _M1 = 0xBF58476D1CE4E5B9
 _M2 = 0x94D049BB133111EB
 _MASK64 = (1 << 64) - 1
 EVT_INFECTION = 4
+# Spec 1 folded the raw seed with the step before the first mix.
+COUNTER_TAPE_SPEC = 2
 
 
 def mix64(z: int) -> int:
@@ -41,7 +47,7 @@ def counter_u01(
     partner_id: int = 0,
     draw_index: int = 0,
 ) -> float:
-    x = int(global_seed) & _MASK64
+    x = mix64(int(global_seed) & _MASK64)
     for v in (step, event_type, agent_id, partner_id, draw_index):
         x = mix64(x ^ (int(v) & _MASK64))
     u = mix64(x)
@@ -77,7 +83,7 @@ def test_counter_u01_exact_reference_values():
     """Bit-stable reference outputs (float from top 53 mantissa bits)."""
 
     def expand(global_seed, step, event_type, agent_id, partner_id, draw_index):
-        x = int(global_seed) & _MASK64
+        x = mix64(int(global_seed) & _MASK64)
         for v in (step, event_type, agent_id, partner_id, draw_index):
             x = mix64(x ^ (int(v) & _MASK64))
         return (mix64(x) >> 11) * (1.0 / (1 << 53))
@@ -90,8 +96,10 @@ def test_counter_u01_exact_reference_values():
     for key in keys:
         assert counter_u01(*key) == expand(*key)
 
-    # Frozen numeric anchors (fail if constants or folding change)
-    assert abs(counter_u01(0, 0, 4, 0, 1, 0) - 0.9540213506737841) < 1e-15
+    # Frozen spec-2 anchor. Spec 1 produced 0.9540213506737841 for this key.
+    assert COUNTER_TAPE_SPEC == 2
+    assert abs(counter_u01(0, 0, 4, 0, 1, 0) - 0.9540213506737841) > 1e-9
+    assert abs(counter_u01(0, 0, 4, 0, 1, 0) - 0.7682208223562327) < 1e-15
     assert abs(counter_u01(1, 2, 4, 3, 5, 0) - expand(1, 2, 4, 3, 5, 0)) < 1e-15
 
 
@@ -108,7 +116,25 @@ def test_different_pairs_or_steps_differ():
     b = pair_infection_u01(0, 0, 1, 3)
     c = pair_infection_u01(0, 1, 1, 2)
     d = pair_infection_u01(1, 0, 1, 2)
-    assert len({a, b, c, d}) >= 3
+    # Spec 1 aliased (seed=0, step=1) with (seed=1, step=0), so these four
+    # values were not distinct.
+    assert len({a, b, c, d}) == 4
+
+
+def test_seed_and_step_do_not_alias():
+    """Equal seed XOR step must not collapse the remaining key."""
+    pairs = (
+        ((0, 1), (1, 0)),
+        ((0, 5), (5, 0)),
+        ((0, 5), (1, 4)),
+        ((2, 7), (0, 5)),
+        ((6, 3), (5, 0)),
+        ((42, 7), (41, 4)),
+    )
+    for (seed_a, step_a), (seed_b, step_b) in pairs:
+        assert counter_u01(seed_a, step_a, EVT_INFECTION, 0, 1, 0) != (
+            counter_u01(seed_b, step_b, EVT_INFECTION, 0, 1, 0)
+        )
 
 
 def test_cuda_source_documents_counter_tape_and_pair_key():
@@ -120,6 +146,9 @@ def test_cuda_source_documents_counter_tape_and_pair_key():
     assert "min(i,j)" in src or "id < jid" in src
     assert "global_seed" in src
     assert "EVT_INFECTION" in src or "4u" in src
+    mixed = src.find("x = mix64(global_seed)")
+    folded = src.find("x ^ (unsigned long long)step")
+    assert mixed != -1 and folded != -1 and mixed < folded
 
 
 def test_sir_kernel_step_accepts_global_seed():
