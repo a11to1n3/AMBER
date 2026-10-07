@@ -23,6 +23,10 @@
   bindings before restoring generator state. If that restoration fails, the
   witness stays inconclusive. An exception from the swapped execution is
   recorded with a reason and does not abort the forward step.
+- **Activation replay** restores the legacy ``nprandom`` adapter as well as
+  its inner generator. Random-stream restoration and supported model-state
+  restoration are both attempted on the way out, so a stream that cannot be
+  put back does not leave the swapped containers in place.
 
 ## v0.5.1 - 2026-08-14
 

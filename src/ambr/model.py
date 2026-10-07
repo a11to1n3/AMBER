@@ -690,10 +690,11 @@ class Model(BaseModel):
         diverges, False when both match, and None when the swap is not a
         sound witness. ``reason`` explains an inconclusive result. The replay
         restores the step-entry random streams and supported attribute graph,
-        then puts the forward objects back. An exception from the swapped
-        execution is caught here. The forward frame, pending writes,
-        per-agent attribute cache, activation override, and monitor mode are
-        restored either way.
+        then puts the forward objects back. Stream restoration and model-state
+        restoration are attempted separately, so one failure does not skip the
+        other. An exception from the swapped execution is caught here. The
+        forward frame, pending writes, per-agent attribute cache, activation
+        override, and monitor mode are restored either way.
         """
         mon = self._contract
         if getattr(mon, "_in_replay", False) or getattr(mon, "_stage_open", False):
@@ -743,9 +744,11 @@ class Model(BaseModel):
         witness: Optional[bool] = None
         reason: Optional[str] = None
         try:
-            if not self._restore_rng_state(entry_rng):
+            entry_rng_ok = self._restore_rng_state(entry_rng)
+            entry_world_ok = self._restore_replay_world(entry_world)
+            if not entry_rng_ok:
                 reason = "step-entry random streams could not be restored"
-            elif not self._restore_replay_world(entry_world):
+            elif not entry_world_ok:
                 reason = "step-entry model state could not be restored"
             else:
                 self._set_frame(pre.clone())
@@ -769,10 +772,12 @@ class Model(BaseModel):
                         original_post, post_world, entry_world
                     )
         finally:
-            if not self._restore_rng_state(post_rng):
+            post_rng_ok = self._restore_rng_state(post_rng)
+            post_world_ok = self._restore_replay_world(post_world)
+            if not post_rng_ok:
                 witness = None
                 reason = "forward random streams could not be restored"
-            elif not self._restore_replay_world(post_world):
+            elif not post_world_ok:
                 witness = None
                 reason = "forward model state could not be restored"
             self._set_frame(original_post.clone())
@@ -1174,8 +1179,9 @@ class Model(BaseModel):
 
         The snapshot keeps the stream objects and the bindings that point at
         them, so a later step can put those objects back before restoring
-        state. Returns None when a stream has no restorable state. The
-        snapshot does not advance any generator.
+        state. The legacy ``nprandom`` adapter is one of those bindings, along
+        with its inner generator. Returns None when a stream has no
+        restorable state. The snapshot does not advance any generator.
         """
         try:
             streams: Dict[int, Tuple[str, int, Any, Any]] = {}
@@ -1222,11 +1228,19 @@ class Model(BaseModel):
                     bindings.append(("device_inner", "_rng", gen_oid))
 
             nprandom = getattr(self, "nprandom", None)
-            npr_inner = getattr(nprandom, "_rng", None) if nprandom is not None else None
-            if npr_inner is not None:
-                if not hasattr(npr_inner, "bit_generator"):
+            if nprandom is not None:
+                # The adapter attribute has to be restored before its inner
+                # generator. Once the attribute is missing, the inner binding
+                # has nowhere to go.
+                npr_inner = getattr(nprandom, "_rng", None)
+                if npr_inner is not None and not hasattr(npr_inner, "bit_generator"):
                     return None
-                bindings.append(("nprandom", "_rng", keep_generator(npr_inner)))
+                adapter_oid = keep("binding", nprandom, None)
+                bindings.append(("model", "nprandom", adapter_oid))
+                if npr_inner is not None:
+                    gen_oid = keep_generator(npr_inner)
+                    if gen_oid != adapter_oid:
+                        bindings.append(("nprandom", "_rng", gen_oid))
             return _RngSnapshot(tuple(streams.values()), tuple(bindings))
         except Exception:
             return None

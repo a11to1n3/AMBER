@@ -647,3 +647,76 @@ def test_equal_distinct_lists_are_not_an_alias_divergence():
     assert left is not right
     assert left == [1, 1] and right == [1, 1]
     assert res["agents"].sort("id")["wealth"].to_list() == [1, 0]
+
+
+class _DropAdapterAgent(am.Agent):
+    def step(self):
+        self.model.events.append(self.id)
+        self.model.agents[0].wealth = 1
+
+
+class _DropAdapterModel(am.Model):
+    def setup(self):
+        self.events = []
+        self.add_agents(2, agent_class=_DropAdapterAgent, wealth=[0, 0])
+
+    def step(self):
+        self.activate_agents("sequential")
+        if self.events == [1, 0]:
+            self.nprandom = None
+
+
+class _FailPostRngRestore(_DropAdapterModel):
+    """The cleanup restore reports failure without touching the streams."""
+
+    def __init__(self, parameters):
+        super().__init__(parameters)
+        self._rng_restores = 0
+
+    def _restore_rng_state(self, saved):
+        self._rng_restores += 1
+        if self._rng_restores >= 2:
+            return False
+        return super()._restore_rng_state(saved)
+
+
+def _drop_adapter_model(cls=_DropAdapterModel):
+    model = cls({"steps": 1, "seed": 42, "show_progress": False}).cpu(mode="oop")
+    model._ensure_setup()
+    return model
+
+
+def test_replay_restores_legacy_rng_adapter_and_forward_list():
+    model = _drop_adapter_model()
+    original_adapter = model.nprandom
+    events = model.events
+    res = model.run(contract="check")
+    plain = _drop_adapter_model().run(contract="off")
+    races = _races(res["contract"][0])
+    assert races
+    assert all(v.divergence_witness is True for v in races)
+    assert model.nprandom is original_adapter
+    assert model.nprandom._rng is original_adapter._rng
+    assert model.events is events
+    assert events == [0, 1]
+    assert res["agents"].sort("id")["wealth"].to_list() == (
+        plain["agents"].sort("id")["wealth"].to_list()
+    )
+
+
+def test_failed_rng_restore_still_restores_forward_model_state():
+    model = _drop_adapter_model(_FailPostRngRestore)
+    events = model.events
+    res = model.run(contract="check")
+    races = _races(res["contract"][0])
+    assert races
+    assert all(v.divergence_witness is None for v in races)
+    assert all(
+        v.divergence_reason
+        and "forward random streams could not be restored" in v.divergence_reason
+        for v in races
+    )
+    assert model._rng_restores >= 2
+    assert model.nprandom is None
+    assert model.events is events
+    assert events == [0, 1]
