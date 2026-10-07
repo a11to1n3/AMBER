@@ -8,6 +8,9 @@
   Replaying from a stage exit recursed and compared a mid-step frame with a
   full rerun. The witness stays inconclusive until the step has finished,
   and a completed replay restores monitor mode.
+- **Activation replay** restores list, dict, and ndarray attributes and
+  refuses a witness when those values change or when the model holds
+  another mutable object. The forward agent frame is kept either way.
 
 ## v0.5.1 - 2026-08-14
 

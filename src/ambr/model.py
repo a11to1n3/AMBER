@@ -653,9 +653,11 @@ class Model(BaseModel):
         """Rerun this step with activations ``a`` and ``b`` swapped.
 
         Returns True when the agent frame diverges, False when it matches,
-        and None when the swap is not a sound witness. The forward frame,
-        pending writes, per-agent attribute cache, activation override, and
-        monitor mode are restored either way.
+        and None when the swap is not a sound witness. A model attribute that
+        is not a list, dict, or ndarray blocks the swap. Those three are
+        restored, and a change in them makes the witness inconclusive. The
+        forward frame, pending writes, per-agent attribute cache, activation
+        override, and monitor mode are restored either way.
         """
         mon = self._contract
         if getattr(mon, "_in_replay", False) or getattr(mon, "_stage_open", False):
@@ -665,6 +667,12 @@ class Model(BaseModel):
             return None
         order = list(getattr(mon, "_activation_order", []))
         if a not in order or b not in order:
+            return None
+        # Custom objects cannot be restored, so the swap is not run. Lists,
+        # dicts, and ndarrays are restored; if replay changes them the agent
+        # frame is not evidence, because the step may have read that state.
+        side_state, unsupported = self._snapshot_replay_side_state()
+        if unsupported:
             return None
 
         original_post = self.agents_df.clone()
@@ -702,12 +710,15 @@ class Model(BaseModel):
             step_fn = self.step_oop if mode == "oop" else self.step_vectorized
             step_fn()
             self._flush_pending_writes()
+            if self._replay_side_state_changed(side_state):
+                return None
             return not original_post.equals(self.agents_df)
         finally:
             self._set_frame(original_post.clone())
             self._pending_writes = {}
             self._activation_override_order = None
             self._restore_agent_attrs(saved_attrs)
+            self._restore_replay_side_state(side_state)
             mon.mode = saved_mode
             mon.active = saved_active
             mon._in_replay = False
@@ -718,6 +729,72 @@ class Model(BaseModel):
             mon._stage_open = saved_stage_open
             mon._current_stage = saved_stage
             mon._stage_violations = saved_stage_violations
+
+    # Public model attributes owned by the framework, not by the user's step.
+    _REPLAY_FRAMEWORK_ATTRS = frozenset({
+        "population",
+        "t",
+        "agents",
+        "random",
+        "rng",
+        "nprandom",
+        "p",
+        "model_df",
+        "agents_df",
+    })
+
+    def _snapshot_replay_side_state(
+        self,
+    ) -> Tuple[List[Tuple[str, str, Any]], List[str]]:
+        """Copy list, dict, and ndarray attributes. Name anything else mutable."""
+        snapshots: List[Tuple[str, str, Any]] = []
+        unsupported: List[str] = []
+        for name, value in list(self.__dict__.items()):
+            if name.startswith("_") or name in self._REPLAY_FRAMEWORK_ATTRS:
+                continue
+            if value is None or isinstance(
+                value, (bool, int, float, str, bytes, complex, tuple, frozenset)
+            ):
+                continue
+            if isinstance(value, np.generic):
+                continue
+            if isinstance(value, np.ndarray):
+                snapshots.append((name, "ndarray", value.copy()))
+                continue
+            if isinstance(value, (list, dict)):
+                try:
+                    snapshots.append((name, type(value).__name__, copy.deepcopy(value)))
+                except Exception:
+                    unsupported.append(name)
+                continue
+            unsupported.append(name)
+        return snapshots, unsupported
+
+    def _replay_side_state_changed(
+        self, snapshots: List[Tuple[str, str, Any]]
+    ) -> bool:
+        for name, kind, original in snapshots:
+            current = self.__dict__.get(name)
+            if kind == "ndarray":
+                if (
+                    not isinstance(current, np.ndarray)
+                    or current.shape != original.shape
+                    or not np.array_equal(current, original, equal_nan=True)
+                ):
+                    return True
+                continue
+            if current != original:
+                return True
+        return False
+
+    def _restore_replay_side_state(
+        self, snapshots: List[Tuple[str, str, Any]]
+    ) -> None:
+        for name, kind, original in snapshots:
+            if kind == "ndarray":
+                self.__dict__[name] = original.copy()
+            else:
+                self.__dict__[name] = copy.deepcopy(original)
 
     def _agent_objects(self) -> List[Any]:
         return list(getattr(self.agents, "_agent_objects", ()) or ())

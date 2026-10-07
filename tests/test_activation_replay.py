@@ -1,5 +1,7 @@
 """Activation-race witness: no replay while a stage is open."""
 
+import numpy as np
+
 import ambr as am
 
 
@@ -130,3 +132,86 @@ def test_disjoint_staged_writes_stay_clean():
     cert = res["contract"][0]
     assert cert.ok and cert.clean
     assert res["agents"]["wealth"].to_list() == [1, 1, 1]
+
+
+class _ScratchAgent(am.Agent):
+    def step(self):
+        self.model.scratch.append(self.id)
+        self.model.agents[0].cell = len(self.model.scratch)
+
+
+class _ScratchModel(am.Model):
+    def setup(self):
+        self.scratch = []
+        self.add_agents(2, agent_class=_ScratchAgent, cell=[0, 0])
+
+    def step(self):
+        self.activate_agents(mode="sequential")
+
+
+class _Box:
+    def __init__(self):
+        self.n = 0
+
+
+class _BoxAgent(am.Agent):
+    def step(self):
+        self.model.box.n += 1
+        self.model.agents[0].wealth = self.id
+
+
+class _BoxModel(am.Model):
+    def setup(self):
+        self.box = _Box()
+        self.add_agents(2, agent_class=_BoxAgent, wealth=[0, 0])
+
+    def step(self):
+        self.activate_agents(mode="sequential")
+
+
+class _BufferAgent(am.Agent):
+    def step(self):
+        self.model.buf = np.append(self.model.buf, self.id)
+        self.model.agents[0].wealth = self.id
+
+
+class _BufferModel(am.Model):
+    def setup(self):
+        self.buf = np.array([], dtype=int)
+        self.add_agents(2, agent_class=_BufferAgent, wealth=[0, 0])
+
+    def step(self):
+        self.activate_agents(mode="sequential")
+
+
+def test_mutated_list_makes_the_witness_inconclusive_and_is_restored():
+    model = _ScratchModel(_params())
+    res = model.run(contract="check")
+    races = _races(res["contract"][0])
+    assert races
+    assert all(v.divergence_witness is None for v in races)
+    assert model.scratch == [0, 1]
+    assert res["agents"].sort("id")["cell"].to_list() == [2, 0]
+
+
+def test_custom_model_object_skips_the_swap():
+    model = _BoxModel(_params())
+    model._ensure_setup()
+    box = model.box
+    res = model.run(contract="check")
+    races = _races(res["contract"][0])
+    assert len(races) == 1
+    assert races[0].divergence_witness is None
+    assert model.box is box
+    assert model.box.n == 2
+    assert res["agents"].sort("id")["wealth"].to_list() == [1, 0]
+
+
+def test_mutated_ndarray_is_restored_and_witness_is_inconclusive():
+    model = _BufferModel(_params())
+    res = model.run(contract="check")
+    races = _races(res["contract"][0])
+    assert races
+    assert all(v.divergence_witness is None for v in races)
+    assert model.buf.tolist() == [0, 1]
+    assert res["agents"].sort("id")["wealth"].to_list() == [1, 0]
