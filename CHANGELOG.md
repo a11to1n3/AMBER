@@ -16,7 +16,13 @@
   containers in place from the step-entry snapshot, then puts the forward
   post-step objects back. Aliases keep their identity. A value that cannot
   be restored leaves ``divergence_witness`` as ``None``. Nested containers
-  are compared without using an array's truth value.
+  are compared without using an array's truth value. Alias relationships
+  use a one-to-one node mapping; when that mapping does not exist, the
+  witness stays inconclusive.
+- **Activation replay** puts the original stream objects back on their
+  bindings before restoring generator state. If that restoration fails, the
+  witness stays inconclusive. An exception from the swapped execution is
+  recorded with a reason and does not abort the forward step.
 
 ## v0.5.1 - 2026-08-14
 

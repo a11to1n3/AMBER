@@ -1,5 +1,7 @@
 """Activation-race witness: no replay while a stage is open."""
 
+import random
+
 import numpy as np
 
 from ambr.contract import ContractCertificate, ContractViolation
@@ -239,6 +241,97 @@ def test_divergence_witness_round_trips_all_three_values(tmp_path):
     RunResults({"contract": [cert], "info": {"steps": 1}}).save(dest)
     loaded = RunResults.load(dest)["contract"][0]["violations"]
     assert [item["divergence_witness"] for item in loaded] == [True, False, None]
+    assert [item["divergence_reason"] for item in loaded] == [None, None, None]
+
+
+class _SwapReplacesRandom(am.Agent):
+    def setup(self):
+        self.wealth = 0
+
+    def step(self):
+        previous = int(self.model.agents[0].wealth)
+        self.model.agents[0].wealth = 1
+        if self.id == 0 and previous == 1:
+            self.model.random = random.Random(0)
+
+
+class _SwapReplacesRandomModel(am.Model):
+    def setup(self):
+        self.add_agents(2, agent_class=_SwapReplacesRandom, wealth=[0, 0])
+
+    def step(self):
+        self.activate_agents(mode="sequential")
+
+
+class _AlternateRaises(am.Agent):
+    def setup(self):
+        self.wealth = 0
+
+    def step(self):
+        previous = int(self.model.agents[0].wealth)
+        self.model.agents[0].wealth = self.id
+        if self.id == 0 and previous == 1:
+            raise ValueError("alternate order")
+
+
+class _AlternateRaisesModel(am.Model):
+    def setup(self):
+        self.add_agents(2, agent_class=_AlternateRaises, wealth=[0, 0])
+
+    def step(self):
+        self.activate_agents(mode="sequential")
+
+
+def test_rng_restore_rebinds_a_replaced_stream():
+    model = _UnstagedSame({"steps": 1, "seed": 1, "show_progress": False})
+    model._ensure_setup()
+    snapshot = model._capture_rng_state()
+    original = model.random
+    model.random = random.Random(0)
+    assert model._restore_rng_state(snapshot) is True
+    assert model.random is original
+
+
+def test_swapped_random_replacement_is_not_left_installed():
+    params = {"steps": 1, "seed": 5, "show_progress": False}
+    checked = _SwapReplacesRandomModel(params)
+    checked._ensure_setup()
+    original = checked.random
+    res = checked.run(contract="check")
+    plain = _SwapReplacesRandomModel(params)
+    plain_res = plain.run(contract="off")
+    races = _races(res["contract"][0])
+    assert races
+    assert all(v.divergence_witness is False for v in races)
+    assert checked.random is original
+    assert checked.random.getstate() == plain.random.getstate()
+    assert res["agents"].sort("id")["wealth"].to_list() == (
+        plain_res["agents"].sort("id")["wealth"].to_list()
+    )
+
+
+def test_swapped_execution_exception_does_not_abort_the_forward_run(tmp_path):
+    params = {"steps": 1, "seed": 3, "show_progress": False}
+    plain = _AlternateRaisesModel(params).run(contract="off")
+    checked = _AlternateRaisesModel(params)
+    res = checked.run(contract="check")
+    races = _races(res["contract"][0])
+    assert races
+    assert all(v.divergence_witness is None for v in races)
+    assert all(v.divergence_reason and "ValueError" in v.divergence_reason for v in races)
+    assert all("alternate order" in v.divergence_reason for v in races)
+    assert all("ValueError" in v.detail for v in races)
+    assert res["agents"].sort("id")["wealth"].to_list() == (
+        plain["agents"].sort("id")["wealth"].to_list()
+    )
+    assert checked._contract.mode == "check"
+    assert checked._contract._in_replay is False
+    dest = tmp_path / "replay-error"
+    res.save(dest)
+    loaded = RunResults.load(dest)["contract"][0]["violations"]
+    race = next(item for item in loaded if item["kind"] == "activation_race")
+    assert race["divergence_witness"] is None
+    assert "ValueError" in race["divergence_reason"]
 
 
 class _ScratchAgent(am.Agent):
@@ -472,3 +565,85 @@ def test_equal_nested_ndarray_is_not_a_divergence():
     assert races[0].divergence_witness is False
     assert model.payload["values"] is array
     assert array.tolist() == [7, 0]
+
+
+class _CollapseAliasAgent(am.Agent):
+    def setup(self):
+        self.wealth = 0
+
+    def step(self):
+        previous = int(self.model.agents[0].wealth)
+        self.model.agents[0].wealth = 1
+        if self.id == 0 and previous == 1:
+            self.model.right = self.model.left
+
+
+class _CollapseAliasModel(am.Model):
+    def setup(self):
+        self.left = []
+        self.right = []
+        self.add_agents(2, agent_class=_CollapseAliasAgent, wealth=[0, 0])
+
+    def step(self):
+        self.activate_agents(mode="sequential")
+
+
+class _DistinctAppendAgent(am.Agent):
+    def setup(self):
+        self.wealth = 0
+
+    def step(self):
+        self.model.left.append(1)
+        self.model.right.append(1)
+        self.model.agents[0].wealth = 1
+
+
+class _DistinctAppendModel(am.Model):
+    def setup(self):
+        self.left = []
+        self.right = []
+        self.add_agents(2, agent_class=_DistinctAppendAgent, wealth=[0, 0])
+
+    def step(self):
+        self.activate_agents(mode="sequential")
+
+
+def test_alias_collapse_is_inconclusive_and_forward_lists_stay_distinct():
+    params = _params()
+    model = _CollapseAliasModel(params)
+    model._ensure_setup()
+    left = model.left
+    right = model.right
+    assert left is not right
+    res = model.run(contract="check")
+    plain = _CollapseAliasModel(params).run(contract="off")
+    races = _races(res["contract"][0])
+    assert races
+    assert all(v.divergence_witness is None for v in races)
+    assert all(
+        v.divergence_reason
+        and "alias relationships are not one-to-one" in v.divergence_reason
+        for v in races
+    )
+    assert all("alias relationships are not one-to-one" in v.detail for v in races)
+    assert model.left is left and model.right is right
+    assert left is not right
+    assert left == [] and right == []
+    assert res["agents"].sort("id")["wealth"].to_list() == (
+        plain["agents"].sort("id")["wealth"].to_list()
+    )
+
+
+def test_equal_distinct_lists_are_not_an_alias_divergence():
+    model = _DistinctAppendModel(_params())
+    model._ensure_setup()
+    left = model.left
+    right = model.right
+    res = model.run(contract="check")
+    races = _races(res["contract"][0])
+    assert len(races) == 1
+    assert races[0].divergence_witness is False
+    assert model.left is left and model.right is right
+    assert left is not right
+    assert left == [1, 1] and right == [1, 1]
+    assert res["agents"].sort("id")["wealth"].to_list() == [1, 0]
