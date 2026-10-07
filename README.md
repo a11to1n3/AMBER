@@ -93,9 +93,10 @@ checks presence of the label, not the evidence content) and
 `contract="off"` — see [`docs/going_faster.rst`](https://ambr.readthedocs.io/en/latest/going_faster.html).
 
 Default CI has no CUDA. Optional **GPU claims** workflow
-(`.github/workflows/gpu-nightly.yml`) **hard-fails as NOT VERIFIED** without
-a GPU (never soft-green) and runs `scripts/run_gpu_claims.py --quick` on
-self-hosted CUDA runners (`GPU_RUNNER` repository variable).
+(`.github/workflows/gpu-nightly.yml`) runs `scripts/run_gpu_claims.py --quick`
+only when `GPU_RUNNER` names a self-hosted CUDA runner. If that variable is
+unset the job is skipped — that is not a CUDA pass. **0.5.0** GPU claims
+were verified locally on an NVIDIA RTX 3090, not by GitHub Actions.
 
 ## 🚀 Quick Start
 

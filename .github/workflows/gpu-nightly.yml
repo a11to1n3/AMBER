@@ -1,20 +1,18 @@
-# GPU claim verification — requires a real CUDA runner.
+# GPU claim verification — optional GitHub job.
 #
-# Missing CUDA is NOT VERIFIED (exit 1), never soft-green. Configure
-# repository variable GPU_RUNNER to a single self-hosted runner label
-# (e.g. cuda) on a machine with NVIDIA + CuPy.
-# Locally:
+# Runs only when GPU_RUNNER is set to a single self-hosted runner label
+# (e.g. cuda) on a machine with NVIDIA + CuPy. If the variable is unset,
+# this workflow skips (that is not a CUDA pass). Locally:
 #   python scripts/run_gpu_claims.py --quick
 
 name: GPU claims (nightly / manual)
 
 on:
   schedule:
-    # 06:00 UTC daily — hard-fails as NOT VERIFIED without CUDA
+    # 06:00 UTC daily — skipped when GPU_RUNNER is unset
     - cron: "0 6 * * *"
   workflow_dispatch:
-  # No path-push trigger: without a GPU runner every merge would fail red.
-  # Release tags still run the CUDA gate in release.yml.
+  # No path-push trigger. Release publish does not wait on this job.
 
 permissions:
   contents: read
@@ -22,13 +20,12 @@ permissions:
 jobs:
   gpu-claims:
     name: GPU claim smoke
-    # Prefer a self-hosted CUDA runner. Falling back to ubuntu-latest without
-    # a GPU fails as NOT VERIFIED (never soft-skip green).
-    runs-on: ${{ vars.GPU_RUNNER || 'ubuntu-latest' }}
+    if: ${{ vars.GPU_RUNNER != '' }}
+    runs-on: ${{ vars.GPU_RUNNER }}
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.12
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

@@ -3,20 +3,30 @@
 from __future__ import annotations
 
 import ast
-import re
 from pathlib import Path
 
+import ambr
 import pytest
 
 from ambr.deprecation_inventory import DEPRECATIONS_TO_REMOVE_IN_1_0, inventory_whats
 
-SRC = Path(__file__).resolve().parents[1] / "src" / "ambr"
+
+def _ambr_source_root() -> Path:
+    """Prefer the checkout tree; fall back to the installed package.
+
+    Release wheel jobs hide ``src/ambr`` so imports resolve from site-packages.
+    """
+    tree = Path(__file__).resolve().parents[1] / "src" / "ambr"
+    if tree.is_dir() and next(tree.rglob("*.py"), None) is not None:
+        return tree
+    return Path(ambr.__file__).resolve().parent
 
 
 def _extract_warn_deprecated_whats() -> set[str]:
-    """Parse src/ambr for warn_deprecated( first positional string arg."""
+    """Parse ambr sources for warn_deprecated( first positional string arg."""
     found: set[str] = set()
-    for path in SRC.rglob("*.py"):
+    root = _ambr_source_root()
+    for path in root.rglob("*.py"):
         if path.name.startswith("_") and path.name not in (
             "_deprecation.py",
         ):

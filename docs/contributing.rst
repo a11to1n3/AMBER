@@ -202,7 +202,8 @@ Release checklist
 
    * validates tag vs ``project.version`` and proves the version is absent
      from PyPI
-   * builds the wheel once and runs CPU + CUDA gates against that wheel
+   * builds the wheel once and runs the CPU matrix against that wheel
+     (GitHub CUDA is optional and does not block publish)
    * attaches artifacts to a GitHub Release after maintainer approval
    * publishes to **PyPI** via Trusted Publishing (OIDC)
 

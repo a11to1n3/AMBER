@@ -3,19 +3,20 @@ name: Release
 # Real release gates (tag push only). Flow:
 #
 #   Validate tag/version → Build wheel once → Install exact wheel →
-#     ├─ CPU matrix tests
-#     └─ CUDA tests (must verify; never soft-green)
-#   → Protected publish approval → PyPI via OIDC (+ GitHub Release)
+#     CPU matrix tests → Protected publish approval → PyPI via OIDC
+#
+#   Optional CUDA job runs only when GPU_RUNNER is set. It does not
+#   block publish. 0.5.0 GPU claims were verified locally (RTX 3090),
+#   not by GitHub Actions. An unset GPU_RUNNER skips CUDA (not a pass).
 #
 # One-time setup:
 #   1. PyPI Trusted Publisher for this workflow + environment "pypi"
 #      https://pypi.org/manage/project/ambr/settings/publishing/
 #        Owner: a11to1n3  Repository: AMBER  Workflow: release.yml  Environment: pypi
 #   2. GitHub Environment "pypi" with required reviewers (maintainer approval)
-#   3. Repository variable GPU_RUNNER = a single self-hosted runner label
-#      for a CUDA machine (e.g. "cuda"). runs-on is a scalar expression, so
-#      do not use a comma list such as "self-hosted,gpu". Missing CUDA →
-#      job fails as NOT VERIFIED.
+#   3. Optional: repository variable GPU_RUNNER = a single self-hosted
+#      runner label (e.g. "cuda"). Scalar runs-on — not "self-hosted,gpu".
+#      If unset, the CUDA job is skipped. Publish does not wait on it.
 #
 # Security:
 #   - Actions pinned to full commit SHAs
@@ -58,7 +59,7 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify tag vX.Y.Z equals project.version
         id: meta
@@ -147,7 +148,7 @@ jobs:
       version: ${{ needs.validate.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.12
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -325,7 +326,7 @@ jobs:
           echo "path=${WHEEL}" >> "${GITHUB_OUTPUT}"
 
       - name: Generate SBOM (SPDX) from wheel
-        uses: anchore/sbom-action@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0 # v0.18.0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           file: ${{ steps.wheel.outputs.path }}
           format: spdx-json
@@ -358,7 +359,7 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: Checkout (tests / examples only — package comes from the wheel)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -452,20 +453,19 @@ jobs:
             -q
 
   # ---------------------------------------------------------------------------
-  # C + E — Install exact wheel → CUDA tests (must verify; never soft-green)
+  # Optional CUDA tests — skipped unless GPU_RUNNER is set. Does not block publish.
   # ---------------------------------------------------------------------------
   test-cuda:
     name: CUDA tests (wheel)
+    if: ${{ vars.GPU_RUNNER != '' }}
     needs: [validate, build]
-    # Prefer a self-hosted CUDA runner. Falling back to ubuntu-latest without
-    # a GPU must *fail* as NOT VERIFIED — never soft-skip green.
-    runs-on: ${{ vars.GPU_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.GPU_RUNNER }}
     timeout-minutes: 60
     permissions:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.12
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -625,7 +625,7 @@ jobs:
   # ---------------------------------------------------------------------------
   publish:
     name: Publish to PyPI (OIDC)
-    needs: [validate, build, test-cpu, test-cuda]
+    needs: [validate, build, test-cpu]
     runs-on: ubuntu-latest
     # Maintainer approval: configure Environment "pypi" with required reviewers.
     environment:
@@ -656,7 +656,7 @@ jobs:
           subject-path: dist/*
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: |
             dist/*

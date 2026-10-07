@@ -9,6 +9,12 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 -------------
 
+[0.5.1] - 2026-08-14
+--------------------
+
+Patch over 0.5.0: deprecation-inventory test scans the installed package
+when ``src/ambr`` is hidden. **v0.5.0** was tagged but never published.
+
 [0.5.0] - 2026-08-13
 --------------------
 
@@ -21,7 +27,8 @@ Highlights:
   strict; SMAC defaults to ``on_error='raise'``.
 * ``RunResults.save`` uses a versioned manifest; ``import ambr`` does not
   load matplotlib (``ambr[viz]`` / ``ambr[advanced]`` extras).
-* Real release/GPU gates (CUDA missing is **NOT VERIFIED**, never soft-green).
+* Publish waits on the CPU wheel matrix, not on GitHub CUDA. 0.5.0 GPU
+  claims were verified locally on an RTX 3090, not in Actions.
 * First-run honesty: README extras include ``gpu`` / ``viz`` / ``advanced``;
   DataFrame prints are ASCII (``.to_dicts()``); SMAC examples are short,
   seeded, and skip plots without matplotlib.
@@ -30,7 +37,7 @@ Highlights:
   ``None``.
 
 Supported Python: **officially tested 3.10–3.13**. Nightly GPU workflow
-fails as **NOT VERIFIED** without CUDA.
+skips when ``GPU_RUNNER`` is unset (not a CUDA pass).
 
 [0.4.7] - 2026-08-05
 --------------------
