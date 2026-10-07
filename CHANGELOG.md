@@ -10,6 +10,11 @@
 - **Contract certificates** name the seams they observe, the state they
   assume is outside the trace, and that the conditional activation
   guarantee is not established. ``clean`` still means no observed violation.
+- **Reduction domains**: declared scatter additions record their dtype.
+  IEEE floating-point addition warns (``inexact_reduction``): ``ok`` stays
+  true and ``clean`` becomes false, because the trace does not establish
+  order independence. Integer scatter stays clean. Integer overflow is not
+  checked.
 
 ## v0.5.1 - 2026-08-14
 
