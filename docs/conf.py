@@ -30,7 +30,7 @@ author = 'a11to1n3'
 try:
     release = metadata_version('ambr')
 except PackageNotFoundError:
-    release = '0.5.1'
+    release = '0.5.2'
 version = release
 
 # -- General configuration ---------------------------------------------------

@@ -9,6 +9,23 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 -------------
 
+[0.5.2] - 2026-10-07
+--------------------
+
+Patch over 0.5.1. Full item list: ``CHANGELOG.md``.
+
+* Counter-tape spec 2 mixes the seed before the step. Spec 1 tapes are not
+  comparable. The Python reference and the CUDA SIR kernel both change.
+* Contract certificates name the observed seams, including attributed
+  activation reads and writes, and state that a clean result is not an
+  activation-order proof.
+* Declared IEEE floating-point scatter addition warns
+  (``inexact_reduction``). Integer scatter stays clean.
+* Activation replay restores random streams, the legacy ``nprandom``
+  adapter, and supported model objects after a swapped run. An exception
+  or a non-bijective alias leaves the witness inconclusive and puts the
+  forward state back.
+
 [0.5.1] - 2026-08-14
 --------------------
 

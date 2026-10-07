@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.5.2 - 2026-10-07
+
+Patch over 0.5.1. Counter-tape draws change: spec 2 mixes the seed before
+the step, so published spec 1 tapes are not comparable. Contract
+certificates name the seams they observe. Activation replay restores the
+forward step after a swap.
+
 ### Fixed
 
 - **Counter tape spec 2**: mix the seed before the step in the Python
