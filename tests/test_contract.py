@@ -336,3 +336,21 @@ def test_certificate_ok_vs_clean_semantics():
 
 def test_contract_modes_constant():
     assert CONTRACT_MODES == ("off", "check", "warn", "raise")
+
+
+def test_certificate_states_observed_scope_without_changing_clean():
+    """A clean result still means no observed violation, and says so."""
+    from ambr.results import _contract_to_jsonable
+
+    cert = CleanVectorModel(_params(steps=1)).run(contract="check")["contract"][0]
+    assert cert.ok and cert.clean
+    assert "buffered Agent attribute writes" in cert.observed_scope
+    assert "declared scatter reductions" in cert.observed_scope
+    assert "step-endpoint schema and population" in cert.observed_scope
+    assert any("outside the trace" in item for item in cert.assumptions)
+    assert cert.conditional_guarantee == "not_established"
+    payload = _contract_to_jsonable([cert])[0]
+    assert payload["ok"] is True and payload["clean"] is True
+    assert payload["observed_scope"] == list(cert.observed_scope)
+    assert payload["assumptions"] == list(cert.assumptions)
+    assert payload["conditional_guarantee"] == "not_established"

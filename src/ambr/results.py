@@ -204,6 +204,11 @@ def _contract_to_jsonable(value: list) -> List[Dict[str, Any]]:
                 "step": getattr(cert, "step", None),
                 "ok": getattr(cert, "ok", None),
                 "clean": getattr(cert, "clean", None),
+                "observed_scope": list(getattr(cert, "observed_scope", ()) or ()),
+                "assumptions": list(getattr(cert, "assumptions", ()) or ()),
+                "conditional_guarantee": getattr(
+                    cert, "conditional_guarantee", None
+                ),
                 "violations": violations,
             }
         )
