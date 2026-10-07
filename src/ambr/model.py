@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Type, Optional, Set, Tuple, TYPE_CHECKING
 import copy
+import random
 import polars as pl
 import warnings
 import numpy as np
@@ -88,6 +89,7 @@ class Model(BaseModel):
         # Pre-step agent frame used by activation replay, and the order a
         # replay asks stage_agents / activate to follow.
         self._pre_step_state = None
+        self._pre_step_rng = None
         self._activation_override_order = None
 
         super().__init__(parameters)  # sets self.random / self.rng / self.nprandom
@@ -626,12 +628,14 @@ class Model(BaseModel):
                 mon.begin_step(self._contract_snapshot())
                 try:
                     self._pre_step_state = self.agents_df.clone()
+                    self._pre_step_rng = self._capture_rng_state()
                     step_fn()
                 finally:
                     cert = mon.end_step(
                         self.t, self._contract_snapshot(), model=self
                     )
                     self._pre_step_state = None
+                    self._pre_step_rng = None
 
                 if mon.mode == "warn":
                     for v in cert.violations:
@@ -647,15 +651,19 @@ class Model(BaseModel):
         except Exception:
             self._current_step_data = {}
             self._pre_step_state = None
+            self._pre_step_rng = None
             raise
 
     def replay_activation_swap(self, a: Any, b: Any) -> Optional[bool]:
         """Rerun this step with activations ``a`` and ``b`` swapped.
 
         Returns True when the agent frame diverges, False when it matches,
-        and None when the swap is not a sound witness. The forward frame,
-        pending writes, per-agent attribute cache, activation override, and
-        monitor mode are restored either way.
+        and None when the swap is not a sound witness. The replay starts from
+        the step-entry random streams and puts the forward post-step streams
+        back before returning. If those streams cannot be snapshotted, the
+        witness is skipped. The forward frame, pending writes, per-agent
+        attribute cache, activation override, and monitor mode are restored
+        either way.
         """
         mon = self._contract
         if getattr(mon, "_in_replay", False) or getattr(mon, "_stage_open", False):
@@ -665,6 +673,14 @@ class Model(BaseModel):
             return None
         order = list(getattr(mon, "_activation_order", []))
         if a not in order or b not in order:
+            return None
+        entry_rng = getattr(self, "_pre_step_rng", None)
+        post_rng = self._capture_rng_state()
+        if (
+            entry_rng is None
+            or post_rng is None
+            or not self._rng_same_stream_ids(entry_rng, post_rng)
+        ):
             return None
 
         original_post = self.agents_df.clone()
@@ -689,6 +705,8 @@ class Model(BaseModel):
         mon.mode = "off"
         mon.active = False
         try:
+            if not self._restore_rng_state(entry_rng):
+                return None
             self._set_frame(pre.clone())
             self._pending_writes = {}
             self._refresh_agent_cache(pre)
@@ -704,6 +722,7 @@ class Model(BaseModel):
             self._flush_pending_writes()
             return not original_post.equals(self.agents_df)
         finally:
+            self._restore_rng_state(post_rng)
             self._set_frame(original_post.clone())
             self._pending_writes = {}
             self._activation_override_order = None
@@ -757,6 +776,100 @@ class Model(BaseModel):
                 if key not in df.columns:
                     continue
                 object.__setattr__(agent, key, df[key][row])
+
+    def _underlying_generator(self, obj: Any) -> Any:
+        """Return a NumPy/CuPy Generator hidden behind a thin wrapper, if any."""
+        if obj is None:
+            return None
+        if hasattr(obj, "bit_generator"):
+            return obj
+        inner = getattr(obj, "_rng", None)
+        if inner is not None and hasattr(inner, "bit_generator"):
+            return inner
+        return None
+
+    def _capture_rng_state(self) -> Optional[Tuple[Tuple[str, int, Any], ...]]:
+        """Snapshot every random stream the step can draw from.
+
+        Returns None when a stream has no restorable state. The snapshot does
+        not advance any generator.
+        """
+        try:
+            random_obj = self.__dict__.get("random")
+            if not isinstance(random_obj, random.Random):
+                return None
+            streams: List[Tuple[str, int, Any]] = [
+                ("random", id(random_obj), copy.deepcopy(random_obj.getstate()))
+            ]
+            seen = {id(random_obj)}
+
+            def add_generator(gen: Any) -> bool:
+                if gen is None or id(gen) in seen:
+                    return True
+                if not hasattr(gen, "bit_generator"):
+                    return False
+                seen.add(id(gen))
+                streams.append(
+                    ("generator", id(gen), copy.deepcopy(gen.bit_generator.state))
+                )
+                return True
+
+            if not add_generator(self.__dict__.get("_host_rng")):
+                return None
+            execution = getattr(self, "_execution", None)
+            device = getattr(execution, "device_rng", None) if execution is not None else None
+            device_gen = self._underlying_generator(device)
+            if device is not None and device_gen is None:
+                return None
+            if not add_generator(device_gen):
+                return None
+            nprandom = getattr(self, "nprandom", None)
+            npr_gen = self._underlying_generator(getattr(nprandom, "_rng", None))
+            if nprandom is not None and getattr(nprandom, "_rng", None) is not None and npr_gen is None:
+                return None
+            if not add_generator(npr_gen):
+                return None
+            return tuple(streams)
+        except Exception:
+            return None
+
+    def _rng_same_stream_ids(
+        self,
+        entry: Tuple[Tuple[str, int, Any], ...],
+        post: Tuple[Tuple[str, int, Any], ...],
+    ) -> bool:
+        return [item[1] for item in entry] == [item[1] for item in post]
+
+    def _restore_rng_state(self, saved: Optional[Tuple[Tuple[str, int, Any], ...]]) -> bool:
+        """Put ``saved`` back onto the same stream objects. Does not draw."""
+        if not saved:
+            return False
+        objects = {id(self.__dict__.get("random")): self.__dict__.get("random")}
+        host = self.__dict__.get("_host_rng")
+        objects[id(host)] = host
+        execution = getattr(self, "_execution", None)
+        device = getattr(execution, "device_rng", None) if execution is not None else None
+        device_gen = self._underlying_generator(device)
+        if device_gen is not None:
+            objects[id(device_gen)] = device_gen
+        npr_gen = self._underlying_generator(
+            getattr(getattr(self, "nprandom", None), "_rng", None)
+        )
+        if npr_gen is not None:
+            objects[id(npr_gen)] = npr_gen
+        try:
+            for kind, oid, state in saved:
+                obj = objects.get(oid)
+                if obj is None:
+                    return False
+                payload = copy.deepcopy(state)
+                if kind == "random":
+                    obj.setstate(payload)
+                else:
+                    obj.bit_generator.state = payload
+            return True
+        except Exception:
+            return False
 
     def _fast_path_is_eligible(
         self,

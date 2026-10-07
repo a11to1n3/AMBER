@@ -8,6 +8,10 @@
   Replaying from a stage exit recursed and compared a mid-step frame with a
   full rerun. The witness stays inconclusive until the step has finished,
   and a completed replay restores monitor mode.
+- **Activation replay** reruns from the step-entry random streams and then
+  restores the forward post-step streams. A stream without restorable state
+  leaves ``divergence_witness`` as ``None``. Cross-activation read/write
+  overlap is reported, and the witness is included in contract JSON.
 
 ## v0.5.1 - 2026-08-14
 

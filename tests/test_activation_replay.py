@@ -1,5 +1,8 @@
 """Activation-race witness: no replay while a stage is open."""
 
+from ambr.contract import ContractCertificate, ContractViolation
+from ambr.results import RunResults
+
 import ambr as am
 
 
@@ -130,3 +133,107 @@ def test_disjoint_staged_writes_stay_clean():
     cert = res["contract"][0]
     assert cert.ok and cert.clean
     assert res["agents"]["wealth"].to_list() == [1, 1, 1]
+
+
+class _ConstDraw(am.Agent):
+    def setup(self):
+        self.wealth = 0
+        self.noise = 0.0
+
+    def step(self):
+        self.model.agents[0].wealth = 1
+
+
+class _ConstDrawModel(am.Model):
+    def setup(self):
+        self.add_agents(2, agent_class=_ConstDraw, wealth=[0, 0], noise=[0.0, 0.0])
+
+    def step(self):
+        self.activate_agents(mode="sequential")
+        self.agents[0].noise = float(self.rng.random())
+        self.agents[1].noise = float(self.random.random())
+
+
+def test_same_constant_write_plus_later_draw_is_not_a_false_divergence():
+    params = {"steps": 1, "seed": 5, "show_progress": False}
+    checked = _ConstDrawModel(params)
+    res = checked.run(contract="check")
+    races = _races(res["contract"][0])
+    assert len(races) == 1
+    assert races[0].divergence_witness is False
+    plain = _ConstDrawModel(params).run(contract="off")
+    assert res["agents"].sort("id")["noise"].to_list() == (
+        plain["agents"].sort("id")["noise"].to_list()
+    )
+
+
+def test_monitoring_does_not_change_later_draws():
+    params = {"steps": 2, "seed": 5, "show_progress": False}
+    checked = _ConstDrawModel(params)
+    plain = _ConstDrawModel(params)
+    checked.run(contract="check")
+    plain.run(contract="off")
+    assert checked.rng.random() == plain.rng.random()
+    assert checked.random.random() == plain.random.random()
+
+
+class _CopyNeighbor(am.Agent):
+    def setup(self):
+        self.wealth = int(self.id)
+
+    def step(self):
+        other = self.model.agents[1 - int(self.id)]
+        self.wealth = other.wealth + 1
+
+
+class _ReadWriteModel(am.Model):
+    def setup(self):
+        self.add_agents(2, agent_class=_CopyNeighbor, wealth=[0, 1])
+
+    def step(self):
+        self.activate_agents(mode="sequential")
+
+
+class _StagedReadWriteModel(am.Model):
+    def setup(self):
+        self.add_agents(2, agent_class=_CopyNeighbor, wealth=[0, 1])
+
+    def step(self):
+        for agent in self.stage_agents("copy"):
+            agent.step()
+
+
+def test_read_write_dependency_is_not_clean_and_can_diverge():
+    res = _ReadWriteModel(_params()).run(contract="check")
+    cert = res["contract"][0]
+    assert not cert.clean
+    races = _races(cert)
+    assert races
+    assert all(v.divergence_witness is True for v in races)
+    assert res["agents"].sort("id")["wealth"].to_list() == [2, 3]
+
+
+def test_staged_read_write_dependency_skips_replay():
+    res = _StagedReadWriteModel(_params()).run(contract="check")
+    cert = res["contract"][0]
+    assert not cert.clean
+    races = _races(cert)
+    assert races
+    assert all(v.divergence_witness is None for v in races)
+
+
+def test_divergence_witness_round_trips_all_three_values(tmp_path):
+    cert = ContractCertificate(step=1)
+    for value in (True, False, None):
+        cert.add(ContractViolation(
+            "activation_race",
+            f"witness {value}",
+            severity="error",
+            columns=["wealth"],
+            ids=[0, 1],
+            divergence_witness=value,
+        ))
+    dest = tmp_path / "witness"
+    RunResults({"contract": [cert], "info": {"steps": 1}}).save(dest)
+    loaded = RunResults.load(dest)["contract"][0]["violations"]
+    assert [item["divergence_witness"] for item in loaded] == [True, False, None]
