@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Type, Optional, Set, Tuple, TYPE_CHECKING
 import copy
+import random
 import polars as pl
 import warnings
 import numpy as np
@@ -88,6 +89,8 @@ class Model(BaseModel):
         # Pre-step agent frame used by activation replay, and the order a
         # replay asks stage_agents / activate to follow.
         self._pre_step_state = None
+        self._pre_step_rng = None
+        self._pre_step_world = None
         self._activation_override_order = None
 
         super().__init__(parameters)  # sets self.random / self.rng / self.nprandom
@@ -626,12 +629,16 @@ class Model(BaseModel):
                 mon.begin_step(self._contract_snapshot())
                 try:
                     self._pre_step_state = self.agents_df.clone()
+                    self._pre_step_rng = self._capture_rng_state()
+                    self._pre_step_world = self._capture_replay_world()
                     step_fn()
                 finally:
                     cert = mon.end_step(
                         self.t, self._contract_snapshot(), model=self
                     )
                     self._pre_step_state = None
+                    self._pre_step_rng = None
+                    self._pre_step_world = None
 
                 if mon.mode == "warn":
                     for v in cert.violations:
@@ -647,17 +654,20 @@ class Model(BaseModel):
         except Exception:
             self._current_step_data = {}
             self._pre_step_state = None
+            self._pre_step_rng = None
+            self._pre_step_world = None
             raise
 
     def replay_activation_swap(self, a: Any, b: Any) -> Optional[bool]:
         """Rerun this step with activations ``a`` and ``b`` swapped.
 
-        Returns True when the agent frame diverges, False when it matches,
-        and None when the swap is not a sound witness. A model attribute that
-        is not a list, dict, or ndarray blocks the swap. Those three are
-        restored, and a change in them makes the witness inconclusive. The
-        forward frame, pending writes, per-agent attribute cache, activation
-        override, and monitor mode are restored either way.
+        Returns True when the agent frame or restored model state diverges,
+        False when both match, and None when the swap is not a sound witness.
+        The replay starts from the step-entry random streams and supported
+        attribute graph, then puts the forward post-step streams and objects
+        back. A stream or value that cannot be restored skips the witness.
+        The forward frame, pending writes, per-agent attribute cache,
+        activation override, and monitor mode are restored either way.
         """
         mon = self._contract
         if getattr(mon, "_in_replay", False) or getattr(mon, "_stage_open", False):
@@ -668,11 +678,19 @@ class Model(BaseModel):
         order = list(getattr(mon, "_activation_order", []))
         if a not in order or b not in order:
             return None
-        # Custom objects cannot be restored, so the swap is not run. Lists,
-        # dicts, and ndarrays are restored; if replay changes them the agent
-        # frame is not evidence, because the step may have read that state.
-        side_state, unsupported = self._snapshot_replay_side_state()
-        if unsupported:
+        entry_rng = getattr(self, "_pre_step_rng", None)
+        post_rng = self._capture_rng_state()
+        if (
+            entry_rng is None
+            or post_rng is None
+            or not self._rng_same_stream_ids(entry_rng, post_rng)
+        ):
+            return None
+        entry_world = getattr(self, "_pre_step_world", None)
+        post_world = self._capture_replay_world(
+            self._replay_world_objects(entry_world)
+        )
+        if entry_world is None or post_world is None:
             return None
 
         original_post = self.agents_df.clone()
@@ -697,6 +715,10 @@ class Model(BaseModel):
         mon.mode = "off"
         mon.active = False
         try:
+            if not self._restore_rng_state(entry_rng):
+                return None
+            if not self._restore_replay_world(entry_world):
+                return None
             self._set_frame(pre.clone())
             self._pending_writes = {}
             self._refresh_agent_cache(pre)
@@ -710,15 +732,26 @@ class Model(BaseModel):
             step_fn = self.step_oop if mode == "oop" else self.step_vectorized
             step_fn()
             self._flush_pending_writes()
-            if self._replay_side_state_changed(side_state):
+            try:
+                frame_differs = not bool(original_post.equals(self.agents_df))
+            except Exception:
                 return None
-            return not original_post.equals(self.agents_df)
+            replay_world = self._capture_replay_world(
+                self._replay_world_objects(entry_world)
+            )
+            if replay_world is None:
+                return None
+            same_world = self._replay_worlds_equal(post_world, replay_world)
+            if same_world is None:
+                return None
+            return bool(frame_differs or not same_world)
         finally:
+            self._restore_rng_state(post_rng)
+            self._restore_replay_world(post_world)
             self._set_frame(original_post.clone())
             self._pending_writes = {}
             self._activation_override_order = None
             self._restore_agent_attrs(saved_attrs)
-            self._restore_replay_side_state(side_state)
             mon.mode = saved_mode
             mon.active = saved_active
             mon._in_replay = False
@@ -743,58 +776,278 @@ class Model(BaseModel):
         "agents_df",
     })
 
-    def _snapshot_replay_side_state(
-        self,
-    ) -> Tuple[List[Tuple[str, str, Any]], List[str]]:
-        """Copy list, dict, and ndarray attributes. Name anything else mutable."""
-        snapshots: List[Tuple[str, str, Any]] = []
-        unsupported: List[str] = []
-        for name, value in list(self.__dict__.items()):
-            if name.startswith("_") or name in self._REPLAY_FRAMEWORK_ATTRS:
-                continue
-            if value is None or isinstance(
-                value, (bool, int, float, str, bytes, complex, tuple, frozenset)
-            ):
-                continue
-            if isinstance(value, np.generic):
-                continue
-            if isinstance(value, np.ndarray):
-                snapshots.append((name, "ndarray", value.copy()))
-                continue
-            if isinstance(value, (list, dict)):
-                try:
-                    snapshots.append((name, type(value).__name__, copy.deepcopy(value)))
-                except Exception:
-                    unsupported.append(name)
-                continue
-            unsupported.append(name)
-        return snapshots, unsupported
-
-    def _replay_side_state_changed(
-        self, snapshots: List[Tuple[str, str, Any]]
-    ) -> bool:
-        for name, kind, original in snapshots:
-            current = self.__dict__.get(name)
-            if kind == "ndarray":
-                if (
-                    not isinstance(current, np.ndarray)
-                    or current.shape != original.shape
-                    or not np.array_equal(current, original, equal_nan=True)
-                ):
-                    return True
-                continue
-            if current != original:
-                return True
+    @staticmethod
+    def _is_replay_leaf(value: Any) -> bool:
+        """True when ``value`` can be restored by rebinding, not by mutation."""
+        if value is None or isinstance(
+            value, (bool, int, float, str, bytes, complex, frozenset)
+        ):
+            return True
+        if isinstance(value, np.generic):
+            return True
+        if isinstance(value, tuple):
+            return all(Model._is_replay_leaf(item) for item in value)
         return False
 
-    def _restore_replay_side_state(
-        self, snapshots: List[Tuple[str, str, Any]]
-    ) -> None:
-        for name, kind, original in snapshots:
-            if kind == "ndarray":
-                self.__dict__[name] = original.copy()
-            else:
-                self.__dict__[name] = copy.deepcopy(original)
+    @staticmethod
+    def _ndarray_replay_supported(value: np.ndarray) -> bool:
+        dtype = value.dtype
+        if dtype.hasobject:
+            return False
+        return bool(
+            np.issubdtype(dtype, np.number) or np.issubdtype(dtype, np.bool_)
+        )
+
+    def _capture_replay_world(
+        self, remembered: Optional[Dict[int, Any]] = None
+    ) -> Optional[Tuple[Tuple[Tuple[str, Tuple[str, Any]], ...], Dict[int, Any]]]:
+        """Snapshot public bindings and the supported objects they reach.
+
+        Containers are recorded as the live objects plus their child
+        structure, so a later restore can mutate them in place. Returns None
+        when any reachable value cannot be put back safely.
+        """
+        nodes: Dict[int, Any] = {}
+
+        def capture(value: Any) -> Tuple[str, Any]:
+            if self._is_replay_leaf(value):
+                return ("leaf", value)
+            if isinstance(value, tuple):
+                oid = id(value)
+                if oid in nodes:
+                    return ("node", oid)
+                nodes[oid] = ("tuple", value, ())
+                children = tuple(capture(item) for item in value)
+                nodes[oid] = ("tuple", value, children)
+                return ("node", oid)
+            if isinstance(value, list):
+                oid = id(value)
+                if oid in nodes:
+                    return ("node", oid)
+                nodes[oid] = ("list", value, ())
+                children = tuple(capture(item) for item in value)
+                nodes[oid] = ("list", value, children)
+                return ("node", oid)
+            if isinstance(value, dict):
+                oid = id(value)
+                if oid in nodes:
+                    return ("node", oid)
+                nodes[oid] = ("dict", value, ())
+                pairs = []
+                for key, item in value.items():
+                    if not self._is_replay_leaf(key):
+                        raise TypeError("replay dict key is not a leaf")
+                    pairs.append((key, capture(item)))
+                nodes[oid] = ("dict", value, tuple(pairs))
+                return ("node", oid)
+            if isinstance(value, np.ndarray):
+                if not self._ndarray_replay_supported(value):
+                    raise TypeError("replay ndarray cannot be restored in place")
+                oid = id(value)
+                if oid in nodes:
+                    return ("node", oid)
+                nodes[oid] = ("ndarray", value, value.copy())
+                return ("node", oid)
+            raise TypeError("replay value cannot be restored")
+
+        try:
+            bindings = []
+            for name, value in list(self.__dict__.items()):
+                if name.startswith("_") or name in self._REPLAY_FRAMEWORK_ATTRS:
+                    continue
+                bindings.append((name, capture(value)))
+            if remembered:
+                for oid, obj in remembered.items():
+                    if oid not in nodes:
+                        capture(obj)
+            return (tuple(sorted(bindings, key=lambda item: item[0])), nodes)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _replay_world_objects(world: Any) -> Dict[int, Any]:
+        if world is None:
+            return {}
+        return {oid: node[1] for oid, node in world[1].items()}
+
+    @staticmethod
+    def _replay_resolve(ref: Tuple[str, Any], nodes: Dict[int, Any]) -> Any:
+        kind, payload = ref
+        if kind == "leaf":
+            return payload
+        return nodes[payload][1]
+
+    def _restore_replay_world(self, world: Any) -> bool:
+        """Rebind attributes and mutate supported objects in place.
+
+        In-place updates keep aliases, including objects stored in tuples.
+        """
+        if world is None:
+            return False
+        bindings, nodes = world
+        resolved: Dict[int, Any] = {}
+        try:
+            for oid, node in nodes.items():
+                kind, _obj, payload = node
+                if kind == "list":
+                    resolved[oid] = [
+                        self._replay_resolve(ref, nodes) for ref in payload
+                    ]
+                elif kind == "dict":
+                    resolved[oid] = [
+                        (key, self._replay_resolve(ref, nodes))
+                        for key, ref in payload
+                    ]
+        except Exception:
+            return False
+
+        ok = True
+        for oid, node in nodes.items():
+            kind, obj, payload = node
+            try:
+                if kind == "list":
+                    obj.clear()
+                    obj.extend(resolved[oid])
+                elif kind == "dict":
+                    obj.clear()
+                    obj.update(resolved[oid])
+                elif kind == "ndarray":
+                    saved = payload
+                    if (
+                        not isinstance(obj, np.ndarray)
+                        or not isinstance(saved, np.ndarray)
+                        or obj.dtype != saved.dtype
+                    ):
+                        ok = False
+                        continue
+                    if obj.shape != saved.shape:
+                        obj.resize(saved.shape, refcheck=False)
+                    if obj.shape != saved.shape:
+                        ok = False
+                        continue
+                    obj[...] = saved
+                elif kind != "tuple":
+                    ok = False
+            except Exception:
+                ok = False
+        try:
+            desired = {
+                name: self._replay_resolve(ref, nodes) for name, ref in bindings
+            }
+            for name in list(self.__dict__):
+                if name.startswith("_") or name in self._REPLAY_FRAMEWORK_ATTRS:
+                    continue
+                if name not in desired:
+                    del self.__dict__[name]
+            for name, value in desired.items():
+                self.__dict__[name] = value
+        except Exception:
+            return False
+        return ok
+
+    def _replay_values_equal(self, left: Any, right: Any) -> bool:
+        """Compare leaves and containers without using an array's truth value."""
+        if isinstance(left, np.ndarray) or isinstance(right, np.ndarray):
+            if not isinstance(left, np.ndarray) or not isinstance(right, np.ndarray):
+                return False
+            if left.shape != right.shape or left.dtype != right.dtype:
+                return False
+            return bool(np.array_equal(left, right, equal_nan=True))
+        if isinstance(left, dict) or isinstance(right, dict):
+            if not isinstance(left, dict) or not isinstance(right, dict):
+                return False
+            if set(left) != set(right):
+                return False
+            return all(
+                self._replay_values_equal(left[key], right[key]) for key in left
+            )
+        if isinstance(left, (list, tuple)) or isinstance(right, (list, tuple)):
+            if type(left) is not type(right) or len(left) != len(right):
+                return False
+            return all(
+                self._replay_values_equal(item, other)
+                for item, other in zip(left, right)
+            )
+        compared = left == right
+        if isinstance(compared, np.ndarray):
+            return bool(np.array_equal(left, right, equal_nan=True))
+        return bool(compared)
+
+    def _replay_refs_equal(
+        self,
+        left: Tuple[str, Any],
+        left_nodes: Dict[int, Any],
+        right: Tuple[str, Any],
+        right_nodes: Dict[int, Any],
+        seen: Set[Tuple[int, int]],
+    ) -> bool:
+        if left[0] == "leaf" and right[0] == "leaf":
+            return self._replay_values_equal(left[1], right[1])
+        if left[0] != "node" or right[0] != "node":
+            return False
+        pair = (left[1], right[1])
+        if pair in seen:
+            return True
+        seen.add(pair)
+        left_node = left_nodes[left[1]]
+        right_node = right_nodes[right[1]]
+        if left_node[0] != right_node[0]:
+            return False
+        kind = left_node[0]
+        if kind == "ndarray":
+            return self._replay_values_equal(left_node[2], right_node[2])
+        if kind in ("list", "tuple"):
+            left_children = left_node[2]
+            right_children = right_node[2]
+            if len(left_children) != len(right_children):
+                return False
+            return all(
+                self._replay_refs_equal(item, left_nodes, other, right_nodes, seen)
+                for item, other in zip(left_children, right_children)
+            )
+        if kind == "dict":
+            pending = list(right_node[2])
+            for key, ref in left_node[2]:
+                match_at = None
+                for index, (other_key, _other_ref) in enumerate(pending):
+                    if self._replay_values_equal(key, other_key):
+                        match_at = index
+                        break
+                if match_at is None:
+                    return False
+                _other_key, match = pending.pop(match_at)
+                if not self._replay_refs_equal(
+                    ref, left_nodes, match, right_nodes, seen
+                ):
+                    return False
+            return not pending
+        return False
+
+    def _replay_worlds_equal(self, left: Any, right: Any) -> Optional[bool]:
+        try:
+            left_bindings = dict(left[0])
+            right_bindings = dict(right[0])
+            if set(left_bindings) != set(right_bindings):
+                return False
+            seen: Set[Tuple[int, int]] = set()
+            for name in left_bindings:
+                if not self._replay_refs_equal(
+                    left_bindings[name],
+                    left[1],
+                    right_bindings[name],
+                    right[1],
+                    seen,
+                ):
+                    return False
+            shared = set(left[1]) & set(right[1])
+            for oid in shared:
+                if not self._replay_refs_equal(
+                    ("node", oid), left[1], ("node", oid), right[1], seen
+                ):
+                    return False
+            return True
+        except Exception:
+            return None
 
     def _agent_objects(self) -> List[Any]:
         return list(getattr(self.agents, "_agent_objects", ()) or ())
@@ -834,6 +1087,100 @@ class Model(BaseModel):
                 if key not in df.columns:
                     continue
                 object.__setattr__(agent, key, df[key][row])
+
+    def _underlying_generator(self, obj: Any) -> Any:
+        """Return a NumPy/CuPy Generator hidden behind a thin wrapper, if any."""
+        if obj is None:
+            return None
+        if hasattr(obj, "bit_generator"):
+            return obj
+        inner = getattr(obj, "_rng", None)
+        if inner is not None and hasattr(inner, "bit_generator"):
+            return inner
+        return None
+
+    def _capture_rng_state(self) -> Optional[Tuple[Tuple[str, int, Any], ...]]:
+        """Snapshot every random stream the step can draw from.
+
+        Returns None when a stream has no restorable state. The snapshot does
+        not advance any generator.
+        """
+        try:
+            random_obj = self.__dict__.get("random")
+            if not isinstance(random_obj, random.Random):
+                return None
+            streams: List[Tuple[str, int, Any]] = [
+                ("random", id(random_obj), copy.deepcopy(random_obj.getstate()))
+            ]
+            seen = {id(random_obj)}
+
+            def add_generator(gen: Any) -> bool:
+                if gen is None or id(gen) in seen:
+                    return True
+                if not hasattr(gen, "bit_generator"):
+                    return False
+                seen.add(id(gen))
+                streams.append(
+                    ("generator", id(gen), copy.deepcopy(gen.bit_generator.state))
+                )
+                return True
+
+            if not add_generator(self.__dict__.get("_host_rng")):
+                return None
+            execution = getattr(self, "_execution", None)
+            device = getattr(execution, "device_rng", None) if execution is not None else None
+            device_gen = self._underlying_generator(device)
+            if device is not None and device_gen is None:
+                return None
+            if not add_generator(device_gen):
+                return None
+            nprandom = getattr(self, "nprandom", None)
+            npr_gen = self._underlying_generator(getattr(nprandom, "_rng", None))
+            if nprandom is not None and getattr(nprandom, "_rng", None) is not None and npr_gen is None:
+                return None
+            if not add_generator(npr_gen):
+                return None
+            return tuple(streams)
+        except Exception:
+            return None
+
+    def _rng_same_stream_ids(
+        self,
+        entry: Tuple[Tuple[str, int, Any], ...],
+        post: Tuple[Tuple[str, int, Any], ...],
+    ) -> bool:
+        return [item[1] for item in entry] == [item[1] for item in post]
+
+    def _restore_rng_state(self, saved: Optional[Tuple[Tuple[str, int, Any], ...]]) -> bool:
+        """Put ``saved`` back onto the same stream objects. Does not draw."""
+        if not saved:
+            return False
+        objects = {id(self.__dict__.get("random")): self.__dict__.get("random")}
+        host = self.__dict__.get("_host_rng")
+        objects[id(host)] = host
+        execution = getattr(self, "_execution", None)
+        device = getattr(execution, "device_rng", None) if execution is not None else None
+        device_gen = self._underlying_generator(device)
+        if device_gen is not None:
+            objects[id(device_gen)] = device_gen
+        npr_gen = self._underlying_generator(
+            getattr(getattr(self, "nprandom", None), "_rng", None)
+        )
+        if npr_gen is not None:
+            objects[id(npr_gen)] = npr_gen
+        try:
+            for kind, oid, state in saved:
+                obj = objects.get(oid)
+                if obj is None:
+                    return False
+                payload = copy.deepcopy(state)
+                if kind == "random":
+                    obj.setstate(payload)
+                else:
+                    obj.bit_generator.state = payload
+            return True
+        except Exception:
+            return False
 
     def _fast_path_is_eligible(
         self,

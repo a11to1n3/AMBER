@@ -488,61 +488,107 @@ class ContractMonitor:
         model: Optional[Any] = None,
         allow_replay: bool = False,
     ) -> None:
-        """Report two activations writing one cell.
+        """Report cross-activation write/write and read/write overlaps.
 
         ``allow_replay`` is false while a stage is open. The diagnostic is
         still recorded, and ``divergence_witness`` stays ``None``.
         """
         if self._in_replay or not self._activation_order:
             return
+        order = list(self._activation_order)
+        position = {act: index for index, act in enumerate(order)}
         writers_by_cell: Dict[Tuple[str, Any], List[Any]] = {}
-        for act in self._activation_order:
+        readers_by_cell: Dict[Tuple[str, Any], List[Any]] = {}
+        for act in order:
             for col, aid in self._activation_writes.get(act, ()):
                 writers = writers_by_cell.setdefault((col, aid), [])
                 if act not in writers:
                     writers.append(act)
+            for col, aid in self._activation_reads.get(act, ()):
+                readers = readers_by_cell.setdefault((col, aid), [])
+                if act not in readers:
+                    readers.append(act)
+
+        # (writer_or_first, reader_or_second, cell, kind). ``kind`` is
+        # "write" when two activations write the cell, "read" when one
+        # writes a cell another activation reads.
+        hazards: List[Tuple[Any, Any, Tuple[str, Any], str]] = []
+        seen_hazards: Set[Tuple[Any, Any, Tuple[str, Any], str]] = set()
+
+        def add_hazard(first: Any, second: Any, cell: Tuple[str, Any], kind: str) -> None:
+            key = (first, second, cell, kind)
+            if key in seen_hazards:
+                return
+            seen_hazards.add(key)
+            hazards.append(key)
+
+        for cell, writers in writers_by_cell.items():
+            if len(writers) >= 2:
+                add_hazard(writers[0], writers[1], cell, "write")
+            for writer in writers:
+                for reader in readers_by_cell.get(cell, ()):
+                    if reader != writer:
+                        add_hazard(writer, reader, cell, "read")
+        if not hazards:
+            return
+
         replay_fn = (
             getattr(model, "replay_activation_swap", None) if allow_replay else None
         )
-        replayed: Set[Tuple[Any, Any]] = set()
+        witnesses: Dict[Tuple[Any, Any], Optional[bool]] = {}
+        replayed = 0
         max_replays = 5
-        for cell, writers in writers_by_cell.items():
-            if len(writers) < 2:
-                continue
-            col, _aid = cell
-            a, b = writers[0], writers[1]
+
+        def witness_for(first: Any, second: Any) -> Optional[bool]:
+            nonlocal replayed
+            left, right = (first, second)
+            if position.get(left, 0) > position.get(right, 0):
+                left, right = right, left
+            pair = (left, right)
+            if pair in witnesses:
+                return witnesses[pair]
             witness = None
-            note = (
-                " Witness replay was skipped because a stage is open or the "
-                "swap is not available; divergence_witness is inconclusive."
-            )
-            pair = (a, b)
-            if (
-                allow_replay
-                and callable(replay_fn)
-                and pair not in replayed
-                and len(replayed) < max_replays
-            ):
-                witness = replay_fn(a, b)
-                replayed.add(pair)
-                if witness is True:
-                    note = (
-                        " Witness replay under swapped order confirmed "
-                        "schedule divergence."
-                    )
-                elif witness is False:
-                    note = (
-                        " Witness replay under swapped order produced "
-                        "identical final state."
-                    )
-                else:
-                    note = " Witness replay was inconclusive."
+            if allow_replay and callable(replay_fn) and replayed < max_replays:
+                witness = replay_fn(left, right)
+                replayed += 1
+            witnesses[pair] = witness
+            return witness
+
+        for first, second, cell, kind in hazards:
+            col, _aid = cell
+            witness = witness_for(first, second)
+            if witness is True:
+                note = (
+                    " Witness replay under swapped order confirmed "
+                    "schedule divergence."
+                )
+            elif witness is False:
+                note = (
+                    " Witness replay under swapped order produced "
+                    "identical final state."
+                )
+            else:
+                note = (
+                    " Witness replay was skipped or inconclusive; "
+                    "divergence_witness is None."
+                )
+            if kind == "write":
+                detail = (
+                    f"Distinct activations {first} and {second} wrote the "
+                    f"same cell {cell}.{note}"
+                )
+                ids = [first, second]
+            else:
+                detail = (
+                    f"Activation {first} wrote cell {cell} and activation "
+                    f"{second} read it in the same step.{note}"
+                )
+                ids = [first, second]
             cert.add(ContractViolation(
                 "activation_race",
-                f"Distinct activations {a} and {b} wrote the same cell {cell}."
-                f"{note}",
+                detail,
                 severity=SEVERITY_ERROR,
                 columns=[col],
-                ids=[a, b],
+                ids=ids,
                 divergence_witness=witness,
             ))

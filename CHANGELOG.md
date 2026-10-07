@@ -8,9 +8,15 @@
   Replaying from a stage exit recursed and compared a mid-step frame with a
   full rerun. The witness stays inconclusive until the step has finished,
   and a completed replay restores monitor mode.
-- **Activation replay** restores list, dict, and ndarray attributes and
-  refuses a witness when those values change or when the model holds
-  another mutable object. The forward agent frame is kept either way.
+- **Activation replay** reruns from the step-entry random streams and then
+  restores the forward post-step streams. A stream without restorable state
+  leaves ``divergence_witness`` as ``None``. Cross-activation read/write
+  overlap is reported, and the witness is included in contract JSON.
+- **Activation replay** restores public attribute bindings and supported
+  containers in place from the step-entry snapshot, then puts the forward
+  post-step objects back. Aliases keep their identity. A value that cannot
+  be restored leaves ``divergence_witness`` as ``None``. Nested containers
+  are compared without using an array's truth value.
 
 ## v0.5.1 - 2026-08-14
 

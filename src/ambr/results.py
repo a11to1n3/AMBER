@@ -197,6 +197,7 @@ def _contract_to_jsonable(value: list) -> List[Dict[str, Any]]:
                     "severity": getattr(v, "severity", None),
                     "columns": list(getattr(v, "columns", []) or []),
                     "ids": [ _jsonable_id(i) for i in (getattr(v, "ids", []) or []) ],
+                    "divergence_witness": getattr(v, "divergence_witness", None),
                 }
             )
         out.append(
