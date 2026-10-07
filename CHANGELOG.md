@@ -12,6 +12,10 @@
   restores the forward post-step streams. A stream without restorable state
   leaves ``divergence_witness`` as ``None``. Cross-activation read/write
   overlap is reported, and the witness is included in contract JSON.
+- **Activation replay** puts the original stream objects back on their
+  bindings before restoring generator state. If that restoration fails, the
+  witness stays inconclusive. An exception from the swapped execution is
+  recorded with a reason and does not abort the forward step.
 
 ## v0.5.1 - 2026-08-14
 

@@ -15,7 +15,7 @@ but filled by :mod:`ambr._id_index`; :meth:`_bump_id_version` invalidates them.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Type, Optional, Set, Tuple, TYPE_CHECKING
+from typing import Any, Dict, Iterable, List, NamedTuple, Type, Optional, Set, Tuple, TYPE_CHECKING
 import copy
 import random
 import polars as pl
@@ -45,6 +45,27 @@ from .execution import (
 
 if TYPE_CHECKING:
     from .agent import Agent
+
+
+class _RngSnapshot(NamedTuple):
+    """Live stream objects, their states, and the attributes that point at them."""
+
+    streams: Tuple[Tuple[str, int, Any, Any], ...]
+    bindings: Tuple[Tuple[str, str, int], ...]
+
+
+class _ReplayOutcome(NamedTuple):
+    """Witness value plus an optional reason when the swap was inconclusive."""
+
+    value: Optional[bool]
+    reason: Optional[str] = None
+
+
+def _replay_failure_reason(exc: BaseException) -> str:
+    text = f"swapped execution raised {type(exc).__name__}: {exc}"
+    if len(text) > 240:
+        return text[:237] + "..."
+    return text
 
 
 class Model(BaseModel):
@@ -654,26 +675,27 @@ class Model(BaseModel):
             self._pre_step_rng = None
             raise
 
-    def replay_activation_swap(self, a: Any, b: Any) -> Optional[bool]:
+    def replay_activation_swap(self, a: Any, b: Any) -> _ReplayOutcome:
         """Rerun this step with activations ``a`` and ``b`` swapped.
 
-        Returns True when the agent frame diverges, False when it matches,
-        and None when the swap is not a sound witness. The replay starts from
-        the step-entry random streams and puts the forward post-step streams
-        back before returning. If those streams cannot be snapshotted, the
-        witness is skipped. The forward frame, pending writes, per-agent
-        attribute cache, activation override, and monitor mode are restored
-        either way.
+        ``value`` is True when the agent frame diverges, False when it
+        matches, and None when the swap is not a sound witness. ``reason``
+        explains an inconclusive result. The replay starts from the
+        step-entry random streams and puts the original stream objects back
+        before restoring their states. An exception from the swapped
+        execution is caught here. The forward frame, pending writes,
+        per-agent attribute cache, activation override, and monitor mode are
+        restored either way.
         """
         mon = self._contract
         if getattr(mon, "_in_replay", False) or getattr(mon, "_stage_open", False):
-            return None
+            return _ReplayOutcome(None, None)
         pre = getattr(self, "_pre_step_state", None)
         if pre is None:
-            return None
+            return _ReplayOutcome(None, None)
         order = list(getattr(mon, "_activation_order", []))
         if a not in order or b not in order:
-            return None
+            return _ReplayOutcome(None, None)
         entry_rng = getattr(self, "_pre_step_rng", None)
         post_rng = self._capture_rng_state()
         if (
@@ -681,7 +703,7 @@ class Model(BaseModel):
             or post_rng is None
             or not self._rng_same_stream_ids(entry_rng, post_rng)
         ):
-            return None
+            return _ReplayOutcome(None, None)
 
         original_post = self.agents_df.clone()
         saved_attrs = self._snapshot_agent_attrs()
@@ -704,25 +726,34 @@ class Model(BaseModel):
         mon._in_replay = True
         mon.mode = "off"
         mon.active = False
+        witness: Optional[bool] = None
+        reason: Optional[str] = None
         try:
             if not self._restore_rng_state(entry_rng):
-                return None
-            self._set_frame(pre.clone())
-            self._pending_writes = {}
-            self._refresh_agent_cache(pre)
-            self._activation_override_order = swapped
-            execution = getattr(self, "_execution", None)
-            mode = (
-                execution.config.mode
-                if execution is not None
-                else self._execution_mode
-            )
-            step_fn = self.step_oop if mode == "oop" else self.step_vectorized
-            step_fn()
-            self._flush_pending_writes()
-            return not original_post.equals(self.agents_df)
+                reason = "step-entry random streams could not be restored"
+            else:
+                self._set_frame(pre.clone())
+                self._pending_writes = {}
+                self._refresh_agent_cache(pre)
+                self._activation_override_order = swapped
+                execution = getattr(self, "_execution", None)
+                mode = (
+                    execution.config.mode
+                    if execution is not None
+                    else self._execution_mode
+                )
+                step_fn = self.step_oop if mode == "oop" else self.step_vectorized
+                try:
+                    step_fn()
+                    self._flush_pending_writes()
+                except Exception as exc:
+                    reason = _replay_failure_reason(exc)
+                else:
+                    witness = not bool(original_post.equals(self.agents_df))
         finally:
-            self._restore_rng_state(post_rng)
+            if not self._restore_rng_state(post_rng):
+                witness = None
+                reason = "forward random streams could not be restored"
             self._set_frame(original_post.clone())
             self._pending_writes = {}
             self._activation_override_order = None
@@ -737,6 +768,7 @@ class Model(BaseModel):
             mon._stage_open = saved_stage_open
             mon._current_stage = saved_stage
             mon._stage_violations = saved_stage_violations
+        return _ReplayOutcome(witness, reason)
 
     def _agent_objects(self) -> List[Any]:
         return list(getattr(self.agents, "_agent_objects", ()) or ())
@@ -788,85 +820,153 @@ class Model(BaseModel):
             return inner
         return None
 
-    def _capture_rng_state(self) -> Optional[Tuple[Tuple[str, int, Any], ...]]:
+    def _capture_rng_state(self) -> Optional[_RngSnapshot]:
         """Snapshot every random stream the step can draw from.
 
-        Returns None when a stream has no restorable state. The snapshot does
-        not advance any generator.
+        The snapshot keeps the stream objects and the bindings that point at
+        them, so a later step can put those objects back before restoring
+        state. Returns None when a stream has no restorable state. The
+        snapshot does not advance any generator.
         """
         try:
+            streams: Dict[int, Tuple[str, int, Any, Any]] = {}
+            bindings: List[Tuple[str, str, int]] = []
+
+            def keep(kind: str, obj: Any, state: Any) -> int:
+                oid = id(obj)
+                if oid not in streams:
+                    streams[oid] = (kind, oid, obj, state)
+                return oid
+
+            def keep_generator(obj: Any) -> int:
+                return keep(
+                    "generator", obj, copy.deepcopy(obj.bit_generator.state)
+                )
+
             random_obj = self.__dict__.get("random")
             if not isinstance(random_obj, random.Random):
                 return None
-            streams: List[Tuple[str, int, Any]] = [
-                ("random", id(random_obj), copy.deepcopy(random_obj.getstate()))
-            ]
-            seen = {id(random_obj)}
+            bindings.append((
+                "model",
+                "random",
+                keep("random", random_obj, copy.deepcopy(random_obj.getstate())),
+            ))
 
-            def add_generator(gen: Any) -> bool:
-                if gen is None or id(gen) in seen:
-                    return True
-                if not hasattr(gen, "bit_generator"):
-                    return False
-                seen.add(id(gen))
-                streams.append(
-                    ("generator", id(gen), copy.deepcopy(gen.bit_generator.state))
-                )
-                return True
+            host = self.__dict__.get("_host_rng")
+            if host is not None:
+                if not hasattr(host, "bit_generator"):
+                    return None
+                bindings.append(("model", "_host_rng", keep_generator(host)))
 
-            if not add_generator(self.__dict__.get("_host_rng")):
-                return None
             execution = getattr(self, "_execution", None)
-            device = getattr(execution, "device_rng", None) if execution is not None else None
-            device_gen = self._underlying_generator(device)
-            if device is not None and device_gen is None:
-                return None
-            if not add_generator(device_gen):
-                return None
+            device = (
+                getattr(execution, "device_rng", None) if execution is not None else None
+            )
+            if device is not None:
+                device_gen = self._underlying_generator(device)
+                if device_gen is None:
+                    return None
+                gen_oid = keep_generator(device_gen)
+                dev_oid = keep("binding", device, None)
+                bindings.append(("execution", "device_rng", dev_oid))
+                if getattr(device, "_rng", None) is device_gen and dev_oid != gen_oid:
+                    bindings.append(("device_inner", "_rng", gen_oid))
+
             nprandom = getattr(self, "nprandom", None)
-            npr_gen = self._underlying_generator(getattr(nprandom, "_rng", None))
-            if nprandom is not None and getattr(nprandom, "_rng", None) is not None and npr_gen is None:
-                return None
-            if not add_generator(npr_gen):
-                return None
-            return tuple(streams)
+            npr_inner = getattr(nprandom, "_rng", None) if nprandom is not None else None
+            if npr_inner is not None:
+                if not hasattr(npr_inner, "bit_generator"):
+                    return None
+                bindings.append(("nprandom", "_rng", keep_generator(npr_inner)))
+            return _RngSnapshot(tuple(streams.values()), tuple(bindings))
         except Exception:
             return None
 
     def _rng_same_stream_ids(
         self,
-        entry: Tuple[Tuple[str, int, Any], ...],
-        post: Tuple[Tuple[str, int, Any], ...],
+        entry: Optional[_RngSnapshot],
+        post: Optional[_RngSnapshot],
     ) -> bool:
-        return [item[1] for item in entry] == [item[1] for item in post]
-
-    def _restore_rng_state(self, saved: Optional[Tuple[Tuple[str, int, Any], ...]]) -> bool:
-        """Put ``saved`` back onto the same stream objects. Does not draw."""
-        if not saved:
+        if entry is None or post is None:
             return False
-        objects = {id(self.__dict__.get("random")): self.__dict__.get("random")}
-        host = self.__dict__.get("_host_rng")
-        objects[id(host)] = host
-        execution = getattr(self, "_execution", None)
-        device = getattr(execution, "device_rng", None) if execution is not None else None
-        device_gen = self._underlying_generator(device)
-        if device_gen is not None:
-            objects[id(device_gen)] = device_gen
-        npr_gen = self._underlying_generator(
-            getattr(getattr(self, "nprandom", None), "_rng", None)
+        return (
+            [item[1] for item in entry.streams] == [item[1] for item in post.streams]
+            and entry.bindings == post.bindings
         )
-        if npr_gen is not None:
-            objects[id(npr_gen)] = npr_gen
+
+    def _rng_bound(self, place: str, name: str) -> Any:
+        if place == "model":
+            return self.__dict__.get(name)
+        if place == "execution":
+            execution = getattr(self, "_execution", None)
+            if execution is None:
+                return None
+            return getattr(execution, name, None)
+        if place == "nprandom":
+            nprandom = getattr(self, "nprandom", None)
+            if nprandom is None:
+                return None
+            return getattr(nprandom, name, None)
+        if place == "device_inner":
+            execution = getattr(self, "_execution", None)
+            device = (
+                getattr(execution, "device_rng", None) if execution is not None else None
+            )
+            if device is None:
+                return None
+            return getattr(device, name, None)
+        return None
+
+    def _restore_rng_state(self, saved: Optional[_RngSnapshot]) -> bool:
+        """Rebind the snapshotted stream objects, then restore their states.
+
+        Returns False when a binding cannot be put back or a state cannot be
+        applied. Does not draw.
+        """
+        if saved is None:
+            return False
+        objects = {oid: obj for _kind, oid, obj, _state in saved.streams}
         try:
-            for kind, oid, state in saved:
+            for place, name, oid in saved.bindings:
                 obj = objects.get(oid)
                 if obj is None:
                     return False
+                if place == "model":
+                    self.__dict__[name] = obj
+                elif place == "execution":
+                    execution = getattr(self, "_execution", None)
+                    if execution is None:
+                        return False
+                    setattr(execution, name, obj)
+                elif place == "nprandom":
+                    nprandom = getattr(self, "nprandom", None)
+                    if nprandom is None:
+                        return False
+                    setattr(nprandom, name, obj)
+                elif place == "device_inner":
+                    execution = getattr(self, "_execution", None)
+                    device = (
+                        getattr(execution, "device_rng", None)
+                        if execution is not None else None
+                    )
+                    if device is None:
+                        return False
+                    setattr(device, name, obj)
+                else:
+                    return False
+            for kind, _oid, obj, state in saved.streams:
+                if kind == "binding":
+                    continue
                 payload = copy.deepcopy(state)
                 if kind == "random":
                     obj.setstate(payload)
-                else:
+                elif kind == "generator":
                     obj.bit_generator.state = payload
+                else:
+                    return False
+            for place, name, oid in saved.bindings:
+                if self._rng_bound(place, name) is not objects[oid]:
+                    return False
             return True
         except Exception:
             return False

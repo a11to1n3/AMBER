@@ -78,6 +78,7 @@ class ContractViolation:
         columns: Optional[Iterable[str]] = None,
         ids: Optional[Iterable[Any]] = None,
         divergence_witness: Optional[bool] = None,
+        divergence_reason: Optional[str] = None,
     ):
         self.kind = kind
         self.detail = detail
@@ -87,6 +88,7 @@ class ContractViolation:
         # True/False only after a completed step-level swap. None means the
         # witness was not run, or it was not conclusive.
         self.divergence_witness = divergence_witness
+        self.divergence_reason = divergence_reason
 
     def __repr__(self) -> str:
         loc = ""
@@ -535,11 +537,11 @@ class ContractMonitor:
         replay_fn = (
             getattr(model, "replay_activation_swap", None) if allow_replay else None
         )
-        witnesses: Dict[Tuple[Any, Any], Optional[bool]] = {}
+        witnesses: Dict[Tuple[Any, Any], Tuple[Optional[bool], Optional[str]]] = {}
         replayed = 0
         max_replays = 5
 
-        def witness_for(first: Any, second: Any) -> Optional[bool]:
+        def witness_for(first: Any, second: Any) -> Tuple[Optional[bool], Optional[str]]:
             nonlocal replayed
             left, right = (first, second)
             if position.get(left, 0) > position.get(right, 0):
@@ -548,15 +550,16 @@ class ContractMonitor:
             if pair in witnesses:
                 return witnesses[pair]
             witness = None
+            reason = None
             if allow_replay and callable(replay_fn) and replayed < max_replays:
-                witness = replay_fn(left, right)
+                witness, reason = replay_fn(left, right)
                 replayed += 1
-            witnesses[pair] = witness
-            return witness
+            witnesses[pair] = (witness, reason)
+            return witnesses[pair]
 
         for first, second, cell, kind in hazards:
             col, _aid = cell
-            witness = witness_for(first, second)
+            witness, reason = witness_for(first, second)
             if witness is True:
                 note = (
                     " Witness replay under swapped order confirmed "
@@ -572,6 +575,8 @@ class ContractMonitor:
                     " Witness replay was skipped or inconclusive; "
                     "divergence_witness is None."
                 )
+                if reason:
+                    note += " " + reason
             if kind == "write":
                 detail = (
                     f"Distinct activations {first} and {second} wrote the "
@@ -591,4 +596,5 @@ class ContractMonitor:
                 columns=[col],
                 ids=ids,
                 divergence_witness=witness,
+                divergence_reason=reason,
             ))
