@@ -46,6 +46,9 @@ Write paths the monitor sees
 
 * **Buffered (OOP)** -- ``agent.col = value`` / ``Model._queue_write`` (per-cell
   duplicate detection).
+* **Attributed activation reads and writes** -- ordinary agent attribute
+  access during ``activate_agents`` and staged activation, used to report
+  ``activation_race``.
 * **Lane / view** -- ``agents.col = ...``, ``agents.set(...)``,
   ``agents.commit(...)``, and :class:`~ambr.tensor_lane.TensorLane` commits
   (per-column commit counting + borrow-after-commit).

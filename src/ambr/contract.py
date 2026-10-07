@@ -72,6 +72,7 @@ Snapshot = Tuple[Dict[str, str], Set[Any]]
 #: reported a violation. It does not cover state outside this tuple.
 OBSERVED_SCOPE = (
     "buffered Agent attribute writes",
+    "attributed activation reads and writes",
     "lane and view column commits",
     "declared scatter reductions",
     "column borrows",

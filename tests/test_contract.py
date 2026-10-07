@@ -345,6 +345,7 @@ def test_certificate_states_observed_scope_without_changing_clean():
     cert = CleanVectorModel(_params(steps=1)).run(contract="check")["contract"][0]
     assert cert.ok and cert.clean
     assert "buffered Agent attribute writes" in cert.observed_scope
+    assert "attributed activation reads and writes" in cert.observed_scope
     assert "declared scatter reductions" in cert.observed_scope
     assert "step-endpoint schema and population" in cert.observed_scope
     assert any("outside the trace" in item for item in cert.assumptions)
