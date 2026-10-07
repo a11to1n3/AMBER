@@ -157,7 +157,8 @@ def device_scatter_add(
     scatter_add(base, pos, d)
     ex.device_columns[col_name] = base
     ex.dirty_columns.add(col_name)
-    model._contract_record_reduction([col_name])
+    domain = str(getattr(base, "dtype", getattr(d, "dtype", "")))
+    model._contract_record_reduction([col_name], domains={col_name: domain})
 
 
 # Re-export for contract snapshots / model hooks.

@@ -61,6 +61,14 @@ CONTRACT_MODES = ("off", "check", "warn", "raise")
 Snapshot = Tuple[Dict[str, str], Set[Any]]
 
 
+def _ieee_float_domain(domain: str) -> bool:
+    """Return whether ``domain`` names an IEEE floating-point dtype."""
+    text = str(domain).strip().lower()
+    if not text:
+        return False
+    return "float" in text or text in {"double", "half"}
+
+
 class ContractViolation:
     """A single admissibility violation observed during one step."""
 
@@ -163,6 +171,8 @@ class ContractMonitor:
         self._borrowed: Set[str] = set()
         self._mutable_borrows: Set[str] = set()
         self._reduced_cols: Set[str] = set()
+        # (operator, dtype) recorded for each reduced column this step.
+        self._reduction_domains: Dict[str, Set[Tuple[str, str]]] = {}
         # Columns touched by both buffered and lane/view paths in this step
         self._cross_path_cols: Set[str] = set()
         # Step-entry snapshot for schema / population diff
@@ -191,6 +201,7 @@ class ContractMonitor:
         self._borrowed = set()
         self._mutable_borrows = set()
         self._reduced_cols = set()
+        self._reduction_domains = {}
         self._cross_path_cols = set()
         self.active = True
 
@@ -204,6 +215,7 @@ class ContractMonitor:
         self._check_schema(cert, exit_schema)
         self._check_lane_conflicts(cert)
         self._check_population(cert, exit_ids)
+        self._check_inexact_reductions(cert)
         self.certificates.append(cert)
         return cert
 
@@ -230,20 +242,35 @@ class ContractMonitor:
             if c in self._buffered_cols or c in self._reduced_cols:
                 self._cross_path_cols.add(c)
 
-    def record_reduction(self, columns: Iterable[str]) -> None:
+    def record_reduction(
+        self,
+        columns: Iterable[str],
+        domains: Optional[Dict[str, str]] = None,
+        operator: str = "+",
+    ) -> None:
         """Record a sanctioned commutative reduction write.
 
         Repeated reductions are not duplicate-write errors, but mixing a
         reduction with an ordinary write to the same column remains ambiguous
         and is reported as a cross-path conflict.
+
+        ``domains`` maps a column to the dtype of the executed fold.
+        Floating-point addition is reported later as ``inexact_reduction``.
+        The monitor does not check integer overflow.
         """
         if not self.active:
             return
+        domains = domains or {}
         for c in columns:
             self._reduced_cols.add(c)
             self._committed.add(c)
             if c in self._buffered_cols or c in self._commit_counts:
                 self._cross_path_cols.add(c)
+            domain = domains.get(c)
+            if domain:
+                self._reduction_domains.setdefault(c, set()).add(
+                    (operator, str(domain))
+                )
 
     def record_borrow(self, column: str) -> None:
         """Record a lane borrow of ``column``; flag if already committed."""
@@ -362,6 +389,39 @@ class ContractMonitor:
                 severity=SEVERITY_WARNING,
                 columns=mutable,
             ))
+
+    def _check_inexact_reductions(self, cert: ContractCertificate) -> None:
+        """Warn when a declared addition ran in an IEEE floating-point dtype.
+
+        ``ok`` stays true: the fold that ran is reproducible for that order.
+        ``clean`` becomes false because addition is not associative, so the
+        trace does not establish order independence. Integer domains stay
+        quiet. This check does not claim that integer addition cannot overflow.
+        """
+        flagged: List[str] = []
+        parts: List[str] = []
+        for col, records in sorted(self._reduction_domains.items()):
+            float_domains = sorted({
+                domain
+                for op, domain in records
+                if op == "+" and _ieee_float_domain(domain)
+            })
+            if not float_domains:
+                continue
+            flagged.append(col)
+            parts.append(f"{col} ({', '.join(float_domains)})")
+        if not flagged:
+            return
+        cert.add(ContractViolation(
+            "inexact_reduction",
+            "Declared reduction used IEEE floating-point addition on "
+            + ", ".join(parts)
+            + ". Floating-point addition is not associative, so this trace "
+            "does not establish exact order independence. The executed fold "
+            "is reproducible for the order that ran.",
+            severity=SEVERITY_WARNING,
+            columns=flagged,
+        ))
 
     def _check_population(
         self, cert: ContractCertificate, exit_ids: Set[Any]

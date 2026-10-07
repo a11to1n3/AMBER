@@ -654,6 +654,7 @@ class _BaseView:
         }
 
         new_columns: List[pl.Series] = []
+        domains: Dict[str, str] = {}
         for col_name, delta in delta_np.items():
             if col_name in df.columns:
                 # Copy so we never mutate Polars' backing buffer in place.
@@ -661,9 +662,10 @@ class _BaseView:
             else:
                 base = np.zeros(df.height, dtype=delta.dtype)
             out = apply_scatter_add(base, positions, delta)
+            domains[col_name] = str(getattr(out, "dtype", delta.dtype))
             new_columns.append(pl.Series(col_name, out, strict=False))
 
-        model._contract_record_reduction(increments)
+        model._contract_record_reduction(increments, domains=domains)
         # No written_columns — scatter_add is the multi-write reducer.
         model._set_frame(df.with_columns(new_columns))
 

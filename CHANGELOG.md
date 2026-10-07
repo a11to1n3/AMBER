@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Reduction domains**: declared scatter additions record their dtype.
+  IEEE floating-point addition warns (``inexact_reduction``): ``ok`` stays
+  true and ``clean`` becomes false, because the trace does not establish
+  order independence. Integer scatter stays clean. Integer overflow is not
+  checked.
+
 ## v0.5.1 - 2026-08-14
 
 Patch over 0.5.0: make the release wheel test suite pass so PyPI can

@@ -336,3 +336,27 @@ def test_certificate_ok_vs_clean_semantics():
 
 def test_contract_modes_constant():
     assert CONTRACT_MODES == ("off", "check", "warn", "raise")
+
+
+class FloatScatterModel(am.Model):
+    """IEEE float scatter-add. The fold order is not an exact identity."""
+
+    def setup(self):
+        self.add_agents(1, wealth=np.zeros(1, dtype=np.float64))
+
+    def step(self):
+        self.agents.at[[0, 0, 0]].scatter_add(wealth=[1e16, 1.0, -1e16])
+
+
+def test_float_scatter_add_warns_but_stays_ok():
+    cert = FloatScatterModel(_params(steps=1)).run(contract="check")["contract"][0]
+    assert cert.ok
+    assert not cert.clean
+    warning = next(v for v in cert.violations if v.kind == "inexact_reduction")
+    assert warning.severity == "warning"
+    assert warning.columns == ["wealth"]
+    assert "not associative" in warning.detail
+    assert "reproducible" in warning.detail
+    # raise mode treats warnings as non-fatal.
+    raised = FloatScatterModel(_params(steps=1)).run(contract="raise")
+    assert raised["contract"][0].ok and not raised["contract"][0].clean

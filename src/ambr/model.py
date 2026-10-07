@@ -379,9 +379,16 @@ class Model(BaseModel):
         """Record exposure of a mutable NumPy/CuPy column buffer."""
         self._contract.record_mutable_borrow(column)
 
-    def _contract_record_reduction(self, columns: Iterable[str]) -> None:
-        """Record columns written through a commutative reduction."""
-        self._contract.record_reduction(columns)
+    def _contract_record_reduction(
+        self,
+        columns: Iterable[str],
+        domains: Optional[Dict[str, str]] = None,
+    ) -> None:
+        """Record columns written through a commutative reduction.
+
+        ``domains`` maps each column to the dtype of the executed fold.
+        """
+        self._contract.record_reduction(columns, domains=domains)
 
     def setup(self): pass
     def step(self): pass
