@@ -49,6 +49,21 @@ python scripts/run_gpu_claims.py          # full (incl. large-N)
 python scripts/run_gpu_claims.py --quick  # fast smoke
 ```
 
+### AMBER vs. other ABM frameworks
+
+![Log-log scaling for AMBER’s three execution modes and seven baseline frameworks across four workloads.](benchmarks/results/framework_scaling_fix11.svg)
+
+AMBER GPU, vectorized CPU, and loop CPU are compared with AgentPy, Agents.jl,
+FLAME GPU 2, Melodie, Mesa, mesa-frames, and SimPy. The matched-rule benchmark
+ran wealth transfer, random walk, SIR, and Schelling from 1,000 to 10 million
+agents on a Threadripper PRO 7965WX and RTX 5090 using AMBER `0.5.2+fix.11`.
+
+Points are medians of five runs at seed 42 after two warm-ups, with min–max
+whiskers. Each run times construction through final host export over 50 steps.
+Lines end at the last completed population when a run reaches the 600-second
+guard. [Timing samples](benchmarks/results/framework_scaling_fix11.json) ·
+[Protocol and figure source](benchmarks/README.md#matched-rule-framework-scaling)
+
 ### AMBER 0.6.0 automatic batching benchmark
 
 The benchmark used the same ordinary agent methods on scalar CPU
@@ -100,10 +115,6 @@ of byte-identical dynamics across frameworks.
 - **Wealth / walk / SIR** are the comparable headline class (~1.8–2.1×).
 - **Schelling** includes heavy Python-side setup inside the timed region for
   the FLAME harness; do not treat ~63× as a pure step-kernel speedup.
-- Multi-framework scale-out charts (Mesa, mesa-frames, Agents.jl, …) are
-  **exploratory** and live under
-  [`benchmarks/results/`](benchmarks/results/); some cells OOM or hit
-  budgets — missing cells are not zeros.
 - [Benchmark runner](benchmarks/run_all_frameworks.py) ·
   [Correctness checks](benchmarks/correctness_check.py) ·
   [Protocol details](benchmarks/README.md)

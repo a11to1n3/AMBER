@@ -1,0 +1,3021 @@
+{
+  "package": "ambr==0.5.2+fix.11",
+  "affinity": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "mode_agreement_configurations": 1007,
+  "native_peer_configurations": 1007,
+  "native_peer_max_abs_position_error": {
+    "Mesa": 3.5606189499048924e-05,
+    "AgentPy": 3.5606189499048924e-05,
+    "Melodie": 3.5606189499048924e-05,
+    "SimPy": 3.5606189499048924e-05,
+    "mesa-frames": 3.5606189499048924e-05,
+    "Agents.jl": 3.5606189499048924e-05,
+    "FLAME GPU 2": 3.5606189499048924e-05
+  },
+  "completed_timing_cells": 176,
+  "timing_cells": [
+    {
+      "implementation": "AMBER GPU",
+      "workload": "wealth",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.021366923989262432,
+      "minimum_s": 0.020794012991245836,
+      "maximum_s": 0.025239731010515243,
+      "samples": [
+        0.025239731010515243,
+        0.02108099398901686,
+        0.020794012991245836,
+        0.02453992998925969,
+        0.021366923989262432
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "wealth",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.02265062095830217,
+      "minimum_s": 0.021510259015485644,
+      "maximum_s": 0.026258020021487027,
+      "samples": [
+        0.021510259015485644,
+        0.02265062095830217,
+        0.02461530198343098,
+        0.02160884696058929,
+        0.026258020021487027
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "wealth",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.02363594202324748,
+      "minimum_s": 0.022255377029068768,
+      "maximum_s": 0.026193953992333263,
+      "samples": [
+        0.02363594202324748,
+        0.022255377029068768,
+        0.025811891013290733,
+        0.022695388994179666,
+        0.026193953992333263
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "wealth",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 0.028459917986765504,
+      "minimum_s": 0.02589055901626125,
+      "maximum_s": 0.030983689008280635,
+      "samples": [
+        0.027806666970718652,
+        0.028459917986765504,
+        0.029090253985486925,
+        0.02589055901626125,
+        0.030983689008280635
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "wealth",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 0.13885840197326615,
+      "minimum_s": 0.1384067350300029,
+      "maximum_s": 0.14952217298559844,
+      "samples": [
+        0.13885840197326615,
+        0.14316346897976473,
+        0.1384067350300029,
+        0.14952217298559844,
+        0.13873606303241104
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "wealth",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.01122731203213334,
+      "minimum_s": 0.011136796965729445,
+      "maximum_s": 0.012032268045004457,
+      "samples": [
+        0.011196495965123177,
+        0.011136796965729445,
+        0.012032268045004457,
+        0.011740271002054214,
+        0.01122731203213334
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "wealth",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.02436033694539219,
+      "minimum_s": 0.024194338999222964,
+      "maximum_s": 0.024443792004603893,
+      "samples": [
+        0.024352035019546747,
+        0.024194338999222964,
+        0.02436068799579516,
+        0.02436033694539219,
+        0.024443792004603893
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "wealth",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.24911244196118787,
+      "minimum_s": 0.24149226496228948,
+      "maximum_s": 0.2566350700217299,
+      "samples": [
+        0.24208693398395553,
+        0.24149226496228948,
+        0.2539529650239274,
+        0.2566350700217299,
+        0.24911244196118787
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "wealth",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 2.6328642720473,
+      "minimum_s": 2.5420667299767956,
+      "maximum_s": 2.8059054669574834,
+      "samples": [
+        2.776255670993123,
+        2.6328642720473,
+        2.5420667299767956,
+        2.8059054669574834,
+        2.5848690279526636
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "wealth",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 33.36872043600306,
+      "minimum_s": 32.965001162025146,
+      "maximum_s": 33.41477406502236,
+      "samples": [
+        33.36872043600306,
+        32.9967758069979,
+        33.40983706800034,
+        33.41477406502236,
+        32.965001162025146
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "wealth",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.18782848899718374,
+      "minimum_s": 0.18728626699885353,
+      "maximum_s": 0.19327211700147018,
+      "samples": [
+        0.19184590899385512,
+        0.18728626699885353,
+        0.18782848899718374,
+        0.19327211700147018,
+        0.18774789798771963
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "wealth",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.7917525629745796,
+      "minimum_s": 1.7665118889999576,
+      "maximum_s": 1.8077021550270729,
+      "samples": [
+        1.7665118889999576,
+        1.7752440629992634,
+        1.7917525629745796,
+        1.8077021550270729,
+        1.7957508040126413
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "wealth",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 18.222665712994058,
+      "minimum_s": 18.115589202032425,
+      "maximum_s": 18.318994351953734,
+      "samples": [
+        18.318994351953734,
+        18.27078194200294,
+        18.222665712994058,
+        18.19159939303063,
+        18.115589202032425
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "wealth",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 181.03987745800987,
+      "minimum_s": 179.6485100639984,
+      "maximum_s": 181.5381063730456,
+      "samples": [
+        179.6485100639984,
+        180.5130158359534,
+        181.03987745800987,
+        181.5381063730456,
+        181.5182461779914
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "wealth",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0555013950216,
+      "error": "BudgetExceeded('Predeclared 600-second public-run budget exceeded')"
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "wealth",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.03168901999015361,
+      "minimum_s": 0.031527286977507174,
+      "maximum_s": 0.032422435004264116,
+      "samples": [
+        0.031527286977507174,
+        0.03168901999015361,
+        0.032422435004264116,
+        0.03180058900034055,
+        0.03159645100822672
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "wealth",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.3029663220513612,
+      "minimum_s": 0.30038653599331155,
+      "maximum_s": 0.3077028259867802,
+      "samples": [
+        0.3007323169731535,
+        0.3048551569809206,
+        0.30038653599331155,
+        0.3029663220513612,
+        0.3077028259867802
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "wealth",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 3.208139462978579,
+      "minimum_s": 3.1769846719689667,
+      "maximum_s": 3.247508138010744,
+      "samples": [
+        3.189666384947486,
+        3.208139462978579,
+        3.1769846719689667,
+        3.247508138010744,
+        3.2163985960069112
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "wealth",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 35.41061349300435,
+      "minimum_s": 35.04168494202895,
+      "maximum_s": 35.810135662031826,
+      "samples": [
+        35.218228800047655,
+        35.04168494202895,
+        35.41061349300435,
+        35.70335849997355,
+        35.810135662031826
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "wealth",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 404.6697800750262,
+      "minimum_s": 402.24394431797555,
+      "maximum_s": 412.1512308479869,
+      "samples": [
+        403.7757652300061,
+        402.24394431797555,
+        404.6697800750262,
+        411.9965409259894,
+        412.1512308479869
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "wealth",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.0327002449776046,
+      "minimum_s": 0.03139151999494061,
+      "maximum_s": 0.03294350201031193,
+      "samples": [
+        0.03139151999494061,
+        0.03172668599290773,
+        0.0327002449776046,
+        0.03294350201031193,
+        0.03279412700794637
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "wealth",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.29712806502357125,
+      "minimum_s": 0.293519503029529,
+      "maximum_s": 0.30232596601126716,
+      "samples": [
+        0.293519503029529,
+        0.2940993470256217,
+        0.30232596601126716,
+        0.29712806502357125,
+        0.2996895989635959
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "wealth",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 3.324431344983168,
+      "minimum_s": 3.2639074369799346,
+      "maximum_s": 3.746537087019533,
+      "samples": [
+        3.293955012981314,
+        3.2639074369799346,
+        3.324431344983168,
+        3.3364110399852507,
+        3.746537087019533
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "wealth",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 33.4864945950103,
+      "minimum_s": 33.38415504596196,
+      "maximum_s": 33.698552417976316,
+      "samples": [
+        33.4864945950103,
+        33.38504356198246,
+        33.684796215966344,
+        33.38415504596196,
+        33.698552417976316
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "wealth",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 337.92736479698215,
+      "minimum_s": 336.753642422962,
+      "maximum_s": 340.9766241830075,
+      "samples": [
+        340.5695059209829,
+        337.92736479698215,
+        336.753642422962,
+        340.9766241830075,
+        337.79603033897
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "wealth",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.025970835995394737,
+      "minimum_s": 0.025822872994467616,
+      "maximum_s": 0.026225409004837275,
+      "samples": [
+        0.025970835995394737,
+        0.02595263801049441,
+        0.026225409004837275,
+        0.025822872994467616,
+        0.026070195017382503
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "wealth",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.24453930702293292,
+      "minimum_s": 0.24284734897082672,
+      "maximum_s": 0.24589595897123218,
+      "samples": [
+        0.24589595897123218,
+        0.24390336900250986,
+        0.24284734897082672,
+        0.24453930702293292,
+        0.24516680202214047
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "wealth",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 2.615585526044015,
+      "minimum_s": 2.546050947974436,
+      "maximum_s": 2.641911403974518,
+      "samples": [
+        2.6219636609894224,
+        2.641911403974518,
+        2.546050947974436,
+        2.6121385479927994,
+        2.615585526044015
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "wealth",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 26.30323103297269,
+      "minimum_s": 25.958763836009894,
+      "maximum_s": 27.365162361995317,
+      "samples": [
+        27.0357449259609,
+        27.365162361995317,
+        26.30323103297269,
+        25.958763836009894,
+        26.206947538012173
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "wealth",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 263.82286858698353,
+      "minimum_s": 259.681460243999,
+      "maximum_s": 268.45162853598595,
+      "samples": [
+        263.82286858698353,
+        261.7260969270137,
+        259.681460243999,
+        266.1171552540036,
+        268.45162853598595
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "wealth",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.04166062502190471,
+      "minimum_s": 0.04103968100389466,
+      "maximum_s": 0.04237749200547114,
+      "samples": [
+        0.04166062502190471,
+        0.04159750003600493,
+        0.04103968100389466,
+        0.04234241001540795,
+        0.04237749200547114
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "wealth",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.45480748399859294,
+      "minimum_s": 0.4507193169556558,
+      "maximum_s": 0.46383256796980277,
+      "samples": [
+        0.45480748399859294,
+        0.4507193169556558,
+        0.4607208290253766,
+        0.46383256796980277,
+        0.4533103939611465
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "wealth",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 9.047293022973463,
+      "minimum_s": 8.772228781948797,
+      "maximum_s": 9.166693499020766,
+      "samples": [
+        8.772228781948797,
+        9.047293022973463,
+        8.887616973021068,
+        9.166693499020766,
+        9.137954962032381
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "wealth",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 101.49313085898757,
+      "minimum_s": 100.25618808501167,
+      "maximum_s": 101.97782504797215,
+      "samples": [
+        101.8142131040222,
+        101.97782504797215,
+        100.25618808501167,
+        101.49313085898757,
+        101.29291495401412
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "wealth",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0000545989606,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "wealth",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.018451656971592456,
+      "minimum_s": 0.017897984012961388,
+      "maximum_s": 0.019207283039577305,
+      "samples": [
+        0.018451656971592456,
+        0.018755243974737823,
+        0.018072445993311703,
+        0.017897984012961388,
+        0.019207283039577305
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "wealth",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.02901796600781381,
+      "minimum_s": 0.028573116986081004,
+      "maximum_s": 0.03065440704813227,
+      "samples": [
+        0.03065440704813227,
+        0.028853779018390924,
+        0.02901796600781381,
+        0.028573116986081004,
+        0.029119669052306563
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "wealth",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.16216690902365372,
+      "minimum_s": 0.159066776977852,
+      "maximum_s": 0.1640454430016689,
+      "samples": [
+        0.16216690902365372,
+        0.16392915800679475,
+        0.1640454430016689,
+        0.16117565799504519,
+        0.159066776977852
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "wealth",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 1.8484581079683267,
+      "minimum_s": 1.8119460560264997,
+      "maximum_s": 1.852130682033021,
+      "samples": [
+        1.852130682033021,
+        1.8318535140133463,
+        1.8506507130223326,
+        1.8484581079683267,
+        1.8119460560264997
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "wealth",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 25.067404664005153,
+      "minimum_s": 24.979772592021618,
+      "maximum_s": 26.70938264002325,
+      "samples": [
+        24.979772592021618,
+        24.98882650298765,
+        25.067404664005153,
+        25.469776197045576,
+        26.70938264002325
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "wealth",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.001683182,
+      "minimum_s": 0.001503382,
+      "maximum_s": 0.001978838,
+      "samples": [
+        0.001683182,
+        0.001724324,
+        0.00162121,
+        0.001503382,
+        0.001978838
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "wealth",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.012037284,
+      "minimum_s": 0.011456149,
+      "maximum_s": 0.012494491,
+      "samples": [
+        0.012134981,
+        0.011456149,
+        0.011787618,
+        0.012494491,
+        0.012037284
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "wealth",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.201081124,
+      "minimum_s": 0.146441543,
+      "maximum_s": 0.227164144,
+      "samples": [
+        0.201081124,
+        0.157350279,
+        0.226579995,
+        0.146441543,
+        0.227164144
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "wealth",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 4.442986217,
+      "minimum_s": 4.417606095,
+      "maximum_s": 4.777876557,
+      "samples": [
+        4.417606095,
+        4.442986217,
+        4.436938216,
+        4.682278321,
+        4.777876557
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "wealth",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 83.204315933,
+      "minimum_s": 71.464523768,
+      "maximum_s": 85.027330262,
+      "samples": [
+        83.204315933,
+        85.027330262,
+        71.666696968,
+        84.780958995,
+        71.464523768
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "wealth",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.531061707995832,
+      "minimum_s": 0.5283153950003907,
+      "maximum_s": 0.5345134219969623,
+      "samples": [
+        0.5283153950003907,
+        0.5312510399962775,
+        0.5306848639738746,
+        0.531061707995832,
+        0.5345134219969623
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "wealth",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.5485177889931947,
+      "minimum_s": 0.5458339060423896,
+      "maximum_s": 0.5529944569570944,
+      "samples": [
+        0.5529944569570944,
+        0.5458339060423896,
+        0.5467466420377605,
+        0.5485177889931947,
+        0.5489133429946378
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "wealth",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.6674103560508229,
+      "minimum_s": 0.6669128210050985,
+      "maximum_s": 0.6689623140264302,
+      "samples": [
+        0.6681216909782961,
+        0.6689623140264302,
+        0.6671662270091474,
+        0.6669128210050985,
+        0.6674103560508229
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "wealth",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 1.8935719440341927,
+      "minimum_s": 1.8674870519898832,
+      "maximum_s": 1.9342018730239943,
+      "samples": [
+        1.8935719440341927,
+        1.9123378609656356,
+        1.8674870519898832,
+        1.8712816939805634,
+        1.9342018730239943
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "wealth",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 13.990757938008755,
+      "minimum_s": 13.857529897999484,
+      "maximum_s": 14.009351072949357,
+      "samples": [
+        14.000555368023925,
+        13.857529897999484,
+        14.009351072949357,
+        13.916513776988722,
+        13.990757938008755
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "walk",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.01351504004560411,
+      "minimum_s": 0.013169070007279515,
+      "maximum_s": 0.015077317017130554,
+      "samples": [
+        0.015077317017130554,
+        0.013344313018023968,
+        0.013169070007279515,
+        0.014340188994538039,
+        0.01351504004560411
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "walk",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.015525820024777204,
+      "minimum_s": 0.013884664978832006,
+      "maximum_s": 0.01614211598644033,
+      "samples": [
+        0.014053879014682025,
+        0.015525820024777204,
+        0.01614211598644033,
+        0.013884664978832006,
+        0.01584896497661248
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "walk",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.01646851602708921,
+      "minimum_s": 0.014935363957192749,
+      "maximum_s": 0.024191294971387833,
+      "samples": [
+        0.014935363957192749,
+        0.01890508597716689,
+        0.01646851602708921,
+        0.024191294971387833,
+        0.01523420203011483
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "walk",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 0.022320896037854254,
+      "minimum_s": 0.02019142801873386,
+      "maximum_s": 0.02611782995518297,
+      "samples": [
+        0.022320896037854254,
+        0.02019142801873386,
+        0.020353710977360606,
+        0.0233653950272128,
+        0.02611782995518297
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "walk",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 0.13818419899325818,
+      "minimum_s": 0.13307668804191053,
+      "maximum_s": 0.14557034597964957,
+      "samples": [
+        0.13818419899325818,
+        0.13307668804191053,
+        0.13813742098864168,
+        0.14557034597964957,
+        0.1397460800362751
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "walk",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.009585761989001185,
+      "minimum_s": 0.009569867979735136,
+      "maximum_s": 0.009625491977203637,
+      "samples": [
+        0.009585761989001185,
+        0.009572462004143745,
+        0.009603558981325477,
+        0.009625491977203637,
+        0.009569867979735136
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "walk",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.014459791011177003,
+      "minimum_s": 0.014405439025722444,
+      "maximum_s": 0.014599510992411524,
+      "samples": [
+        0.014405439025722444,
+        0.014599510992411524,
+        0.014519891003146768,
+        0.014406831003725529,
+        0.014459791011177003
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "walk",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.08496541302883998,
+      "minimum_s": 0.083004811021965,
+      "maximum_s": 0.08710005600005388,
+      "samples": [
+        0.08401396096451208,
+        0.08496541302883998,
+        0.08710005600005388,
+        0.083004811021965,
+        0.08659069001441821
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "walk",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 0.7978912949911319,
+      "minimum_s": 0.7911761950235814,
+      "maximum_s": 0.8086627930169925,
+      "samples": [
+        0.8019511469756253,
+        0.7978912949911319,
+        0.7945876519661397,
+        0.7911761950235814,
+        0.8086627930169925
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "walk",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 8.725958272989374,
+      "minimum_s": 8.531001802999526,
+      "maximum_s": 9.077757844002917,
+      "samples": [
+        8.63841351994779,
+        9.077757844002917,
+        8.963302419986576,
+        8.725958272989374,
+        8.531001802999526
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "walk",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.3909561889595352,
+      "minimum_s": 0.38833085203077644,
+      "maximum_s": 0.403403441014234,
+      "samples": [
+        0.40283313899999484,
+        0.403403441014234,
+        0.3907598570222035,
+        0.38833085203077644,
+        0.3909561889595352
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "walk",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 3.7180230030207895,
+      "minimum_s": 3.7126307049766183,
+      "maximum_s": 3.9167891470133327,
+      "samples": [
+        3.7180230030207895,
+        3.9167891470133327,
+        3.7159092449583113,
+        3.7126307049766183,
+        3.7240376329864375
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "walk",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 37.76949440402677,
+      "minimum_s": 37.53077169699827,
+      "maximum_s": 38.312982750008814,
+      "samples": [
+        38.312982750008814,
+        37.76949440402677,
+        37.79551737301517,
+        37.74646383000072,
+        37.53077169699827
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "walk",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 376.42581861902727,
+      "minimum_s": 374.153541792999,
+      "maximum_s": 377.74132622301113,
+      "samples": [
+        377.5165980180027,
+        377.74132622301113,
+        376.42581861902727,
+        374.153541792999,
+        375.0760890810052
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "walk",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 604.2343917019898,
+      "error": "BudgetExceeded('Predeclared 600-second public-run budget exceeded')"
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "walk",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.14722230902407318,
+      "minimum_s": 0.1451360930223018,
+      "maximum_s": 0.14905022497987375,
+      "samples": [
+        0.14830738602904603,
+        0.14722230902407318,
+        0.1451360930223018,
+        0.14550991699798033,
+        0.14905022497987375
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "walk",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.4365879640099593,
+      "minimum_s": 1.4088543930556625,
+      "maximum_s": 1.4674649690277874,
+      "samples": [
+        1.4674649690277874,
+        1.4345546580152586,
+        1.4088543930556625,
+        1.4393470520153642,
+        1.4365879640099593
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "walk",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 14.967454730998725,
+      "minimum_s": 14.871184341027401,
+      "maximum_s": 15.066320224956144,
+      "samples": [
+        15.066320224956144,
+        14.871184341027401,
+        14.967454730998725,
+        15.044649657036643,
+        14.898295070044696
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "walk",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 149.00742864597123,
+      "minimum_s": 147.42903202195885,
+      "maximum_s": 149.4346336890012,
+      "samples": [
+        149.11297239200212,
+        148.77345549099846,
+        149.4346336890012,
+        149.00742864597123,
+        147.42903202195885
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "walk",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0000375059899,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "walk",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.14716215198859572,
+      "minimum_s": 0.14270766300614923,
+      "maximum_s": 0.14734492503339425,
+      "samples": [
+        0.14484755898592994,
+        0.14716215198859572,
+        0.14270766300614923,
+        0.14733929402427748,
+        0.14734492503339425
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "walk",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.4268493640120141,
+      "minimum_s": 1.4136837889673188,
+      "maximum_s": 1.4377291950513609,
+      "samples": [
+        1.4136837889673188,
+        1.4268493640120141,
+        1.419923077977728,
+        1.4377291950513609,
+        1.4294772680150345
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "walk",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 14.442391188989859,
+      "minimum_s": 14.29114618600579,
+      "maximum_s": 14.50672174995998,
+      "samples": [
+        14.50672174995998,
+        14.29114618600579,
+        14.442391188989859,
+        14.33356272202218,
+        14.4769896089565
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "walk",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 146.57287214702228,
+      "minimum_s": 145.86386675399262,
+      "maximum_s": 150.02343881700654,
+      "samples": [
+        145.9190975530073,
+        145.86386675399262,
+        147.85437040799297,
+        146.57287214702228,
+        150.02343881700654
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "walk",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0095012850361,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "walk",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.14320064900675789,
+      "minimum_s": 0.14249763800762594,
+      "maximum_s": 0.14348114596214145,
+      "samples": [
+        0.14281090401345864,
+        0.14348114596214145,
+        0.14328378200298175,
+        0.14249763800762594,
+        0.14320064900675789
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "walk",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.4451109769870527,
+      "minimum_s": 1.4211362700443715,
+      "maximum_s": 1.4589162530028261,
+      "samples": [
+        1.4589162530028261,
+        1.4589022839791141,
+        1.4451109769870527,
+        1.4211362700443715,
+        1.4331868209992535
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "walk",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 14.72265781997703,
+      "minimum_s": 14.592221897968557,
+      "maximum_s": 14.842177086044103,
+      "samples": [
+        14.815268250997178,
+        14.842177086044103,
+        14.72265781997703,
+        14.65873978001764,
+        14.592221897968557
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "walk",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 149.6380337110022,
+      "minimum_s": 148.73713329003658,
+      "maximum_s": 152.20731341204373,
+      "samples": [
+        152.20731341204373,
+        148.73713329003658,
+        149.6380337110022,
+        148.86003245896427,
+        150.87193823297275
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "walk",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0000457519782,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "walk",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.1479761339724064,
+      "minimum_s": 0.14767767797457054,
+      "maximum_s": 0.15074870199896395,
+      "samples": [
+        0.15074870199896395,
+        0.14768633898347616,
+        0.1479761339724064,
+        0.14767767797457054,
+        0.14888658601557836
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "walk",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.5163743790471926,
+      "minimum_s": 1.5130897310446016,
+      "maximum_s": 1.5246859909966588,
+      "samples": [
+        1.5220570479868911,
+        1.5163743790471926,
+        1.5162531999521889,
+        1.5130897310446016,
+        1.5246859909966588
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "walk",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 18.086655271006748,
+      "minimum_s": 17.718170606996864,
+      "maximum_s": 18.812978492002003,
+      "samples": [
+        18.46499154099729,
+        18.812978492002003,
+        17.718170606996864,
+        17.861783928005025,
+        18.086655271006748
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "walk",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 186.2582736830227,
+      "minimum_s": 184.74177560204407,
+      "maximum_s": 187.50281210499816,
+      "samples": [
+        184.74177560204407,
+        185.96688346698647,
+        187.50281210499816,
+        186.2582736830227,
+        187.0378608169849
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "walk",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 626.5548942500027,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "walk",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.020229290996212512,
+      "minimum_s": 0.018875988957006484,
+      "maximum_s": 0.020817046985030174,
+      "samples": [
+        0.018875988957006484,
+        0.020817046985030174,
+        0.020229290996212512,
+        0.02063318999717012,
+        0.01942884299205616
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "walk",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.030914071016013622,
+      "minimum_s": 0.030201796034816653,
+      "maximum_s": 0.03141650004545227,
+      "samples": [
+        0.03126963699469343,
+        0.030201796034816653,
+        0.030914071016013622,
+        0.03141650004545227,
+        0.03039877297123894
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "walk",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.16103663999820128,
+      "minimum_s": 0.15528194699436426,
+      "maximum_s": 0.164705975970719,
+      "samples": [
+        0.1585726430057548,
+        0.16289142798632383,
+        0.16103663999820128,
+        0.164705975970719,
+        0.15528194699436426
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "walk",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 1.8406626409851015,
+      "minimum_s": 1.8248640010133386,
+      "maximum_s": 1.892581019026693,
+      "samples": [
+        1.8406626409851015,
+        1.8248640010133386,
+        1.83859547105385,
+        1.892581019026693,
+        1.8517858179984614
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "walk",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 22.64352514699567,
+      "minimum_s": 22.512339251989033,
+      "maximum_s": 23.249851424014196,
+      "samples": [
+        23.249851424014196,
+        22.64352514699567,
+        22.512339251989033,
+        22.514395991980564,
+        23.152296592015773
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "walk",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.018423564,
+      "minimum_s": 0.018401941,
+      "maximum_s": 0.02204998,
+      "samples": [
+        0.02204998,
+        0.02040795,
+        0.018423564,
+        0.018401941,
+        0.018418576
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "walk",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.202379618,
+      "minimum_s": 0.195925986,
+      "maximum_s": 0.249721047,
+      "samples": [
+        0.195925986,
+        0.202379618,
+        0.200097705,
+        0.249721047,
+        0.213284598
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "walk",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 2.111697756,
+      "minimum_s": 2.097810258,
+      "maximum_s": 2.16166743,
+      "samples": [
+        2.111697756,
+        2.16166743,
+        2.097810258,
+        2.111022981,
+        2.112649088
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "walk",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 24.015914153,
+      "minimum_s": 23.657624994,
+      "maximum_s": 24.652062222,
+      "samples": [
+        24.652062222,
+        23.657624994,
+        24.015914153,
+        23.915515945,
+        24.341398768
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "walk",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 286.664337969,
+      "minimum_s": 285.868435949,
+      "maximum_s": 296.181366455,
+      "samples": [
+        285.868435949,
+        286.664337969,
+        286.014802889,
+        289.315018015,
+        296.181366455
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "walk",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.5189565920154564,
+      "minimum_s": 0.5176866530091502,
+      "maximum_s": 0.5212606759741902,
+      "samples": [
+        0.5195436630165204,
+        0.5186143820174038,
+        0.5212606759741902,
+        0.5189565920154564,
+        0.5176866530091502
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "walk",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.5332358549931087,
+      "minimum_s": 0.5322758829570375,
+      "maximum_s": 0.5351641600136645,
+      "samples": [
+        0.5332358549931087,
+        0.5339867240400054,
+        0.5322758829570375,
+        0.5330882749985904,
+        0.5351641600136645
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "walk",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.6925765050109476,
+      "minimum_s": 0.6870540259988047,
+      "maximum_s": 0.6988524839980528,
+      "samples": [
+        0.6988524839980528,
+        0.6870540259988047,
+        0.6891314619570039,
+        0.6978531630011275,
+        0.6925765050109476
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "walk",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 2.2807423310005106,
+      "minimum_s": 2.252731140004471,
+      "maximum_s": 2.491013827966526,
+      "samples": [
+        2.2807423310005106,
+        2.252731140004471,
+        2.2530653559952043,
+        2.336737800971605,
+        2.491013827966526
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "walk",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 18.198843727004714,
+      "minimum_s": 18.060941771953367,
+      "maximum_s": 19.313028384000063,
+      "samples": [
+        19.313028384000063,
+        18.350595992000308,
+        18.198843727004714,
+        18.07975042599719,
+        18.060941771953367
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "sir",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.03343897598097101,
+      "minimum_s": 0.0300528000225313,
+      "maximum_s": 0.03904878202592954,
+      "samples": [
+        0.03904878202592954,
+        0.0300528000225313,
+        0.03108394896844402,
+        0.035628775018267334,
+        0.03343897598097101
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "sir",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.02895043505122885,
+      "minimum_s": 0.028630593966227025,
+      "maximum_s": 0.03338162001455203,
+      "samples": [
+        0.02895043505122885,
+        0.03338162001455203,
+        0.03211356600513682,
+        0.028914930997416377,
+        0.028630593966227025
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "sir",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.039055582019500434,
+      "minimum_s": 0.03235850395867601,
+      "maximum_s": 0.04129297297913581,
+      "samples": [
+        0.03691981401061639,
+        0.04129297297913581,
+        0.039055582019500434,
+        0.03235850395867601,
+        0.04108044400345534
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "sir",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 0.10703903599642217,
+      "minimum_s": 0.10353081597713754,
+      "maximum_s": 0.10960971703752875,
+      "samples": [
+        0.10703903599642217,
+        0.10960971703752875,
+        0.10570054600248113,
+        0.10927018703659996,
+        0.10353081597713754
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "sir",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 3.283655134961009,
+      "minimum_s": 3.277552546991501,
+      "maximum_s": 3.2923909849487245,
+      "samples": [
+        3.2923909849487245,
+        3.277552546991501,
+        3.2853283550357446,
+        3.2796091659693047,
+        3.283655134961009
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "sir",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.34506677399622276,
+      "minimum_s": 0.3405477199703455,
+      "maximum_s": 0.35445856396108866,
+      "samples": [
+        0.34471705701434985,
+        0.34846978704445064,
+        0.3405477199703455,
+        0.34506677399622276,
+        0.35445856396108866
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "sir",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.1666554019902833,
+      "minimum_s": 1.160511891997885,
+      "maximum_s": 1.2040309449657798,
+      "samples": [
+        1.160511891997885,
+        1.2040309449657798,
+        1.177282713004388,
+        1.1666554019902833,
+        1.1633535209693946
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "sir",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 3.9178223669878207,
+      "minimum_s": 3.8551315590157174,
+      "maximum_s": 3.9403092559659854,
+      "samples": [
+        3.8840621839626692,
+        3.9178223669878207,
+        3.9403092559659854,
+        3.928778769040946,
+        3.8551315590157174
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "sir",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 19.296074471028987,
+      "minimum_s": 18.819653187005315,
+      "maximum_s": 19.70557817199733,
+      "samples": [
+        19.70557817199733,
+        19.29979902197374,
+        19.296074471028987,
+        19.063253492000513,
+        18.819653187005315
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "sir",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 248.8438719920232,
+      "minimum_s": 243.19704596401425,
+      "maximum_s": 250.23173241701443,
+      "samples": [
+        244.30612082895823,
+        243.19704596401425,
+        248.8438719920232,
+        249.36500916798832,
+        250.23173241701443
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "sir",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.9602496520383283,
+      "minimum_s": 0.9528528830269352,
+      "maximum_s": 0.9654343839501962,
+      "samples": [
+        0.9607173350523226,
+        0.9602496520383283,
+        0.9654343839501962,
+        0.9539750109543093,
+        0.9528528830269352
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "sir",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 9.262297646026127,
+      "minimum_s": 9.175792324997019,
+      "maximum_s": 9.2997062500217,
+      "samples": [
+        9.175792324997019,
+        9.199626293033361,
+        9.287956050015055,
+        9.262297646026127,
+        9.2997062500217
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "sir",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 101.91125593596371,
+      "minimum_s": 101.15857751399744,
+      "maximum_s": 102.10519703896716,
+      "samples": [
+        102.10519703896716,
+        101.15857751399744,
+        101.91125593596371,
+        101.97557043394772,
+        101.61770765198162
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "sir",
+      "agents": 1000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.080028722994,
+      "error": "BudgetExceeded('Predeclared 600-second public-run budget exceeded')"
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "sir",
+      "agents": 10000000,
+      "status": "skipped_after_stop"
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "sir",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.2851456260541454,
+      "minimum_s": 0.28303422703174874,
+      "maximum_s": 0.30059318797430024,
+      "samples": [
+        0.2851456260541454,
+        0.29109696100931615,
+        0.28303422703174874,
+        0.28414851101115346,
+        0.30059318797430024
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "sir",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 2.729617531003896,
+      "minimum_s": 2.6988809989998117,
+      "maximum_s": 2.7507989300065674,
+      "samples": [
+        2.7507989300065674,
+        2.6988809989998117,
+        2.735482021991629,
+        2.729617531003896,
+        2.705383079999592
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "sir",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 36.165454905014485,
+      "minimum_s": 36.13042180897901,
+      "maximum_s": 36.68315961700864,
+      "samples": [
+        36.68315961700864,
+        36.165454905014485,
+        36.14558838104131,
+        36.16840443998808,
+        36.13042180897901
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "sir",
+      "agents": 1000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0000498609734,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "sir",
+      "agents": 10000000,
+      "status": "skipped_after_stop"
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "sir",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.2800249599968083,
+      "minimum_s": 0.2788554549915716,
+      "maximum_s": 0.28486487903865054,
+      "samples": [
+        0.2788579690386541,
+        0.2788554549915716,
+        0.2800249599968083,
+        0.28486487903865054,
+        0.2806319500086829
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "sir",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 2.661330216040369,
+      "minimum_s": 2.652811506006401,
+      "maximum_s": 2.673308431985788,
+      "samples": [
+        2.652811506006401,
+        2.673308431985788,
+        2.661330216040369,
+        2.654589517042041,
+        2.6644545160233974
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "sir",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 36.00706861697836,
+      "minimum_s": 35.839383458020166,
+      "maximum_s": 36.040074996999465,
+      "samples": [
+        36.040074996999465,
+        35.839383458020166,
+        35.99419182399288,
+        36.01395842200145,
+        36.00706861697836
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "sir",
+      "agents": 1000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0001864740043,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "sir",
+      "agents": 10000000,
+      "status": "skipped_after_stop"
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "sir",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.27095385402208194,
+      "minimum_s": 0.2694621200207621,
+      "maximum_s": 0.27354466094402596,
+      "samples": [
+        0.27022166800452396,
+        0.27354466094402596,
+        0.27335995103931054,
+        0.27095385402208194,
+        0.2694621200207621
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "sir",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 2.571224705025088,
+      "minimum_s": 2.5569703489891253,
+      "maximum_s": 2.799301152001135,
+      "samples": [
+        2.6856103999889456,
+        2.799301152001135,
+        2.5569703489891253,
+        2.571224705025088,
+        2.5603636580053717
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "sir",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 34.93687658099225,
+      "minimum_s": 34.778923034027684,
+      "maximum_s": 35.13795993296662,
+      "samples": [
+        35.13795993296662,
+        34.92638713301858,
+        34.778923034027684,
+        34.93687658099225,
+        35.0888435250381
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "sir",
+      "agents": 1000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0000369879999,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "sir",
+      "agents": 10000000,
+      "status": "skipped_after_stop"
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "sir",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.3040799889713526,
+      "minimum_s": 0.3019815140287392,
+      "maximum_s": 0.30471723404480144,
+      "samples": [
+        0.3040799889713526,
+        0.30471723404480144,
+        0.3019815140287392,
+        0.30443260801257566,
+        0.3021108580287546
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "sir",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 2.9475233090342954,
+      "minimum_s": 2.9246880839928053,
+      "maximum_s": 3.0014467199798673,
+      "samples": [
+        2.9475233090342954,
+        3.0014467199798673,
+        2.9805173850036226,
+        2.9384196709725074,
+        2.9246880839928053
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "sir",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 46.26478234102251,
+      "minimum_s": 46.09701094398042,
+      "maximum_s": 46.618977641977835,
+      "samples": [
+        46.26243461901322,
+        46.45812461501919,
+        46.618977641977835,
+        46.26478234102251,
+        46.09701094398042
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "sir",
+      "agents": 1000000,
+      "status": "budget_exceeded",
+      "stop_s": 732.466455419024,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "sir",
+      "agents": 10000000,
+      "status": "skipped_after_stop"
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "sir",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.4186451830319129,
+      "minimum_s": 0.4131564419949427,
+      "maximum_s": 0.4333170569734648,
+      "samples": [
+        0.4333170569734648,
+        0.4190196309937164,
+        0.4131564419949427,
+        0.417601911991369,
+        0.4186451830319129
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "sir",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.4909314719843678,
+      "minimum_s": 1.447341040999163,
+      "maximum_s": 1.5155342150246724,
+      "samples": [
+        1.4837240040069446,
+        1.4931625710451044,
+        1.5155342150246724,
+        1.447341040999163,
+        1.4909314719843678
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "sir",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 4.729776560969185,
+      "minimum_s": 4.674177895998582,
+      "maximum_s": 4.776189843018074,
+      "samples": [
+        4.776189843018074,
+        4.714645562984515,
+        4.7343470670166425,
+        4.674177895998582,
+        4.729776560969185
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "sir",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 25.67238984198775,
+      "minimum_s": 25.62974966497859,
+      "maximum_s": 26.154879361973144,
+      "samples": [
+        25.62974966497859,
+        25.888435708009638,
+        25.67238984198775,
+        26.154879361973144,
+        25.63442663900787
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "sir",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 327.43973599298624,
+      "minimum_s": 321.7962371780304,
+      "maximum_s": 333.15464443998644,
+      "samples": [
+        326.92158266395563,
+        321.7962371780304,
+        327.43973599298624,
+        329.8651880440302,
+        333.15464443998644
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "sir",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.05088881,
+      "minimum_s": 0.050152782,
+      "maximum_s": 0.052454145,
+      "samples": [
+        0.052454145,
+        0.05088881,
+        0.050665554,
+        0.05121486,
+        0.050152782
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "sir",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.393655388,
+      "minimum_s": 0.3907384,
+      "maximum_s": 0.466891258,
+      "samples": [
+        0.466891258,
+        0.393655388,
+        0.39084518,
+        0.39980496,
+        0.3907384
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "sir",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 5.147154323,
+      "minimum_s": 5.128168017,
+      "maximum_s": 5.174495762,
+      "samples": [
+        5.147154323,
+        5.1472035,
+        5.174495762,
+        5.128168017,
+        5.136919346
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "sir",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 115.077470581,
+      "minimum_s": 115.035411257,
+      "maximum_s": 116.23219509,
+      "samples": [
+        116.23219509,
+        115.074816815,
+        115.035411257,
+        115.077470581,
+        115.429646144
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "sir",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0000941919861,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "sir",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.5301559289800934,
+      "minimum_s": 0.5297203460359015,
+      "maximum_s": 0.5309810430044308,
+      "samples": [
+        0.5303360070101917,
+        0.5297203460359015,
+        0.5309810430044308,
+        0.5301559289800934,
+        0.5299114779918455
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "sir",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.557122639962472,
+      "minimum_s": 0.5566959189600311,
+      "maximum_s": 0.5631190669955686,
+      "samples": [
+        0.5569666599621996,
+        0.5566959189600311,
+        0.557122639962472,
+        0.5585341540281661,
+        0.5631190669955686
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "sir",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.8050178340054117,
+      "minimum_s": 0.7985244399751537,
+      "maximum_s": 0.8179478570236824,
+      "samples": [
+        0.8179478570236824,
+        0.7985244399751537,
+        0.8050178340054117,
+        0.8035476569784805,
+        0.805444689001888
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "sir",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 3.424648332002107,
+      "minimum_s": 3.4050326230353676,
+      "maximum_s": 3.442791679990478,
+      "samples": [
+        3.442791679990478,
+        3.419905151997227,
+        3.4361476590274833,
+        3.4050326230353676,
+        3.424648332002107
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "sir",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 36.54766788100824,
+      "minimum_s": 36.401336372015066,
+      "maximum_s": 36.61762368300697,
+      "samples": [
+        36.550041696988046,
+        36.54766788100824,
+        36.44963750097668,
+        36.61762368300697,
+        36.401336372015066
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "schelling",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.06852433498715982,
+      "minimum_s": 0.06292494403896853,
+      "maximum_s": 0.07180837797932327,
+      "samples": [
+        0.06852433498715982,
+        0.06959817698225379,
+        0.06292494403896853,
+        0.07180837797932327,
+        0.06336921197362244
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "schelling",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.06747385702328756,
+      "minimum_s": 0.06403511203825474,
+      "maximum_s": 0.07277851499384269,
+      "samples": [
+        0.06747385702328756,
+        0.06987510400358588,
+        0.06423151696799323,
+        0.06403511203825474,
+        0.07277851499384269
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "schelling",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.07103291305247694,
+      "minimum_s": 0.06722673599142581,
+      "maximum_s": 0.08056172600481659,
+      "samples": [
+        0.06805196503410116,
+        0.07103291305247694,
+        0.06722673599142581,
+        0.07135352498153225,
+        0.08056172600481659
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "schelling",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 0.07906636100960895,
+      "minimum_s": 0.07638713496271521,
+      "maximum_s": 0.08662599499803036,
+      "samples": [
+        0.08662599499803036,
+        0.07957251003244892,
+        0.07638713496271521,
+        0.07687621103832498,
+        0.07906636100960895
+      ]
+    },
+    {
+      "implementation": "AMBER GPU",
+      "workload": "schelling",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 0.5664378459914587,
+      "minimum_s": 0.5662505769869313,
+      "maximum_s": 0.5717556980089284,
+      "samples": [
+        0.5662505769869313,
+        0.5663744430057704,
+        0.5664378459914587,
+        0.5717556980089284,
+        0.5667072180076502
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "schelling",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.01636815897654742,
+      "minimum_s": 0.01633865397889167,
+      "maximum_s": 0.016434718971140683,
+      "samples": [
+        0.016342280025128275,
+        0.01633865397889167,
+        0.016434718971140683,
+        0.0163755799876526,
+        0.01636815897654742
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "schelling",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.029691278003156185,
+      "minimum_s": 0.029441642051097006,
+      "maximum_s": 0.03031122003449127,
+      "samples": [
+        0.029441642051097006,
+        0.029691278003156185,
+        0.029610386001877487,
+        0.029778729018289596,
+        0.03031122003449127
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "schelling",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.2274982130038552,
+      "minimum_s": 0.2184854869847186,
+      "maximum_s": 0.24134847504319623,
+      "samples": [
+        0.2274982130038552,
+        0.24134847504319623,
+        0.22223146102624014,
+        0.23490737698739395,
+        0.2184854869847186
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "schelling",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 2.6490702719893306,
+      "minimum_s": 2.6315020589972846,
+      "maximum_s": 2.652283844014164,
+      "samples": [
+        2.6315020589972846,
+        2.639561245974619,
+        2.6490702719893306,
+        2.6504859859705903,
+        2.652283844014164
+      ]
+    },
+    {
+      "implementation": "AMBER vectorized CPU",
+      "workload": "schelling",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 59.77808661398012,
+      "minimum_s": 59.53616028703982,
+      "maximum_s": 60.308244962012395,
+      "samples": [
+        59.64027435897151,
+        60.308244962012395,
+        59.53616028703982,
+        59.77808661398012,
+        59.910756549972575
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "schelling",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.3448566140141338,
+      "minimum_s": 0.34405473998049274,
+      "maximum_s": 0.34713540103984997,
+      "samples": [
+        0.34713540103984997,
+        0.3441923370119184,
+        0.34405473998049274,
+        0.3448566140141338,
+        0.3454822539933957
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "schelling",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 3.4717997889965773,
+      "minimum_s": 3.4457993839750998,
+      "maximum_s": 3.516236988012679,
+      "samples": [
+        3.4980453070020303,
+        3.466677106975112,
+        3.4457993839750998,
+        3.4717997889965773,
+        3.516236988012679
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "schelling",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 36.57813947298564,
+      "minimum_s": 36.26786277000792,
+      "maximum_s": 36.86067541997181,
+      "samples": [
+        36.26786277000792,
+        36.33123338903533,
+        36.86067541997181,
+        36.57813947298564,
+        36.61372046399629
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "schelling",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 427.2689302669605,
+      "minimum_s": 423.53593700699275,
+      "maximum_s": 441.6241088049719,
+      "samples": [
+        427.2689302669605,
+        424.12839387496933,
+        423.53593700699275,
+        441.6241088049719,
+        437.55527483997867
+      ]
+    },
+    {
+      "implementation": "AMBER oop CPU",
+      "workload": "schelling",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0000538409804,
+      "error": "BudgetExceeded('Predeclared 600-second public-run budget exceeded')"
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "schelling",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.12542177201248705,
+      "minimum_s": 0.12120995501754805,
+      "maximum_s": 0.132047554012388,
+      "samples": [
+        0.12211900105467066,
+        0.12120995501754805,
+        0.12930600601248443,
+        0.132047554012388,
+        0.12542177201248705
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "schelling",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.2971190490061417,
+      "minimum_s": 1.284312594041694,
+      "maximum_s": 1.3000651660258882,
+      "samples": [
+        1.2970827239914797,
+        1.2971190490061417,
+        1.2999393760110252,
+        1.284312594041694,
+        1.3000651660258882
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "schelling",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 16.31129395001335,
+      "minimum_s": 15.889321237977128,
+      "maximum_s": 16.81611126899952,
+      "samples": [
+        15.889321237977128,
+        16.19120981701417,
+        16.31129395001335,
+        16.81611126899952,
+        16.553138554038014
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "schelling",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 234.2037363880081,
+      "minimum_s": 230.83948168699862,
+      "maximum_s": 236.80078863399103,
+      "samples": [
+        236.41295309300767,
+        236.80078863399103,
+        230.83948168699862,
+        234.2037363880081,
+        231.8122495940188
+      ]
+    },
+    {
+      "implementation": "Mesa",
+      "workload": "schelling",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0000471569947,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "schelling",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.12426501698791981,
+      "minimum_s": 0.12370863399701193,
+      "maximum_s": 0.1325611849897541,
+      "samples": [
+        0.12370863399701193,
+        0.12426501698791981,
+        0.12383256200700998,
+        0.12493051501223817,
+        0.1325611849897541
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "schelling",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.2989401619997807,
+      "minimum_s": 1.2902827319921926,
+      "maximum_s": 1.339476494002156,
+      "samples": [
+        1.2902827319921926,
+        1.3026579829747789,
+        1.2954774289974011,
+        1.339476494002156,
+        1.2989401619997807
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "schelling",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 15.452107044984587,
+      "minimum_s": 15.307773836015258,
+      "maximum_s": 15.77220623899484,
+      "samples": [
+        15.77220623899484,
+        15.641514579008799,
+        15.452107044984587,
+        15.390039185003843,
+        15.307773836015258
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "schelling",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 224.87084342201706,
+      "minimum_s": 222.15203483897494,
+      "maximum_s": 226.21026763302507,
+      "samples": [
+        224.87084342201706,
+        226.21026763302507,
+        225.45838066301076,
+        224.05859780794708,
+        222.15203483897494
+      ]
+    },
+    {
+      "implementation": "AgentPy",
+      "workload": "schelling",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0015377399977,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "schelling",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.11957136099226773,
+      "minimum_s": 0.11616512801265344,
+      "maximum_s": 0.1216617810423486,
+      "samples": [
+        0.12083558598533273,
+        0.11616512801265344,
+        0.1216617810423486,
+        0.11957136099226773,
+        0.11776081298012286
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "schelling",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.217372044979129,
+      "minimum_s": 1.206313405011315,
+      "maximum_s": 1.221086859004572,
+      "samples": [
+        1.2136984990211204,
+        1.221086859004572,
+        1.217372044979129,
+        1.206313405011315,
+        1.219609997002408
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "schelling",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 14.920493196987081,
+      "minimum_s": 14.624202008009888,
+      "maximum_s": 15.239996987977065,
+      "samples": [
+        14.624202008009888,
+        15.239996987977065,
+        15.174162651004735,
+        14.781997960002627,
+        14.920493196987081
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "schelling",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 214.32379939599195,
+      "minimum_s": 210.91286511701765,
+      "maximum_s": 221.28656698699342,
+      "samples": [
+        210.91286511701765,
+        217.89416959800292,
+        214.32379939599195,
+        212.69396840798436,
+        221.28656698699342
+      ]
+    },
+    {
+      "implementation": "Melodie",
+      "workload": "schelling",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0000361570274,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "schelling",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.13433334400178865,
+      "minimum_s": 0.13372685702051967,
+      "maximum_s": 0.13619121396914124,
+      "samples": [
+        0.13372685702051967,
+        0.1351484489860013,
+        0.13433334400178865,
+        0.1341580040170811,
+        0.13619121396914124
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "schelling",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 1.5183248149696738,
+      "minimum_s": 1.4947860710090026,
+      "maximum_s": 1.5282126429956406,
+      "samples": [
+        1.5168059829738922,
+        1.5282126429956406,
+        1.5260389929753728,
+        1.5183248149696738,
+        1.4947860710090026
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "schelling",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 27.277799601026345,
+      "minimum_s": 27.127001798013225,
+      "maximum_s": 28.31509627099149,
+      "samples": [
+        27.277799601026345,
+        27.74724196700845,
+        28.31509627099149,
+        27.146024693967775,
+        27.127001798013225
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "schelling",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 397.2948565889965,
+      "minimum_s": 392.54205649299547,
+      "maximum_s": 409.74339028901886,
+      "samples": [
+        409.74339028901886,
+        392.54205649299547,
+        397.2948565889965,
+        396.1797126830206,
+        400.5359876889852
+      ]
+    },
+    {
+      "implementation": "SimPy",
+      "workload": "schelling",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 637.7489048969583,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "schelling",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.028873518982436508,
+      "minimum_s": 0.02785762003622949,
+      "maximum_s": 0.029430106049403548,
+      "samples": [
+        0.02875551098259166,
+        0.028873518982436508,
+        0.02785762003622949,
+        0.029108242015354335,
+        0.029430106049403548
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "schelling",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.0464426270336844,
+      "minimum_s": 0.04487272398546338,
+      "maximum_s": 0.04763874696800485,
+      "samples": [
+        0.0464426270336844,
+        0.04578125098487362,
+        0.04763874696800485,
+        0.04487272398546338,
+        0.04746457404689863
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "schelling",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.30888734199106693,
+      "minimum_s": 0.2962796699721366,
+      "maximum_s": 0.3187330469954759,
+      "samples": [
+        0.3015052330447361,
+        0.2962796699721366,
+        0.30888734199106693,
+        0.3125422410084866,
+        0.3187330469954759
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "schelling",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 3.7129724029800855,
+      "minimum_s": 3.6819273149594665,
+      "maximum_s": 3.728625306044705,
+      "samples": [
+        3.6819273149594665,
+        3.7055419710231945,
+        3.728625306044705,
+        3.7129724029800855,
+        3.7170570079470053
+      ]
+    },
+    {
+      "implementation": "mesa-frames",
+      "workload": "schelling",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 54.11929470504401,
+      "minimum_s": 53.89618638402317,
+      "maximum_s": 55.12886321102269,
+      "samples": [
+        54.31981033604825,
+        53.89618638402317,
+        53.98791811900446,
+        54.11929470504401,
+        55.12886321102269
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "schelling",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.046699801,
+      "minimum_s": 0.044788687,
+      "maximum_s": 0.051039206,
+      "samples": [
+        0.051039206,
+        0.044788687,
+        0.049136114,
+        0.046236938,
+        0.046699801
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "schelling",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.494174068,
+      "minimum_s": 0.486827845,
+      "maximum_s": 0.562380449,
+      "samples": [
+        0.549337023,
+        0.489081603,
+        0.486827845,
+        0.494174068,
+        0.562380449
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "schelling",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 5.309083296,
+      "minimum_s": 5.219146857,
+      "maximum_s": 5.347777057,
+      "samples": [
+        5.219146857,
+        5.309083296,
+        5.284525565,
+        5.317787198,
+        5.347777057
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "schelling",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 72.817639199,
+      "minimum_s": 71.63653802,
+      "maximum_s": 73.12392388,
+      "samples": [
+        72.983104535,
+        72.817639199,
+        73.12392388,
+        72.407047364,
+        71.63653802
+      ]
+    },
+    {
+      "implementation": "Agents.jl",
+      "workload": "schelling",
+      "agents": 10000000,
+      "status": "budget_exceeded",
+      "stop_s": 600.0000953010167,
+      "error": "BudgetExceeded('Predeclared 600-second run guard')"
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "schelling",
+      "agents": 1000,
+      "status": "complete",
+      "median_s": 0.5786463979748078,
+      "minimum_s": 0.5773935280158184,
+      "maximum_s": 0.5893018930219114,
+      "samples": [
+        0.5773935280158184,
+        0.5893018930219114,
+        0.5777839119546115,
+        0.5786463979748078,
+        0.5804319939925335
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "schelling",
+      "agents": 10000,
+      "status": "complete",
+      "median_s": 0.6021904380177148,
+      "minimum_s": 0.6011347740422934,
+      "maximum_s": 0.6037271820241585,
+      "samples": [
+        0.6016065670410171,
+        0.6025861079688184,
+        0.6011347740422934,
+        0.6037271820241585,
+        0.6021904380177148
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "schelling",
+      "agents": 100000,
+      "status": "complete",
+      "median_s": 0.7706199890235439,
+      "minimum_s": 0.7699118070304394,
+      "maximum_s": 0.7725117959780619,
+      "samples": [
+        0.7706199890235439,
+        0.7712442359770648,
+        0.7705616069724783,
+        0.7699118070304394,
+        0.7725117959780619
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "schelling",
+      "agents": 1000000,
+      "status": "complete",
+      "median_s": 2.4583363729761913,
+      "minimum_s": 2.431902659998741,
+      "maximum_s": 2.5059224109863862,
+      "samples": [
+        2.5059224109863862,
+        2.431902659998741,
+        2.4583363729761913,
+        2.4524154709652066,
+        2.4853814520174637
+      ]
+    },
+    {
+      "implementation": "FLAME GPU 2",
+      "workload": "schelling",
+      "agents": 10000000,
+      "status": "complete",
+      "median_s": 19.5541249110247,
+      "minimum_s": 19.37906580901472,
+      "maximum_s": 19.627214971987996,
+      "samples": [
+        19.5541249110247,
+        19.495017850014847,
+        19.37906580901472,
+        19.627214971987996,
+        19.58842141396599
+      ]
+    }
+  ]
+}
