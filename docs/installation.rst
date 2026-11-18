@@ -75,8 +75,8 @@ AMBER extras (install what you need):
    # CPU acceleration (Numba + SciPy) — recommended on Mac / no-CUDA machines
    pip install 'ambr[perf]'
 
-   # NVIDIA GPU lane with CUDA 13. Use cupy-cuda12x for CUDA 12.
-   pip install cupy-cuda13x
+   # NVIDIA GPU lane. This installs the generic CuPy package.
+   pip install 'ambr[gpu]'
 
    # SMAC Bayesian / multi-objective optimization (pins scikit-learn for SMAC 2.4)
    pip install 'ambr[advanced]'
@@ -92,6 +92,10 @@ AMBER extras (install what you need):
 
    # Documentation build tools
    pip install 'ambr[docs]'
+
+For a prebuilt CuPy wheel, install AMBER with the distribution that matches
+your CUDA environment. Use ``python -m pip install ambr cupy-cuda13x`` for
+CUDA 13 or ``python -m pip install ambr cupy-cuda12x`` for CUDA 12.
 
 Other useful packages:
 

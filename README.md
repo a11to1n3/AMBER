@@ -776,8 +776,9 @@ pip install 'ambr[advanced]'          # SMAC optimization
 pip install 'ambr[advanced,viz]'      # SMAC + matplotlib (example plots)
 ```
 
-For NVIDIA CUDA, install the matching CuPy distribution. For example, use
-`python -m pip install cupy-cuda13x` with a CUDA 13 environment.
+The `ambr[gpu]` extra installs the generic CuPy package. To use a prebuilt
+CUDA wheel, install `ambr` and the matching CuPy distribution. For example,
+use `python -m pip install ambr cupy-cuda13x` in a CUDA 13 environment.
 
 ```python
 import ambr as am
