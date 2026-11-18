@@ -7,9 +7,12 @@ The research paper and the installable **PyPI package** are related but
 Package (source of truth for software claims)
 ---------------------------------------------
 
-* Name: ``ambr`` on PyPI (current line: **0.5.x**, Beta classifier).
-* Performance headlines in the **README / Sphinx** cite the committed
-  snapshot::
+* Name: ``ambr`` on PyPI (Beta classifier).
+* The 0.6.0 automatic batching benchmark uses two ordinary agent models
+  at 1,000 and 10,000 agents, with samples in
+  ``benchmarks/results/automatic_batching_0_6_0.json``.
+* The historical 10-million-agent comparison uses explicit GPU kernels
+  with the committed snapshot::
 
      benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json
 
@@ -19,8 +22,8 @@ Package (source of truth for software claims)
 * API and lanes: dual OOP + vectorized, ``model.gpu()``, ensemble calibration,
   contract monitor — as documented in this tree.
 
-Paper (historical / academic evaluation setting)
-------------------------------------------------
+Original arXiv evaluation
+-------------------------
 
 * arXiv: https://arxiv.org/abs/2601.16292
 * The paper’s **main empirical table** evaluates an **earlier** package line
@@ -28,6 +31,20 @@ Paper (historical / academic evaluation setting)
   (e.g. Apple M2), with GPU called out as future work in that setting.
 * Do **not** cite the paper table as the same claim as the 10M FLAME GPU
   README numbers without stating the different protocol.
+
+Round 73 and Round 75 reviewer evaluations
+-------------------------------------------
+
+Round 73 records GPU timings from research commit ``a29811d80283`` using
+approved workload-specific hooks on an RTX 5090. The historical 10-million-agent
+comparison in the README comes from a July experiment based on ``cdb4f135``. The Round 73
+600-second guard was enforced by the CPU and peer-framework timing drivers.
+All 140 archived GPU timing attempts completed in less than three seconds.
+
+Round 75 reran the paper's timing and correctness checks with the
+``0.5.2+fix.11`` research wheel. The independent SIR transition comparisons
+use that same wheel and reach one million agents. Cite each result with its
+recorded version and protocol.
 
 How to cite
 -----------

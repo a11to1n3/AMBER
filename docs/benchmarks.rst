@@ -1,8 +1,8 @@
 Benchmarks & Performance
 ========================
 
-AMBER stores the whole population as a columnar Polars DataFrame and compiles
-each step into a handful of vectorized expressions. The vectorized lane
+AMBER stores the population in a columnar Polars DataFrame and automatically
+batches supported ordinary agent methods. The explicit vectorized lane
 (``step_vectorized`` / legacy ``step``) runs on GPU via ``model.gpu().run()``
 (:doc:`api/gpu`) with device-resident columns when **NVIDIA + CuPy** are
 available (not Apple Metal/MPS). Published AMBER (GPU) rows may use an
@@ -15,8 +15,22 @@ Default CI has no CUDA; re-check GPU claim samples on a GPU host with
 ``python scripts/run_gpu_claims.py``. Large multi-framework runs use
 ``python benchmarks/run_all_frameworks.py``.
 
-Headline: AMBER (GPU) vs FLAME GPU 2 at 10M
---------------------------------------------
+AMBER 0.6.0 automatic batching
+------------------------------
+
+The release benchmark used the same integer aging and keyed random-walk
+declarations on scalar CPU, default CPU, and an RTX 5090. The four cases
+covered 1,000 and 10,000 agents over 20 steps. Final agent tables matched
+in all 84 runs, including warm-ups.
+
+.. figure:: ../benchmarks/results/automatic_batching_0_6_0.svg
+   :alt: End-to-end time by workload, population and execution mode.
+
+   Medians and min–max whiskers from six timed runs per case and mode at
+   one seed. End-to-end time includes the final host export.
+
+Historical explicit GPU comparison at 10M
+------------------------------------------
 
 **Source of truth** (committed JSON, all 10 samples retained — no outlier
 trim): ``benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json``
@@ -49,9 +63,8 @@ Schelling         295 ms         18.7 s         ~63× (setup-inclusive; explorat
   ``tests/test_sir_counter_tape.py``. This is a benchmark/internal path, not a
   change to the public ``Model.step_vectorized`` API.
 
-.. image:: ../benchmarks/results/scaling_chart.png
-   :alt: Multi-framework scaling chart (exploratory full sweep)
-   :width: 100%
+The exploratory multi-framework scaling plot is archived in
+``benchmarks/README.md`` alongside its own timing protocol.
 
 Calibration throughput
 ----------------------

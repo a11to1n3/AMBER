@@ -9,6 +9,17 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 -------------
 
+[0.6.0] - 2026-11-18
+--------------------
+
+* Run the same agent model on CPU or GPU. Supported integer updates and
+  bounded Float64 random walks batch automatically.
+* Draw keyed random values with ``Agent.draw(event, index=0)``.
+* Contract checking verifies order independence for supported CPU sweeps.
+  Results retain the verdict and keyed draw provenance.
+* CPU and GPU preserve shared agent and column state. CUDA End hooks see
+  the completed state and can still use the active device.
+
 [0.5.2] - 2026-10-07
 --------------------
 

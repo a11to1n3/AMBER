@@ -57,22 +57,24 @@ def test_contact_email_is_not_a_placeholder():
 
 
 def test_citation_release_date_matches_changelog():
-    """CITATION.cff, CHANGELOG.md, and docs/changelog.rst must agree on 0.5.0."""
+    """The citation and changelogs agree on the public release version and date."""
     import re
+    from packaging.version import Version
 
     citation = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     rst = (ROOT / "docs" / "changelog.rst").read_text(encoding="utf-8")
 
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    proj_ver = re.search(r'^version\s*=\s*"(\d+\.\d+\.\d+)"', pyproject, re.M)
+    proj_ver = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M)
     cite_date = re.search(r'^date-released:\s*"(\d{4}-\d{2}-\d{2})"', citation, re.M)
     cite_ver = re.search(r'^version:\s*"([^"]+)"', citation, re.M)
     md_ver = re.search(r"^## v(\d+\.\d+\.\d+) - (\d{4}-\d{2}-\d{2})", changelog, re.M)
     rst_ver = re.search(r"^\[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})", rst, re.M)
 
     assert proj_ver and cite_date and cite_ver and md_ver and rst_ver
-    assert cite_ver.group(1) == md_ver.group(1) == rst_ver.group(1) == proj_ver.group(1)
+    public_version = Version(proj_ver.group(1)).public
+    assert cite_ver.group(1) == md_ver.group(1) == rst_ver.group(1) == public_version
     assert cite_date.group(1) == md_ver.group(2) == rst_ver.group(2)
 
 

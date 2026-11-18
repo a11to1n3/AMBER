@@ -54,8 +54,6 @@ DOC_PATHS = [
 # Fence ids that are intentional fragments or multi-cell continuations.
 # Format: "relative/path:index" (0-based fence index within the file).
 FRAGMENT_ALLOWLIST = {
-    # View-API recipe body (not a full script).
-    "README.md:3",
     # Tutorial-style continuation / SMAC stub comments only.
     "docs/api/optimization.rst:2",  # random_search needs prior MyModel+space
     "docs/api/optimization.rst:3",  # bayesian needs advanced extra + prior
@@ -391,6 +389,8 @@ def test_doc_fence_runs(fence_id: str, code: str):
         pytest.importorskip("smac")
     if "networkx" in scaled or "nx." in scaled:
         pytest.importorskip("networkx")
+    if re.search(r"^import agentpy\b", scaled, re.M):
+        pytest.importorskip("agentpy")
     _run_code(scaled)
 
 

@@ -99,7 +99,7 @@ from .scheduling import (
 try:
     __version__ = _metadata_version('ambr')
 except _PackageNotFoundError:
-    __version__ = '0.5.2'
+    __version__ = '0.6.0'
 
 _VIZ_EXPORTS = frozenset({"plot_grid", "plot_timeseries", "HAS_MATPLOTLIB"})
 

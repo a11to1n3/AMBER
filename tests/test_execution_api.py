@@ -34,6 +34,21 @@ def test_gpu_mode_fluent_setter():
     assert m.mode == "vectorized"
 
 
+def test_vectorize_selects_mode_and_preserves_device():
+    cpu = am.Model({"mode": "oop"})
+    assert cpu.vectorize() is cpu
+    assert (cpu.device, cpu.mode) == ("cpu", "vectorized")
+
+    gpu = cpu.gpu()
+    assert gpu.vectorize() is gpu
+    assert (gpu.device, gpu.mode) == ("gpu", "vectorized")
+
+
+def test_gpu_selects_compatible_mode_after_cpu_oop():
+    model = am.Model({}).cpu(mode="oop").gpu()
+    assert (model.device, model.mode) == ("gpu", "vectorized")
+
+
 def test_private_fast_path_requires_explicit_instance_approval():
     m = am.Model({"steps": 1})
     config = am.ExecutionConfig(device="gpu", mode="vectorized")
@@ -102,7 +117,7 @@ def test_execution_mode_dispatches_native_step_hooks():
         def step_oop(self):
             calls.append("oop")
 
-    M({"steps": 1}).cpu(mode="vectorized").run()
+    M({"steps": 1}).vectorize().run()
     M({"steps": 1}).cpu(mode="oop").run()
     assert calls == ["vectorized", "oop"]
 
@@ -189,6 +204,26 @@ def test_execution_state_cleared_after_run():
     m = M({"steps": 1})
     m.cpu().run()
     assert m._execution is None
+
+
+def test_cpu_end_observes_flushed_agent_writes():
+    class Counter(am.Agent):
+        def step(self):
+            self.x += 1
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(1, agent_class=Counter, x=0)
+
+        def step(self):
+            self.activate_agents()
+
+        def end(self):
+            self.seen_in_end = self.population.data["x"].to_list()
+
+    model = Model({"steps": 1})
+    result = model.run()
+    assert model.seen_in_end == result.agents["x"].to_list() == [1]
 
 
 def test_end_execution_clears_state_even_when_sync_fails(monkeypatch):
