@@ -1,3 +1,4 @@
+import numpy as np
 import polars as pl
 import pytest
 
@@ -69,6 +70,72 @@ def test_agent_reads_nullable_values_after_an_in_place_frame_edit():
     assert model.agents_df["value"].to_list() == [5, None]
 
 
+def test_agent_owned_containers_remain_mutable_after_frame_reads():
+    class Recorder(am.Agent):
+        def setup(self):
+            self.history = [self.id]
+            self.stats = {"visits": 0}
+
+        def step(self):
+            self.history.append(self.id)
+            self.stats["visits"] += 1
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Recorder)
+
+        def step(self):
+            assert self.agents_df.height == 2
+            self.activate_agents()
+
+    model = Model({**PARAMETERS, "steps": 2})
+    model.run(auto_batch=False)
+    assert [agent.history for agent in model.agents] == [[0, 0, 0], [1, 1, 1]]
+    assert [agent.stats for agent in model.agents] == [{"visits": 2}, {"visits": 2}]
+    model.agents.history = [[9], [8]]
+    assert [agent.history for agent in model.agents] == [[9], [8]]
+
+
+def test_replay_restores_array_contents_writeability_and_identity():
+    class Model(RaceModel):
+        def setup(self):
+            super().setup()
+            self.ledger = np.zeros(1, dtype=np.int64)
+            self._original = self.ledger
+
+        def step_oop(self):
+            super().step_oop()
+            if self.agents.by_id(0).x == 0:
+                self.ledger[0] = 9
+                self.ledger.setflags(write=False)
+
+    model = Model(PARAMETERS).cpu(mode="oop")
+    result = model.run(contract="check")
+    assert witnesses(result) and all(witnesses(result))
+    assert model.ledger is model._original
+    assert model.ledger.flags.writeable
+    assert model.ledger.tolist() == [0]
+
+
+def test_replay_restores_agent_identity_after_rejecting_roster_change():
+    class RenamingWriter(Writer):
+        def step(self):
+            target = self.model.agents.by_id(0)
+            if self.id == 0 and target.x == 1:
+                self.id = 99
+            else:
+                target.x = self.id
+
+    class Model(RaceModel):
+        agent_class = RenamingWriter
+
+    model = Model(PARAMETERS).cpu(mode="oop")
+    result = model.run(contract="check")
+    assert witnesses(result) and all(value is None for value in witnesses(result))
+    assert model.agents.by_id(0).id == 0
+    assert model.agents.ids.to_list() == result.agents["id"].to_list() == [0, 1]
+
+
 def test_replay_keeps_forward_metrics_and_agent_bindings():
     plain = RaceModel(PARAMETERS).cpu(mode="oop").run(contract="off")
     model = RaceModel(PARAMETERS).cpu(mode="oop")
@@ -84,6 +151,32 @@ def test_replay_keeps_forward_metrics_and_agent_bindings():
 class SameValueWriter(Writer):
     def step(self):
         self.model.agents.by_id(0).x = 1
+
+
+@pytest.mark.parametrize("output", ["dict_order", "recorded_metric"])
+def test_replay_witness_detects_differences_in_observable_step_outputs(output):
+    class OutputWriter(SameValueWriter):
+        def step(self):
+            super().step()
+            if output == "dict_order":
+                self.model.ledger[self.id] = True
+            else:
+                self.model.record_model("last_writer", self.id)
+
+    class Model(RaceModel):
+        agent_class = OutputWriter
+
+        def setup(self):
+            super().setup()
+            self.ledger = {}
+
+    model = Model(PARAMETERS).cpu(mode="oop")
+    result = model.run(contract="check")
+    assert witnesses(result) == [True]
+    if output == "dict_order":
+        assert list(model.ledger) == [0, 1]
+    else:
+        assert result["model"]["last_writer"].to_list() == [1]
 
 
 class DrawAfterSweep(RaceModel):

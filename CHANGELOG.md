@@ -47,6 +47,10 @@
 - Activation replay keeps the forward model metrics and consumes the scheduler's
   random draws before swapping the recorded order. The witness stays inconclusive
   if replay cannot isolate a sweep or match its random inputs.
+- Empty GPU reductions preserve earlier updates, and GPU batches see edits to
+  the live host frame. Python agent lists and dicts remain mutable after a frame
+  read. Replay restores supported CuPy RNG streams, array writeability, and
+  agent identities, and compares recorded step values.
 
 ## v0.5.2 - 2026-10-07
 

@@ -25,11 +25,13 @@ import polars as pl
 import warnings
 import numpy as np
 import time
+from weakref import ref
 from datetime import timedelta
 from .base import BaseModel
 from .population import Population
 from ._deprecation import warn_deprecated
 from ._id_index import resolve_positions
+from .gpu import DeviceRNG
 from .contract import (
     ContractCertificate,
     ContractMonitor,
@@ -44,6 +46,7 @@ from .execution import (
     begin_fast_execution,
     end_execution,
     prepare_end_hook,
+    reconcile_host_frame,
     refresh_tracked_device_columns,
     resolve_config,
     sync_agent_writes,
@@ -301,7 +304,14 @@ class Model(BaseModel):
     def agents_df(self) -> pl.DataFrame:
         self._frame_for_columns()
         sync_all_device_columns(self, dirty_only=True)
-        return self.population.data
+        frame = self.population.data
+        self._exposed_agents_frame = ref(frame)
+        execution = self._execution
+        if execution is not None and execution.config.device == "gpu":
+            exposed = execution.exposed_frame
+            if exposed is None or exposed[0] is not frame:
+                execution.exposed_frame = (frame, frame.clone())
+        return frame
 
     def _frame_for_columns(self) -> pl.DataFrame:
         """Read host schema and buffered state for backend-aware view operations."""
@@ -363,13 +373,15 @@ class Model(BaseModel):
         and scatter into Python lists (preserves ``None``; cheaper than a wide
         Polars update). Fallback: ``df.update(on='id')`` hash join.
         """
+        execution = getattr(self, "_execution", None)
+        if execution is not None and execution.exposed_frame is not None:
+            reconcile_host_frame(self, execution)
         pending = self._pending_writes
         selected = pending if columns is None else {
             name: pending[name] for name in columns if name in pending
         }
         if not selected:
             return
-        execution = getattr(self, "_execution", None)
         if execution is not None and execution.tracked_agents:
             for name in selected.keys() & execution.dirty_columns:
                 sync_device_column_to_frame(self, name)
@@ -798,6 +810,10 @@ class Model(BaseModel):
         original_post = self.agents_df.clone()
         saved_attrs = self._snapshot_agent_attrs()
         forward_step_data = self._current_step_data
+        try:
+            recorded = copy.deepcopy(forward_step_data)
+        except Exception:
+            recorded = None
         swapped = list(order)
         index_a = swapped.index(a)
         index_b = swapped.index(b)
@@ -857,7 +873,7 @@ class Model(BaseModel):
                         reason = "replay changed the population or agent roster"
                     else:
                         witness, reason = self._replay_compare(
-                            original_post, post_world, entry_world
+                            original_post, post_world, entry_world, recorded
                         )
         finally:
             self._current_step_data = forward_step_data
@@ -997,7 +1013,9 @@ class Model(BaseModel):
                 oid = id(value)
                 if oid in nodes:
                     return ("node", oid)
-                nodes[oid] = ("ndarray", value, value.copy())
+                saved = value.copy()
+                saved.setflags(write=value.flags.writeable)
+                nodes[oid] = ("ndarray", value, saved)
                 return ("node", oid)
             raise TypeError("replay value cannot be restored")
 
@@ -1071,12 +1089,14 @@ class Model(BaseModel):
                     ):
                         ok = False
                         continue
-                    if obj.shape != saved.shape:
-                        obj.resize(saved.shape, refcheck=False)
-                    if obj.shape != saved.shape:
-                        ok = False
-                        continue
-                    obj[...] = saved
+                    if not self._replay_values_equal(obj, saved):
+                        if not obj.flags.writeable:
+                            obj.setflags(write=True)
+                        if obj.shape != saved.shape:
+                            obj.resize(saved.shape, refcheck=False)
+                        obj[...] = saved
+                    if obj.flags.writeable != saved.flags.writeable:
+                        obj.setflags(write=saved.flags.writeable)
                 elif kind != "tuple":
                     ok = False
             except Exception:
@@ -1129,6 +1149,7 @@ class Model(BaseModel):
         original_post: pl.DataFrame,
         post_world: Any,
         entry_world: Any,
+        recorded: Any,
     ) -> Tuple[Optional[bool], Optional[str]]:
         try:
             frame_differs = not bool(original_post.equals(self.agents_df))
@@ -1145,7 +1166,14 @@ class Model(BaseModel):
             return None, "alias relationships are not one-to-one"
         if same_world is None:
             return None, "replay state could not be compared"
-        return bool(frame_differs or not same_world), None
+        if frame_differs or not same_world:
+            return True, None
+        if recorded is None:
+            return None, "recorded step values could not be captured"
+        try:
+            return not self._replay_values_equal(recorded, self._current_step_data), None
+        except Exception as exc:
+            return None, _replay_failure_reason(exc)
 
     def _replay_refs_equal(
         self,
@@ -1177,7 +1205,9 @@ class Model(BaseModel):
             return False
         kind = left_node[0]
         if kind == "ndarray":
-            return self._replay_values_equal(left_node[2], right_node[2])
+            left_array, right_array = left_node[2], right_node[2]
+            return (left_array.flags.writeable == right_array.flags.writeable
+                    and self._replay_values_equal(left_array, right_array))
         if kind in ("list", "tuple"):
             left_children = left_node[2]
             right_children = right_node[2]
@@ -1190,21 +1220,12 @@ class Model(BaseModel):
                 for item, other in zip(left_children, right_children)
             )
         if kind == "dict":
-            pending = list(right_node[2])
-            for key, ref in left_node[2]:
-                match_at = None
-                for index, (other_key, _other_ref) in enumerate(pending):
-                    if self._replay_values_equal(key, other_key):
-                        match_at = index
-                        break
-                if match_at is None:
-                    return False
-                _other_key, match = pending.pop(match_at)
-                if not self._replay_refs_equal(
-                    ref, left_nodes, match, right_nodes, forward, inverse
-                ):
-                    return False
-            return not pending
+            left_pairs, right_pairs = left_node[2], right_node[2]
+            return len(left_pairs) == len(right_pairs) and all(
+                self._replay_values_equal(key, other_key)
+                and self._replay_refs_equal(ref, left_nodes, other_ref, right_nodes, forward, inverse)
+                for (key, ref), (other_key, other_ref) in zip(left_pairs, right_pairs)
+            )
         return False
 
     def _replay_worlds_equal(self, left: Any, right: Any) -> Optional[bool]:
@@ -1246,12 +1267,18 @@ class Model(BaseModel):
         return list(getattr(self.agents, "_agent_objects", ()) or ())
 
     def _snapshot_agent_attrs(self) -> List[Tuple[Any, Dict[str, Any]]]:
-        """Copy public instance attributes so a replay can put them back."""
+        """Save public instance attributes and the framework's agent bindings."""
         saved: List[Tuple[Any, Dict[str, Any]]] = []
         for agent in self._agent_objects():
             attrs: Dict[str, Any] = {}
-            for key, value in list(agent.__dict__.items()):
-                if key in ("model", "id", "p") or str(key).startswith("_"):
+            for key, value in object.__getattribute__(agent, "__dict__").items():
+                if key in ("model", "id", "p"):
+                    attrs[key] = value
+                    continue
+                if key == "_ambr_container_cells":
+                    attrs[key] = value.copy()
+                    continue
+                if key.startswith("_"):
                     continue
                 try:
                     attrs[key] = copy.deepcopy(value)
@@ -1262,11 +1289,12 @@ class Model(BaseModel):
 
     def _restore_agent_attrs(self, saved: List[Tuple[Any, Dict[str, Any]]]) -> None:
         for agent, attrs in saved:
-            for key in vars(agent).keys() - attrs.keys():
-                if key not in ("model", "id", "p") and not key.startswith("_"):
-                    del vars(agent)[key]
-            for key, value in attrs.items():
-                object.__setattr__(agent, key, value)
+            live = object.__getattribute__(agent, "__dict__")
+            live.pop("_ambr_container_cells", None)
+            for key in live.keys() - attrs.keys():
+                if not key.startswith("_"):
+                    del live[key]
+            live.update(attrs)
 
     def _refresh_agent_cache(self, df: pl.DataFrame) -> None:
         """Load already-present agent attributes from ``df`` without queueing."""
@@ -1277,12 +1305,17 @@ class Model(BaseModel):
             row = rows.get(agent.id)
             if row is None:
                 continue
-            for key in list(agent.__dict__):
+            attrs = object.__getattribute__(agent, "__dict__")
+            attrs.pop("_ambr_container_cells", None)
+            for key in list(attrs):
                 if key in ("model", "id", "p") or str(key).startswith("_"):
                     continue
                 if key not in df.columns:
                     continue
-                object.__setattr__(agent, key, df[key][row])
+                value = df[key][row]
+                if isinstance(value, pl.Series):
+                    value = value.to_list()
+                object.__setattr__(agent, key, value)
 
     def _underlying_generator(self, obj: Any) -> Any:
         """Return a NumPy/CuPy Generator hidden behind a thin wrapper, if any."""
@@ -1338,7 +1371,10 @@ class Model(BaseModel):
             device = (
                 getattr(execution, "device_rng", None) if execution is not None else None
             )
-            if device is not None:
+            if isinstance(device, DeviceRNG):
+                oid = keep("device_rng", device, device._snapshot_state())
+                bindings.append(("execution", "device_rng", oid))
+            elif device is not None:
                 device_gen = self._underlying_generator(device)
                 if device_gen is None:
                     return None
@@ -1463,6 +1499,9 @@ class Model(BaseModel):
                     return False
             for kind, _oid, obj, state in saved.streams:
                 if kind == "binding":
+                    continue
+                if kind == "device_rng":
+                    obj._restore_state(state)
                     continue
                 payload = copy.deepcopy(state)
                 if kind == "random":

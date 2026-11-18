@@ -509,6 +509,24 @@ def test_certificate_withholds_verdict_under_an_interpreter_tracer(monkeypatch):
     assert "profiler" in cert.certification_reason
 
 
+def test_certificate_declines_an_overridden_scatter_reducer(monkeypatch):
+    from ambr.sequences import ScatterAgentList
+
+    original = ScatterAgentList.scatter_add
+
+    def scatter(view, **updates):
+        return original(view, x=updates["x"] * 2)
+
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+    monkeypatch.setattr(ScatterAgentList, "scatter_add", scatter)
+    params = _params(steps=1, agent_class=_AddInteger, dispatch="broadcast", start=10)
+    result = _CertificateModel(params).run(contract="check")
+    cert = result["contract"][0]
+    assert result.agents["x"].to_list() == [-2, 10, 10]
+    assert cert.clean and cert.conditional_guarantee == "not_established"
+    assert "built-in scatter reducer" in cert.certification_reason
+
+
 class _KeyedWalker(am.Agent):
     def step(self):
         if self.draw("move") < 0.45:

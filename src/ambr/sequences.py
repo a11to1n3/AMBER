@@ -727,8 +727,12 @@ class _BaseView:
         n = ids.len()
         df = model._frame_for_columns()
         if n == 0:
-            # Empty view: only ensure columns exist (no rows to update).
-            model._set_frame(_ensure_columns(df, list(values)))
+            missing = [name for name in values if name not in df.columns]
+            if missing:
+                from .execution import sync_all_device_columns
+
+                sync_all_device_columns(model, dirty_only=True)
+                model._set_frame(_ensure_columns(model.population.data, missing))
             return
 
         positions = resolve_positions(model, df, ids.to_numpy())
@@ -1160,3 +1164,13 @@ class ScatterAgentList(_SubView):
 
             object.__setattr__(self, "_ids", pl.Series("id", to_host(self._device_ids)))
         return self._ids
+
+
+# Save the implementations before users can replace a reducer or its indexer.
+_SCATTER_SEAMS = (
+    (AgentList, "at", AgentList.at),
+    (_AtIndexer, "__getitem__", _AtIndexer.__getitem__),
+    (ScatterAgentList, "scatter_add", ScatterAgentList.scatter_add),
+    (ScatterAgentList, "scatter_max", ScatterAgentList.scatter_max),
+    (ScatterAgentList, "_scatter_reduce", ScatterAgentList._scatter_reduce),
+)

@@ -77,6 +77,8 @@ immediately before and after the sweep. A stream change can reveal draws
 through a cached method. Replay leaves the witness inconclusive when a
 stream changes or its state cannot be verified. The scheduler's shuffle
 occurs before this check. External random sources remain outside this trace.
+The comparison includes the final agent frame, supported public model state,
+and values recorded with ``record_model()`` during the step.
 
 Write paths the monitor sees
 ----------------------------
