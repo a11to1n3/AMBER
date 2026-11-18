@@ -48,7 +48,11 @@ jobs:
         sphinx-build -W --keep-going -b html docs docs/_build/html
 
   test-suite:
-    name: Tests
+    # Preserve the required Ubuntu 3.12 check name on main.
+    name: >-
+      ${{ (github.base_ref || github.ref_name) == 'main' &&
+          matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12' &&
+          'Run Tests' || 'Tests' }} (${{ matrix.os }}, ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

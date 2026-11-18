@@ -7,10 +7,15 @@
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3_Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 AMBER is a Python framework for agent-based modeling that uses Polars for
-efficient columnar population state. It provides an AgentPy-shaped OOP lane and
-a high-performance vectorized lane. Both can use NVIDIA GPUs through CuPy. Multi-run
-parallelism is **opt-in** (`Experiment` / `ParallelRunner` / `GPUEnsembleRunner`),
-not automatic from a single `.run()`.
+efficient columnar population state. Write ordinary Python agent methods and
+choose CPU or NVIDIA GPU at the run call. AMBER 0.6.0 automatically batches
+supported rules and uses the Python loop for other rules. Use `Experiment`,
+`ParallelRunner`, or `GPUEnsembleRunner` to run multiple simulations in parallel.
+
+Install [AMBER 0.6.0](https://pypi.org/project/ambr/0.6.0/) with
+`python -m pip install --upgrade ambr`. See the
+[release notes](https://github.com/a11to1n3/AMBER/releases/tag/v0.6.0)
+and the [same-model CPU and GPU example](#automatic-cpu-and-gpu-batching).
 
 ## 🚀 Performance
 
@@ -21,40 +26,60 @@ which agents update. Other agent methods use the Python loop. Models can also
 write bulk updates directly with `agents.where(...)`, `agents.at[ids]`, or
 `scatter_add`. Compatible bulk code can run on a GPU with `model.gpu().run()`.
 
-### GPU requirements (read this first)
+### GPU requirements
 
 | Claim | Requires |
 |-------|----------|
 | CPU bulk updates | Column operations with `pip install ambr` (optional `ambr[perf]` / Numba) |
-| Headline **AMBER (GPU) vs FLAME** table below | **NVIDIA GPU + CuPy** (`pip install 'ambr[gpu]'` or a CUDA-matched wheel) |
-| Apple Metal / MPS | **Not supported** — AMBER does not use Mac GPU |
+| CUDA execution | **NVIDIA GPU + CuPy**. Install a CuPy wheel that matches your CUDA environment. |
+| Apple Silicon | CPU execution |
 
-Check the machine before quoting GPU numbers:
+Check available execution paths on your machine.
 
 ```python
 import ambr as am
-am.print_status()          # must show GPU: yes for FLAME-class claims
+am.print_status()
 print(am.recommend(1_000_000))
 ```
 
-Default GitHub CI has **no CUDA**. Re-verify GPU claim paths on a CUDA host with:
+Run these checks on a CUDA host to verify the GPU paths.
 
 ```bash
 python scripts/run_gpu_claims.py          # full (incl. large-N)
 python scripts/run_gpu_claims.py --quick  # fast smoke
 ```
 
-### Headline comparison (committed evidence)
+### AMBER 0.6.0 automatic batching benchmark
 
-**Single source of truth for the README table (do not mix other tables):**  
-[`benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json)  
-(summary:
-[`summary_table_snapshot_correct_10run_10m.md`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/results/summary_table_snapshot_correct_10run_10m.md)).
+The benchmark used the same ordinary agent methods on scalar CPU
+(`run(auto_batch=False)`), default CPU (`run()`), and an RTX 5090
+(`gpu().run()`). Each run took 20 steps. Median end-to-end time includes
+model construction, setup, steps, the end hook, and exporting the final agent
+table to the host. Each median uses six timed runs after one warm-up.
 
-Other files under [`benchmarks/results/`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/results/) (including
-`summary_table.md`) are **exploratory / historical** and may use different
-protocols — never combine them with the headline table without an explicit
-caption.
+| Workload | Agents | Scalar CPU | Default CPU | RTX 5090 |
+| --- | ---: | ---: | ---: | ---: |
+| Integer aging | 1,000 | 0.172 s | 0.035 s | 0.033 s |
+| Keyed random walk | 1,000 | 0.539 s | 0.116 s | 0.105 s |
+| Integer aging | 10,000 | 1.645 s | 0.274 s | 0.232 s |
+| Keyed random walk | 10,000 | 5.317 s | 1.058 s | 0.912 s |
+
+Final agent tables matched in all 84 runs, including warm-ups. Default CPU
+and GPU batched all 20 sweeps in each run. The measurements use the
+`7d13fca` release candidate, whose runtime source matches the `v0.6.0`
+build. [Raw samples and environment](benchmarks/results/automatic_batching_0_6_0.json)
+
+![End-to-end runtime by workload, population, and CPU or RTX 5090 execution mode.](benchmarks/results/automatic_batching_0_6_0.svg)
+
+Points show the median and whiskers show the minimum and maximum of six timed
+runs for one seed per case. The ranges fit within the markers at this scale.
+
+### Historical GPU comparison at 10 million agents
+
+This separate benchmark uses explicit workload-specific GPU implementations
+from the July snapshot based on `cdb4f135`.
+[Raw results](benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json) ·
+[Summary](benchmarks/results/summary_table_snapshot_correct_10run_10m.md)
 
 **Protocol:** NVIDIA RTX 5090; 10M agents; 50 steps; **10 runs** retained
 (no outlier deletion); one untimed warm-up per cell; timed scope =
@@ -77,13 +102,14 @@ of byte-identical dynamics across frameworks.
   the FLAME harness; do not treat ~63× as a pure step-kernel speedup.
 - Multi-framework scale-out charts (Mesa, mesa-frames, Agents.jl, …) are
   **exploratory** and live under
-  [`benchmarks/results/`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/results/); some cells OOM or hit
+  [`benchmarks/results/`](benchmarks/results/); some cells OOM or hit
   budgets — missing cells are not zeros.
-- Reproducer: [`benchmarks/run_all_frameworks.py`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/run_all_frameworks.py).  
-  Correctness gates: [`benchmarks/correctness_check.py`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/correctness_check.py).  
-  Details: [`benchmarks/README.md`](https://github.com/a11to1n3/AMBER/blob/main/benchmarks/README.md).
+- [Benchmark runner](benchmarks/run_all_frameworks.py) ·
+  [Correctness checks](benchmarks/correctness_check.py) ·
+  [Protocol details](benchmarks/README.md)
 
-![Framework scaling chart](https://raw.githubusercontent.com/a11to1n3/AMBER/main/benchmarks/results/scaling_chart.png)
+The [archived scaling chart](benchmarks/README.md#exploratory-multi-framework-sweep-historical)
+shows a separate exploratory sweep over 1,000 to 10 million agents.
 
 **Benchmark API:** the vectorized benchmark models implement `step_vectorized()`
 and run with `.cpu(mode="vectorized")` or `.gpu()`. Private
@@ -92,11 +118,9 @@ optimized GPU loops require an explicit
 checks presence of the label, not the evidence content) and
 `contract="off"` — see [`docs/going_faster.rst`](https://ambr.readthedocs.io/en/latest/going_faster.html).
 
-Default CI has no CUDA. Optional **GPU claims** workflow
-(`.github/workflows/gpu-nightly.yml`) runs `scripts/run_gpu_claims.py --quick`
-only when `GPU_RUNNER` names a self-hosted CUDA runner. If that variable is
-unset the job is skipped — that is not a CUDA pass. **0.5.0** GPU claims
-were verified locally on an NVIDIA RTX 3090, not by GitHub Actions.
+The 0.6.0 release workflow passed its Linux, macOS, and Windows CPU
+matrix. Native CUDA verification ran separately on an RTX 5090.
+[Release workflow run](https://github.com/a11to1n3/AMBER/actions/runs/44301675006)
 
 ## 🚀 Quick Start
 
@@ -133,11 +157,8 @@ print(results.info.get("mode"), results.info.get("execution_lane"))
 
 ### Automatic CPU and GPU batching
 
-To try this example from a clone, install the current checkout with
-`python -m pip install .` from the project directory.
-
-This model starts with 1,000 people at age zero. Half are active. In each of
-three steps, a person ages by one if active.
+This AMBER 0.6.0 example starts with 1,000 people at age zero. Half are active.
+In each of three steps, a person ages by one if active.
 
 ```python
 import ambr as am
@@ -181,8 +202,7 @@ selection mask and applies the updates to device columns. Rules involving other
 agents, shared random draws, custom attribute access, or unsupported types use
 the Python loop. Contract checking also uses the Python loop. The aging example records
 three batches and 3,000 agent calls replaced. After three steps, the active
-people are age 3 and the others are age 0. The headline GPU benchmarks above use
-explicit vectorized implementations.
+people are age 3 and the others are age 0.
 [Automatic batching implementation](src/ambr/_auto_batch.py)
 
 Bounded random walks also batch when their positions are stored as Float64.
@@ -557,13 +577,11 @@ def step(self):
     self.agents.at[[1, 1, 3]].scatter_add(wealth=1)  # agent 1 gets +2, agent 3 gets +1
 ```
 
-## Canonical API (0.5)
+## Canonical API
 
-AMBER 0.5 settles on one obvious verb per task. The legacy spellings still work
-(they emit a `DeprecationWarning` and are scheduled for removal in **1.0**); set
-`AMBER_SUPPRESS_DEPRECATIONS=1` to silence them in benchmark / reproducibility runs.
-Batch performance comes from these verbs (columnar writes), not from extra public
-`batch_*` helpers.
+Legacy spellings emit a `DeprecationWarning` and are scheduled for removal in
+**1.0**. Set `AMBER_SUPPRESS_DEPRECATIONS=1` to silence them in reproducibility runs.
+Ordinary agent rules and explicit column operations both have batching paths.
 
 | Task | Canonical | Legacy (deprecated → 1.0) |
 |------|-----------|---------------------------|
@@ -584,6 +602,9 @@ Batch performance comes from these verbs (columnar writes), not from extra publi
 `update()` is a **pure hook** — overriding it no longer requires
 `super().update()`. Declare `model_reporters` / `agent_reporters` for
 declarative metrics, and set `record_initial = True` to capture a `t=0` row.
+Agent attributes can hold mutable Python lists and dictionaries. After an
+in-place edit, assign the container to the attribute to publish its updated
+contents to the columnar store.
 
 ## 🔒 Snapshot-view contract
 
@@ -622,6 +643,10 @@ agent ID, and event. Use `index=` for multiple draws within one event.
 Other rules and GPU runs receive `"not_established"` with a
 `cert.certification_reason`. Separately written vectorized and GPU kernels
 require reference comparisons.
+
+For supported CPU and GPU sweeps, swapped-order replay can confirm a divergence
+and restore the forward model state. A witness is inconclusive when a replay
+cannot isolate the sweep or verify its random streams.
 
 The monitor watches **two write paths** (and combinations):
 
@@ -739,24 +764,25 @@ derivative-free calibration at scale.
 
 ## 📦 Installation
 
-The automatic-batching examples and `.vectorize()` use this checkout.
-From the project directory, install it with `python -m pip install .`.
-The commands below install the published distribution and its extras.
+The examples on this page use the published AMBER 0.6.0 release.
 
 ```bash
-pip install ambr
+python -m pip install --upgrade ambr
 
 # Optional extras
 pip install 'ambr[perf]'              # Numba CPU scatter (recommended on Mac)
-pip install 'ambr[gpu]'               # NVIDIA + CuPy (not Metal/MPS)
 pip install 'ambr[viz]'               # matplotlib plot helpers
 pip install 'ambr[advanced]'          # SMAC optimization
 pip install 'ambr[advanced,viz]'      # SMAC + matplotlib (example plots)
 ```
 
+The `ambr[gpu]` extra installs the generic CuPy package. To use a prebuilt
+CUDA wheel, install `ambr` and the matching CuPy distribution. For example,
+use `python -m pip install ambr cupy-cuda13x` in a CUDA 13 environment.
+
 ```python
 import ambr as am
-print(am.__version__)   # 0.5.0+
+print(am.__version__)
 am.print_status()
 ```
 
