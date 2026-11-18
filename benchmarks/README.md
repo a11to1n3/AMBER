@@ -144,6 +144,32 @@ not as proof of identical stochastic trajectories.
 
 ## Published results
 
+### Matched-rule framework scaling
+
+The Round 75 RTX 5090 campaign timed AMBER `0.5.2+fix.11` in GPU,
+vectorized CPU, and loop CPU modes alongside AgentPy, Agents.jl, FLAME GPU 2,
+Melodie, Mesa, mesa-frames, and SimPy. Each port passed 1,007 shared-draw
+reference cases before admission to timing. The timed runs use each port's
+native execution and output assembly on the same workload rules.
+
+The host had an NVIDIA RTX 5090 (driver 595.71.05) and AMD Ryzen Threadripper
+PRO 7965WX. The CPU lanes share the same four physical cores. Each case uses
+seed 42, 50 steps, and five timed runs after two warm-ups. Wall time includes
+construction, setup, steps, and final host export. The 600-second guard
+stopped 19 of 200 cells, with five larger cells skipped after a stop. The
+other 176 cells contribute a median and min–max whiskers.
+
+[Timing samples and stop records](results/framework_scaling_fix11.json) ·
+[Scaling figure](results/framework_scaling_fix11.svg) ·
+[Plot script](plot_framework_scaling.py)
+
+The timing record comes from `evaluation/fix11-5090/complete-results.json`
+in the Round 75 evaluation archive. AMBER was installed from the
+`0.5.2+fix.11` wheel from source `a29811d8028380aab0ecd11aac652a83673be55f`
+(wheel SHA-256 `7f16701b8d30fdfb2b4e70862d60ba361d153c90b26854e1370127946bb5331b`).
+Regenerate the figure with Matplotlib 3.11.1 and
+`python benchmarks/plot_framework_scaling.py` from the repository root.
+
 ### AMBER 0.6.0 automatic batching
 
 The release benchmark compares the same ordinary agent rules on scalar CPU,

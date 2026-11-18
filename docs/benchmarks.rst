@@ -15,6 +15,22 @@ Default CI has no CUDA; re-check GPU claim samples on a GPU host with
 ``python scripts/run_gpu_claims.py``. Large multi-framework runs use
 ``python benchmarks/run_all_frameworks.py``.
 
+Matched-rule framework scaling
+--------------------------------
+
+The Round 75 campaign compared three AMBER ``0.5.2+fix.11`` execution modes
+with AgentPy, Agents.jl, FLAME GPU 2, Melodie, Mesa, mesa-frames, and SimPy.
+The four workloads span 1,000 to 10 million agents on a Threadripper PRO
+7965WX and RTX 5090. See ``benchmarks/README.md`` for timing samples and
+protocol details.
+
+.. figure:: ../benchmarks/results/framework_scaling_fix11.svg
+   :alt: Log-log end-to-end scaling across four workloads for AMBER and seven peers.
+
+   Medians and min–max whiskers from five timed runs after two warm-ups at
+   seed 42. All runs cover 50 steps from construction through final host
+   export. Lines end at the last completed population before a budget stop.
+
 AMBER 0.6.0 automatic batching
 ------------------------------
 
