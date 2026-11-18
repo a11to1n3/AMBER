@@ -164,9 +164,10 @@ other 176 cells contribute a median and min–max whiskers.
 [Plot script](plot_framework_scaling.py)
 
 The timing record comes from `evaluation/fix11-5090/complete-results.json`
-in the Round 75 evaluation archive. AMBER was installed from the
-`0.5.2+fix.11` wheel from source `a29811d8028380aab0ecd11aac652a83673be55f`
-(wheel SHA-256 `7f16701b8d30fdfb2b4e70862d60ba361d153c90b26854e1370127946bb5331b`).
+in the Round 75 evaluation archive. The archived workload drivers are from
+`a29811d8028380aab0ecd11aac652a83673be55f`. They load the installed AMBER
+`0.5.2+fix.11` wheel with SHA-256
+`7f16701b8d30fdfb2b4e70862d60ba361d153c90b26854e1370127946bb5331b`.
 Regenerate the figure with Matplotlib 3.11.1 and
 `python benchmarks/plot_framework_scaling.py` from the repository root.
 
