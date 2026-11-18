@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.6.0 - 2026-11-18
+
 - Automatically batch bounded random-walk updates on committed Float64
   columns with keyed draws on CPU and GPU.
 - CPU and GPU runs automatically batch supported integer updates guarded by

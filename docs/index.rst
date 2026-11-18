@@ -83,7 +83,8 @@ Create your first model:
    print(am.recommend(10_000))
 
 For more examples, check the ``examples/`` directory in the repository.
-See :doc:`changelog` for **0.5.2** (counter-tape spec 2, contract scope,
+See :doc:`changelog` for **0.6.0** (automatic batching, keyed draws,
+and supported CPU sweep certificates), **0.5.2** (counter-tape spec 2, contract scope,
 activation replay) and **0.5.0** (step-data integrity, versioned RunResults,
 strict optimization, extras / first-run honesty; GPU claims verified locally).
 Earlier 0.4.x notes: 0.4.7 label scrub; 0.4.6 doc-fence CI / RunResults I/O /
