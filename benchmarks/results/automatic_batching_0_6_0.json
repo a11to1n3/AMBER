@@ -1,0 +1,806 @@
+{
+  "started_utc": "2026-11-18T11:46:43.199895+00:00",
+  "ambr": "0.6.0",
+  "revision": "7d13fcada40d2dbedbebcd0ddcb52737ff4c678b",
+  "wheel_sha256": "82c3c92d8ce8dd60be737bd500a63ebd6b3f46c52047fef69d51e99cd0b01fc1",
+  "platform": "Linux-5.15.0-187-generic-x86_64-with-glibc2.39",
+  "python": "3.12.3",
+  "cpu": "AMD EPYC 7402 24-Core Processor",
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "polars_threads": 4,
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "cuda_runtime": 13020,
+  "cuda_driver": 13040,
+  "cupy": "14.2.0",
+  "numpy": "2.1.0",
+  "polars": "1.44.2",
+  "timing_scope": "Model construction, setup, steps, end hook, and final host export",
+  "source_sha256": "bf804776e37f9c31e5dae90769229dcede08906dab2222828e8ce446bf5ffbcf",
+  "results": [
+    {
+      "workload": "aging",
+      "n": 1000,
+      "steps": 20,
+      "seed": 42,
+      "show_progress": false,
+      "state_sha256": "bb5d8e72faa323a2f15ac88e3b384a839d692ebab8e155b3140ea3f8ebeff200",
+      "samples": [
+        {
+          "round": 0,
+          "lane": "scalar_cpu",
+          "seconds": 0.17479637899668887,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 0,
+          "lane": "default_cpu",
+          "seconds": 0.03634706400043797,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 0,
+          "lane": "gpu",
+          "seconds": 0.15203239300171845,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 1,
+          "lane": "scalar_cpu",
+          "seconds": 0.17196858499664813,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 1,
+          "lane": "default_cpu",
+          "seconds": 0.035317945992574096,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 1,
+          "lane": "gpu",
+          "seconds": 0.03250685200328007,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 2,
+          "lane": "scalar_cpu",
+          "seconds": 0.17205058700346854,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 2,
+          "lane": "gpu",
+          "seconds": 0.03256470800261013,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 2,
+          "lane": "default_cpu",
+          "seconds": 0.035531239002011716,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 3,
+          "lane": "default_cpu",
+          "seconds": 0.03548388200579211,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 3,
+          "lane": "scalar_cpu",
+          "seconds": 0.17107945700990967,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 3,
+          "lane": "gpu",
+          "seconds": 0.0325467749935342,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 4,
+          "lane": "default_cpu",
+          "seconds": 0.03530970000429079,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 4,
+          "lane": "gpu",
+          "seconds": 0.032592460003797896,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 4,
+          "lane": "scalar_cpu",
+          "seconds": 0.1714447400008794,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 5,
+          "lane": "gpu",
+          "seconds": 0.03257239199592732,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 5,
+          "lane": "scalar_cpu",
+          "seconds": 0.17108024899789598,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 5,
+          "lane": "default_cpu",
+          "seconds": 0.03534434498578776,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 6,
+          "lane": "gpu",
+          "seconds": 0.03249907700228505,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 6,
+          "lane": "default_cpu",
+          "seconds": 0.035270146996481344,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 6,
+          "lane": "scalar_cpu",
+          "seconds": 0.17344922700431198,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        }
+      ],
+      "statistics": {
+        "scalar_cpu": {
+          "median_s": 0.17170666249876376,
+          "min_s": 0.17107945700990967,
+          "max_s": 0.17344922700431198
+        },
+        "default_cpu": {
+          "median_s": 0.035331145489180926,
+          "min_s": 0.035270146996481344,
+          "max_s": 0.035531239002011716
+        },
+        "gpu": {
+          "median_s": 0.032555741498072166,
+          "min_s": 0.03249907700228505,
+          "max_s": 0.032592460003797896
+        }
+      }
+    },
+    {
+      "workload": "walk",
+      "n": 1000,
+      "steps": 20,
+      "seed": 42,
+      "show_progress": false,
+      "state_sha256": "78238ab2f4a0dcf3e0f4b5aac2fb9854b9a89da04f41c6882c5feabbb374b4bc",
+      "samples": [
+        {
+          "round": 0,
+          "lane": "scalar_cpu",
+          "seconds": 0.5396988680004142,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 0,
+          "lane": "default_cpu",
+          "seconds": 0.11586176800483372,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 0,
+          "lane": "gpu",
+          "seconds": 0.10731770200072788,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 1,
+          "lane": "scalar_cpu",
+          "seconds": 0.5444030549988383,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 1,
+          "lane": "default_cpu",
+          "seconds": 0.11655993499152828,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 1,
+          "lane": "gpu",
+          "seconds": 0.10445910200360231,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 2,
+          "lane": "scalar_cpu",
+          "seconds": 0.5347868550015846,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 2,
+          "lane": "gpu",
+          "seconds": 0.1048614239989547,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 2,
+          "lane": "default_cpu",
+          "seconds": 0.11615194400656037,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 3,
+          "lane": "default_cpu",
+          "seconds": 0.1157954459922621,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 3,
+          "lane": "scalar_cpu",
+          "seconds": 0.5414524999941932,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 3,
+          "lane": "gpu",
+          "seconds": 0.10499251699366141,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 4,
+          "lane": "default_cpu",
+          "seconds": 0.11612177900678944,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 4,
+          "lane": "gpu",
+          "seconds": 0.10539269501168747,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 4,
+          "lane": "scalar_cpu",
+          "seconds": 0.535246739993454,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 5,
+          "lane": "gpu",
+          "seconds": 0.10453478299314156,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 5,
+          "lane": "scalar_cpu",
+          "seconds": 0.5396856669976842,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 5,
+          "lane": "default_cpu",
+          "seconds": 0.11543463300040457,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 6,
+          "lane": "gpu",
+          "seconds": 0.10488481901120394,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 6,
+          "lane": "default_cpu",
+          "seconds": 0.11541595900780521,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 20000
+        },
+        {
+          "round": 6,
+          "lane": "scalar_cpu",
+          "seconds": 0.5381272259983234,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        }
+      ],
+      "statistics": {
+        "scalar_cpu": {
+          "median_s": 0.5389064464980038,
+          "min_s": 0.5347868550015846,
+          "max_s": 0.5444030549988383
+        },
+        "default_cpu": {
+          "median_s": 0.11595861249952577,
+          "min_s": 0.11541595900780521,
+          "max_s": 0.11655993499152828
+        },
+        "gpu": {
+          "median_s": 0.10487312150507933,
+          "min_s": 0.10445910200360231,
+          "max_s": 0.10539269501168747
+        }
+      }
+    },
+    {
+      "workload": "aging",
+      "n": 10000,
+      "steps": 20,
+      "seed": 42,
+      "show_progress": false,
+      "state_sha256": "f9ac18c067ac31a97a70e866acd966cd6b3845b9520fc1cb329f85b6086c91ef",
+      "samples": [
+        {
+          "round": 0,
+          "lane": "scalar_cpu",
+          "seconds": 1.649043805009569,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 0,
+          "lane": "default_cpu",
+          "seconds": 0.2680687569954898,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 0,
+          "lane": "gpu",
+          "seconds": 0.24975138899753802,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 1,
+          "lane": "scalar_cpu",
+          "seconds": 1.6461948929936625,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 1,
+          "lane": "default_cpu",
+          "seconds": 0.2739000729925465,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 1,
+          "lane": "gpu",
+          "seconds": 0.23222665500361472,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 2,
+          "lane": "scalar_cpu",
+          "seconds": 1.630567276995862,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 2,
+          "lane": "gpu",
+          "seconds": 0.23216108699853066,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 2,
+          "lane": "default_cpu",
+          "seconds": 0.2724841059971368,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 3,
+          "lane": "default_cpu",
+          "seconds": 0.27346417399530765,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 3,
+          "lane": "scalar_cpu",
+          "seconds": 1.6438325499912025,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 3,
+          "lane": "gpu",
+          "seconds": 0.23570527700940147,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 4,
+          "lane": "default_cpu",
+          "seconds": 0.27434300699678715,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 4,
+          "lane": "gpu",
+          "seconds": 0.23268193200055975,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 4,
+          "lane": "scalar_cpu",
+          "seconds": 1.6308095279964618,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 5,
+          "lane": "gpu",
+          "seconds": 0.23183920000155922,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 5,
+          "lane": "scalar_cpu",
+          "seconds": 1.6464742029929766,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 5,
+          "lane": "default_cpu",
+          "seconds": 0.2725496470084181,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 6,
+          "lane": "gpu",
+          "seconds": 0.22998189799545798,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 6,
+          "lane": "default_cpu",
+          "seconds": 0.278362686993205,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 6,
+          "lane": "scalar_cpu",
+          "seconds": 1.6476549729995895,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        }
+      ],
+      "statistics": {
+        "scalar_cpu": {
+          "median_s": 1.6450137214924325,
+          "min_s": 1.630567276995862,
+          "max_s": 1.6476549729995895
+        },
+        "default_cpu": {
+          "median_s": 0.27368212349392707,
+          "min_s": 0.2724841059971368,
+          "max_s": 0.278362686993205
+        },
+        "gpu": {
+          "median_s": 0.2321938710010727,
+          "min_s": 0.22998189799545798,
+          "max_s": 0.23570527700940147
+        }
+      }
+    },
+    {
+      "workload": "walk",
+      "n": 10000,
+      "steps": 20,
+      "seed": 42,
+      "show_progress": false,
+      "state_sha256": "0211b3e296a3291939df19363e620cda0bb9efeb538675f1a9cc112d84787956",
+      "samples": [
+        {
+          "round": 0,
+          "lane": "scalar_cpu",
+          "seconds": 5.253529409004841,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 0,
+          "lane": "default_cpu",
+          "seconds": 1.04809771500004,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 0,
+          "lane": "gpu",
+          "seconds": 0.9155525590031175,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 1,
+          "lane": "scalar_cpu",
+          "seconds": 5.241733517992543,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 1,
+          "lane": "default_cpu",
+          "seconds": 1.0563818530063145,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 1,
+          "lane": "gpu",
+          "seconds": 0.9121973669971339,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 2,
+          "lane": "scalar_cpu",
+          "seconds": 5.228096429011202,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 2,
+          "lane": "gpu",
+          "seconds": 0.9109039699978894,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 2,
+          "lane": "default_cpu",
+          "seconds": 1.0575374289910542,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 3,
+          "lane": "default_cpu",
+          "seconds": 1.0602672599925427,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 3,
+          "lane": "scalar_cpu",
+          "seconds": 5.310496259000502,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 3,
+          "lane": "gpu",
+          "seconds": 0.911525656003505,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 4,
+          "lane": "default_cpu",
+          "seconds": 1.0579485640046187,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 4,
+          "lane": "gpu",
+          "seconds": 0.9149533680028981,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 4,
+          "lane": "scalar_cpu",
+          "seconds": 5.334002225994482,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 5,
+          "lane": "gpu",
+          "seconds": 0.9124610799917718,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 5,
+          "lane": "scalar_cpu",
+          "seconds": 5.3235867920011515,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        },
+        {
+          "round": 5,
+          "lane": "default_cpu",
+          "seconds": 1.054718237995985,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 6,
+          "lane": "gpu",
+          "seconds": 0.9125129890016979,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 6,
+          "lane": "default_cpu",
+          "seconds": 1.0582611220015679,
+          "enabled": true,
+          "batches": 20,
+          "agent_calls": 200000
+        },
+        {
+          "round": 6,
+          "lane": "scalar_cpu",
+          "seconds": 5.333626439998625,
+          "enabled": false,
+          "batches": 0,
+          "agent_calls": 0
+        }
+      ],
+      "statistics": {
+        "scalar_cpu": {
+          "median_s": 5.3170415255008265,
+          "min_s": 5.228096429011202,
+          "max_s": 5.334002225994482
+        },
+        "default_cpu": {
+          "median_s": 1.0577429964978364,
+          "min_s": 1.054718237995985,
+          "max_s": 1.0602672599925427
+        },
+        "gpu": {
+          "median_s": 0.9123292234944529,
+          "min_s": 0.9109039699978894,
+          "max_s": 0.9149533680028981
+        }
+      }
+    }
+  ]
+}

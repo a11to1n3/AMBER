@@ -68,6 +68,7 @@ benchmarks/results/amber_*.log
 # Authoritative README headline (AMBER GPU vs FLAME @ 10M, 10-run, all samples)
 !benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json
 !benchmarks/results/summary_table_snapshot_correct_10run_10m.md
+!benchmarks/results/automatic_batching_0_6_0.json
 
 # Local release notes / scratch (never ship)
 PR_DESCRIPTIONS.md

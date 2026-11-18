@@ -21,11 +21,11 @@ non-interactive backend is required; AMBER never forces a matplotlib backend.
 Install from PyPI
 ------------------
 
-The easiest way to install AMBER is using pip:
+Install or upgrade the published package with pip.
 
 .. code-block:: bash
 
-   pip install ambr
+   python -m pip install --upgrade ambr
 
 This will install AMBER and all required dependencies.
 
@@ -36,7 +36,7 @@ To install the latest development version from GitHub:
 
 .. code-block:: bash
 
-   git clone https://github.com/a11to1n3/AMBER.git
+   git clone --branch dev https://github.com/a11to1n3/AMBER.git
    cd AMBER
    pip install -e .
 
@@ -75,10 +75,8 @@ AMBER extras (install what you need):
    # CPU acceleration (Numba + SciPy) — recommended on Mac / no-CUDA machines
    pip install 'ambr[perf]'
 
-   # NVIDIA GPU lane (CuPy). Prefer a CUDA-matched wheel if the default fails,
-   # e.g. ``pip install cupy-cuda12x`` instead of the generic ``cupy`` pin.
-   # Apple Metal/MPS is **not** used.
-   pip install 'ambr[gpu]'
+   # NVIDIA GPU lane with CUDA 13. Use cupy-cuda12x for CUDA 12.
+   pip install cupy-cuda13x
 
    # SMAC Bayesian / multi-objective optimization (pins scikit-learn for SMAC 2.4)
    pip install 'ambr[advanced]'

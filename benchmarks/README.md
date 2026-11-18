@@ -144,7 +144,17 @@ not as proof of identical stochastic trajectories.
 
 ## Published results
 
-### Headline (package README / Sphinx)
+### AMBER 0.6.0 automatic batching
+
+The release benchmark compares the same ordinary agent rules on scalar CPU,
+default CPU, and an RTX 5090. The measured cases use 1,000 and 10,000 agents
+for 20 steps. [Raw samples and environment](results/automatic_batching_0_6_0.json)
+
+Regenerate the [release figure](results/automatic_batching_0_6_0.svg) with
+Matplotlib 3.11.2 and `python benchmarks/plot_automatic_batching.py` from the
+repository root.
+
+### Historical explicit GPU kernels at 10 million agents
 
 | File | Role |
 |------|------|
@@ -204,10 +214,10 @@ python benchmarks/plot_scaling_with_gpu_schelling.py \
 
 **Outputs:**
 
-- `results/*.json`, `results/*.log`, `results/*5090*` — machine-local
-  (**gitignored**; never the published baseline)
+- Generated timing files are machine-local. The published snapshots are linked
+  in [Published results](#published-results).
 - `results/summary_table.md` — full large-N tables (**checked in**)
-- `results/scaling_chart.png` — the **only** published performance plot
+- `results/scaling_chart.png` — exploratory multi-framework scaling plot
 
 **AMBER (GPU) (0.4.3+):** the main harness times the same vectorized models as
 AMBER (vectorized) via `model.gpu().run()`. Do not keep or cite interim split
