@@ -25,7 +25,6 @@ import polars as pl
 import warnings
 import numpy as np
 import time
-from weakref import ref
 from datetime import timedelta
 from .base import BaseModel
 from .population import Population
@@ -305,7 +304,7 @@ class Model(BaseModel):
         self._frame_for_columns()
         sync_all_device_columns(self, dirty_only=True)
         frame = self.population.data
-        self._exposed_agents_frame = ref(frame)
+        self._exposed_agents_frame_id = id(frame)
         execution = self._execution
         if execution is not None and execution.config.device == "gpu":
             exposed = execution.exposed_frame

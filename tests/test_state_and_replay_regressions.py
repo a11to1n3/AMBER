@@ -1,3 +1,5 @@
+import pickle
+
 import numpy as np
 import polars as pl
 import pytest
@@ -68,6 +70,15 @@ def test_agent_reads_nullable_values_after_an_in_place_frame_edit():
     first.value = 5
     assert (first.value, second.value) == (5, None)
     assert model.agents_df["value"].to_list() == [5, None]
+
+
+def test_reading_a_frame_preserves_model_serialization():
+    model = am.Model(PARAMETERS)
+    model.nprandom = None
+    model.add_agents(2, value=[1, 2])
+    expected = model.agents_df
+    restored = pickle.loads(pickle.dumps(model))
+    assert restored.agents_df.equals(expected)
 
 
 def test_agent_owned_containers_remain_mutable_after_frame_reads():

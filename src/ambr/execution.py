@@ -198,9 +198,9 @@ def begin_execution(model: "Model", config: ExecutionConfig) -> None:
         ex.tracked_agents = (
             type(model.agents) is AgentList and bool(model.agents._agent_objects)
         )
-        exposed = getattr(model, "_exposed_agents_frame", None)
+        exposed = getattr(model, "_exposed_agents_frame_id", None)
         df = model.agents_df
-        if exposed is not None and exposed() is df:
+        if exposed == id(df):
             ex.exposed_frame = (df, df.clone())
         for name in df.columns:
             if name == "step":
