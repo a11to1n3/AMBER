@@ -9,6 +9,7 @@ import numpy as np
 from .execution import (
     active_execution,
     is_gpu_active,
+    reconcile_host_frame,
     sync_all_device_columns,
     sync_device_column_to_frame,
 )
@@ -27,6 +28,8 @@ class DeviceColumn:
 
     def _array(self):
         ex = active_execution(self._model)
+        if ex is not None and ex.exposed_frame is not None:
+            reconcile_host_frame(self._model, ex)
         if ex is None or self._name not in ex.device_columns:
             raise KeyError(self._name)
         self._model._contract_record_borrow(self._name)

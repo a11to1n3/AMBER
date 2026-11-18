@@ -87,6 +87,35 @@ class DeviceRNG:
     def __getattr__(self, name):
         return getattr(self._rng, name)
 
+    @staticmethod
+    def _state_buffer(bit_generator):
+        # CuPy's state() returns a pointer into its cuRAND byte buffer.
+        # Guard the layout so an unsupported generator leaves replay inconclusive.
+        buffer = getattr(bit_generator, "_state", None)
+        if (not isinstance(buffer, _cp.ndarray) or buffer.dtype != _np.int8
+                or buffer.ndim != 1 or bit_generator.state() != buffer.data.ptr):
+            raise TypeError("unsupported CuPy RNG state")
+        return buffer
+
+    def _snapshot_state(self):
+        rng = self._rng
+        bit_generator = rng.bit_generator
+        with bit_generator.lock:
+            buffer = self._state_buffer(bit_generator)
+            cache = rng._binomial_state
+            _cp.cuda.runtime.deviceSynchronize()
+            return rng, bit_generator, buffer.get(), None if cache is None else cache.get()
+
+    def _restore_state(self, snapshot):
+        rng, bit_generator, state, cache = snapshot
+        with bit_generator.lock:
+            buffer = self._state_buffer(bit_generator)
+            _cp.cuda.runtime.deviceSynchronize()
+            buffer.set(state)
+            rng._binomial_state = None if cache is None else _cp.asarray(cache)
+            rng.bit_generator = bit_generator
+            self._rng = rng
+
 
 def make_device_rng(seed=None) -> DeviceRNG:
     """Create a GPU random generator with NumPy-shaped helpers."""

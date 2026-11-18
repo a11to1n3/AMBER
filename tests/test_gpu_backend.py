@@ -1,6 +1,7 @@
 """Model.gpu() / Model.cpu() on the vectorized view API."""
 
 import numpy as np
+import polars as pl
 import pytest
 
 import ambr as am
@@ -252,6 +253,92 @@ def test_gpu_batch_and_scalar_rules_share_state(gpu_exports):
     assert gpu.agents.equals(cpu.agents)
     assert gpu.agent_vars.equals(cpu.agent_vars)
     assert (gpu_model.end_age, gpu_model.end_energy) == (128, 9408)
+
+
+@pytest.mark.parametrize("add_column", [False, True])
+def test_empty_host_scatter_preserves_prior_gpu_batch(add_column, gpu_exports):
+    class Counter(am.Agent):
+        def step(self):
+            self.x += 1
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(64, agent_class=Counter, x=3)
+
+        def step(self):
+            self.activate_agents()
+            empty = self.agents.where(pl.Series([False] * 64))
+            if add_column:
+                empty.scatter_add(x=1, extra=1)
+            else:
+                empty.scatter_add(x=1)
+
+    args = {"steps": 1}
+    cpu = Model(args).run(auto_batch=False)
+    gpu = Model(args).gpu().run()
+    assert gpu.info["auto_batch"]["batches"] == 1
+    assert gpu.agents.equals(cpu.agents)
+
+
+def test_gpu_batch_observes_in_place_frame_edits(gpu_exports):
+    class Counter(am.Agent):
+        def step(self):
+            self.x += 1
+            self.y += 1
+
+        def advance(self):
+            self.y += 1
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(64, agent_class=Counter, x=0, y=0)
+
+        def step(self):
+            frame = self.agents_df
+            self.agents.advance()
+            frame.replace_column(frame.columns.index("x"), pl.Series("x", [100] * 64))
+            assert self.agents.by_id(0).x == 100
+            self.agents.step()
+
+    args = {"steps": 1}
+    cpu = Model(args).run(auto_batch=False)
+    gpu = Model(args).gpu().run()
+    assert gpu.info["auto_batch"]["batches"] == 2
+    assert gpu.agents.equals(cpu.agents)
+    assert gpu.agents["x"].to_list() == [101] * 64
+    assert gpu.agents["y"].to_list() == [2] * 64
+
+
+@pytest.mark.parametrize("activation", ["sequential", "random"])
+def test_gpu_replay_preserves_the_forward_device_stream(activation, gpu_exports):
+    class Writer(am.Agent):
+        def step(self):
+            self.model.agents.by_id(0).x = self.id
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Writer, x=0)
+
+        def step(self):
+            self.activate_agents(self.p.activation)
+            self.record_model("draw", self.rng.integers(2**31).item())
+            self.record_model("binomial", int(self.rng.binomial(10, 0.5)))
+
+        def end(self):
+            self.end_draw = self.rng.integers(2**31).item()
+            self.end_binomial = int(self.rng.binomial(10, 0.5))
+
+    params = {"steps": 1, "seed": 43, "activation": activation}
+    plain_model = Model(params).gpu()
+    checked_model = Model(params).gpu()
+    plain = plain_model.run(contract="off")
+    checked = checked_model.run(contract="check")
+    races = [v for v in checked["contract"][0].violations if v.kind == "activation_race"]
+    assert [v.divergence_witness for v in races] == [True]
+    assert checked.agents.equals(plain.agents)
+    assert checked["model"].equals(plain["model"])
+    assert checked_model.end_draw == plain_model.end_draw
+    assert checked_model.end_binomial == plain_model.end_binomial
 
 
 def test_gpu_batch_preserves_mask_after_later_column_assignments(gpu_exports):

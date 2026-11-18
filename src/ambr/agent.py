@@ -17,6 +17,29 @@ if TYPE_CHECKING:
 _AGENT_PROTECTED_ATTRS = frozenset({"model", "id", "p"})
 
 
+def _read_container_cell(attrs, name, column, position, value):
+    """Reuse a Python container while its committed cell is unchanged."""
+    is_list = isinstance(value, pl.Series)
+    cell = column.slice(position, 1)
+    cells = attrs.setdefault("_ambr_container_cells", {})
+    previous = cells.get(name)
+    original = attrs.get(name)
+    if isinstance(original, list if is_list else dict):
+        if previous is None:
+            try:
+                previous = pl.Series(name, [original], dtype=cell.dtype, strict=False)
+            except (TypeError, ValueError, pl.exceptions.PolarsError):
+                previous = None
+        if previous is not None and previous.dtype == cell.dtype and previous.equals(cell):
+            cells[name] = cell
+            return original
+    if is_list:
+        value = value.to_list()
+    cells[name] = cell
+    attrs[name] = value
+    return value
+
+
 class Agent(BaseAgent):
     """Base class for all agents in the simulation.
 
@@ -27,6 +50,8 @@ class Agent(BaseAgent):
         underlying columnar DataFrame. This keeps the Python objects
         and the columnar store in sync — you can freely mix OOP-style
         attribute access with the view API (``model.agents.wealth``).
+        Assign a list or dict after mutating it in place to publish the
+        new value to the columnar store.
         Internal attributes (``model``, ``id``, ``p``, anything
         starting with ``_``) are stored on the instance only.
     """
@@ -86,6 +111,12 @@ class Agent(BaseAgent):
                     value = frame.item(position, name)
                 except (KeyError, IndexError):
                     return object.__getattribute__(self, name)
+                # Polars materializes nested cells as new objects. Keep mutable
+                # Python state created on the instance usable in ordinary methods.
+                if isinstance(value, (pl.Series, dict)):
+                    column = frame[name]
+                    if column.dtype.base_type() in (pl.List, pl.Array, pl.Struct):
+                        value = _read_container_cell(attrs, name, column, position, value)
         else:
             value = object.__getattribute__(self, name)
 
@@ -106,6 +137,9 @@ class Agent(BaseAgent):
             object.__setattr__(self, name, value)
             return
         object.__setattr__(self, name, value)
+        cells = object.__getattribute__(self, "__dict__").get("_ambr_container_cells")
+        if cells is not None:
+            cells.pop(name, None)
         model = getattr(self, "model", None)
         queue_write = getattr(model, "_queue_write", None)
         if queue_write is not None:

@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pytest
 
@@ -115,6 +117,52 @@ def test_active_debugger_keeps_python_calls(monkeypatch):
     result = Counters({"n": N, "steps": 1, "dispatch": "broadcast"}).run()
     assert result.info["auto_batch"]["batches"] == 0
     assert result.agents["age"].to_list() == list(range(1, N + 1))
+
+
+def test_profiler_can_observe_agent_method_calls():
+    calls = []
+
+    def observe(frame, event, arg):
+        if event == "call" and frame.f_code is Counter.advance_age.__code__:
+            calls.append(frame.f_locals["self"].id)
+
+    saved = sys.getprofile()
+    try:
+        sys.setprofile(observe)
+        result = Counters({"n": N, "steps": 1, "dispatch": "broadcast"}).run()
+    finally:
+        sys.setprofile(saved)
+    assert result.info["auto_batch"]["batches"] == 0
+    assert calls == list(range(N))
+
+
+def test_integer_batch_respects_an_agent_id_property():
+    class Agent(am.Agent):
+        @property
+        def id(self):
+            self.model.reads += 1
+            return self.__dict__["id"]
+
+        @id.setter
+        def id(self, value):
+            self.__dict__["id"] = value
+
+        def step(self):
+            self.x += 1
+
+    class Model(am.Model):
+        def setup(self):
+            self.reads = 0
+            self.add_agents(N, agent_class=Agent, x=0)
+
+        def step(self):
+            self.reads = 0
+            self.agents.call("step")
+            self.record_model("reads", self.reads)
+
+    result = Model({"steps": 1}).run()
+    assert result.info["auto_batch"]["batches"] == 0
+    assert result["model"]["reads"].to_list() == [N]
 
 
 class InstanceOverride(Counters):

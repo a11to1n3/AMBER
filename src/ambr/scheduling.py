@@ -99,7 +99,7 @@ def activate(
         r = _rng_for(agents, rng)
         if rng is None and execution is not None and execution.tracked_agents and r is execution.device_rng:
             r = model._host_rng
-        if override is not None and r is not model.rng:
+        if override is not None and r is not model.rng and r is not model._host_rng:
             raise ValueError("random activation uses a stream outside the replay snapshot")
         order = list(range(len(ordered)))
         r.shuffle(order)

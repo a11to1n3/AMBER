@@ -5,7 +5,6 @@ from functools import lru_cache
 from inspect import CO_ASYNC_GENERATOR, CO_COROUTINE, CO_GENERATOR, CO_VARARGS, CO_VARKEYWORDS
 from inspect import getattr_static
 from itertools import islice
-import sys
 from typing import NamedTuple, Optional
 
 import polars as pl
@@ -20,6 +19,7 @@ from ._auto_batch import (
     _condition_mask,
     _draw_context,
     _draw_mask,
+    _interpreter_instrumented,
     _plan_fields,
     _read_column,
     _tracked_sweep_method,
@@ -28,6 +28,7 @@ from ._auto_batch import (
 from .agent import _AGENT_PROTECTED_ATTRS
 from ._keyed_rng import DRAW_ALGORITHM, keyed_uniform
 from .model import Model
+from .sequences import _SCATTER_SEAMS
 
 
 _MODEL_SEAMS = {
@@ -144,13 +145,6 @@ def _reduction_plan(code):
     return None
 
 
-def _interpreter_instrumented():
-    """A tracer can run Python between otherwise isolated operations."""
-    monitoring = getattr(sys, "monitoring", None)
-    return (sys.gettrace() is not None or sys.getprofile() is not None
-            or (monitoring is not None and any(monitoring.get_tool(i) for i in range(6))))
-
-
 def verify_sweep(agents, method_name):
     """Return a proof candidate and the reason when an entry check fails."""
     if _interpreter_instrumented():
@@ -187,6 +181,9 @@ def verify_sweep(agents, method_name):
     reads = {aid: set() for aid in ids}
     writes = {aid: set() for aid in ids}
     if reduction is not None:
+        if any(getattr_static(view_type, name, None) is not original
+               for view_type, name, original in _SCATTER_SEAMS):
+            return None, "Certification requires the built-in scatter reducer."
         target, column, operator, operand = reduction
         source = _read_column(frame, pending, ids, column)
         if target not in ids or source is None:

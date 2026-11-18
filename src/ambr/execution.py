@@ -76,6 +76,7 @@ class ActiveExecution:
     # as well as the frame. None means every row was assigned.
     agent_writes: Dict[str, Any] = field(default_factory=dict)
     borrowed_columns: set[str] = field(default_factory=set)
+    exposed_frame: Optional[tuple[pl.DataFrame, pl.DataFrame]] = None
 
 
 def resolve_config(
@@ -197,7 +198,10 @@ def begin_execution(model: "Model", config: ExecutionConfig) -> None:
         ex.tracked_agents = (
             type(model.agents) is AgentList and bool(model.agents._agent_objects)
         )
+        exposed = getattr(model, "_exposed_agents_frame_id", None)
         df = model.agents_df
+        if exposed == id(df):
+            ex.exposed_frame = (df, df.clone())
         for name in df.columns:
             if name == "step":
                 continue
@@ -246,6 +250,8 @@ def begin_fast_execution(
 
 def sync_device_column_to_frame(model: "Model", name: str) -> None:
     ex = active_execution(model)
+    if ex is not None and ex.exposed_frame is not None:
+        reconcile_host_frame(model, ex)
     if ex is None or name not in ex.device_columns:
         return
     host = to_host(ex.device_columns[name])
@@ -267,10 +273,44 @@ def sync_device_column_to_frame(model: "Model", name: str) -> None:
         ex.dirty_columns.discard(name)
 
 
+def reconcile_host_frame(model: "Model", ex: ActiveExecution) -> None:
+    """Upload in-place edits to a live frame returned by agents_df."""
+    exposed = ex.exposed_frame
+    if exposed is None:
+        return
+    frame = model.population.data
+    original, snapshot = exposed
+    if frame is not original:
+        ex.exposed_frame = None
+        return
+
+    changed = set(frame.columns) ^ set(snapshot.columns)
+    for name in set(frame.columns) & set(snapshot.columns):
+        if name not in ex.device_columns:
+            continue
+        before, after = snapshot[name], frame[name]
+        if before.dtype != after.dtype or not before.equals(after):
+            changed.add(name)
+    if not changed:
+        return
+
+    if "id" in changed:
+        from ._id_index import ids_are_arange
+
+        model._bump_id_version()
+        ex.ids_are_arange = "id" in frame.columns and ids_are_arange(model, frame["id"].to_numpy())
+    for name in changed:
+        ex.agent_writes.pop(name, None)
+    refresh_tracked_device_columns(model, changed)
+    ex.exposed_frame = (frame, frame.clone())
+
+
 def sync_agent_writes(model: "Model") -> None:
     """Materialize pending GPU assignments before inspecting Python bindings."""
     ex = getattr(model, "__dict__", {}).get("_execution")
     if ex is not None:
+        if ex.exposed_frame is not None:
+            reconcile_host_frame(model, ex)
         for name in tuple(ex.agent_writes):
             sync_device_column_to_frame(model, name)
 
@@ -300,7 +340,8 @@ def refresh_tracked_device_columns(model: "Model", columns=None) -> None:
         current = ex.device_columns.get(name)
         if name == "step" or arr is None or frame[name].null_count():
             ex.device_columns.pop(name, None)
-        elif name in ex.borrowed_columns and current.shape == arr.shape and current.dtype == arr.dtype:
+        elif (name in ex.borrowed_columns and current is not None
+              and current.shape == arr.shape and current.dtype == arr.dtype):
             current[:] = to_device(arr)
             continue
         else:

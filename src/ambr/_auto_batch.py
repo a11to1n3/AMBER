@@ -7,7 +7,8 @@ from inspect import getattr_static
 from itertools import islice, takewhile
 from math import isfinite
 import operator
-from sys import gettrace
+import sys
+from sys import getprofile, gettrace
 from types import CodeType, FunctionType
 from typing import NamedTuple, Optional
 
@@ -16,6 +17,7 @@ import polars as pl
 
 from ._keyed_rng import keyed_uniform
 from .agent import Agent, _AGENT_PROTECTED_ATTRS
+from .execution import reconcile_host_frame
 from .model import Model
 from .population import Population
 
@@ -548,6 +550,13 @@ def _tracked_sweep_rows(agents, method_name, state, cls):
     return frame, ids, bindings
 
 
+def _interpreter_instrumented():
+    """A tracer or profiler can execute Python between agent operations."""
+    monitoring = getattr(sys, "monitoring", None)
+    return (gettrace() is not None or getprofile() is not None
+            or (monitoring is not None and any(monitoring.get_tool(i) for i in range(6))))
+
+
 def _plan_fields(plan):
     fields = {field for field, _ in plan.adjustments}
     if isinstance(plan.condition, _Condition):
@@ -628,7 +637,8 @@ def try_batch(agents, method_name: str) -> int:
     if (
         not state.get("_auto_batch_enabled") or execution is None
         or state["_contract"].mode != "off" or state["_contract"]._in_replay
-        or state.get("_activation_override_order") is not None or gettrace() is not None
+        or state.get("_activation_override_order") is not None or _interpreter_instrumented()
+        or any(getattr_static(cls, name, _MISSING) is not _MISSING for name in ("id", "model"))
     ):
         return 0
     plan = _agent_plan(method.__code__)
@@ -638,6 +648,8 @@ def try_batch(agents, method_name: str) -> int:
     fields = _plan_fields(plan) if plan is not None else {update.field for update in clipped_plan}
     if any(getattr_static(cls, field, _MISSING) is not _MISSING for field in fields):
         return 0
+    if execution.exposed_frame is not None:
+        reconcile_host_frame(agents.model, execution)
     rows = _tracked_sweep_rows(agents, method_name, state, cls)
     if rows is None:
         return 0
