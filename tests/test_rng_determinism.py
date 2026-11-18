@@ -32,6 +32,38 @@ def test_model_rng_is_canonical_generator():
     assert 0 <= int(m.nprandom.randint(0, 5)) < 5
 
 
+def test_agent_draw_keys_are_stable_and_leave_shared_streams_untouched():
+    model = am.Model({"seed": 7})
+    model.add_agents(2, agent_class=am.Agent)
+    a, b = model.agents
+    numpy_state = model.rng.bit_generator.state
+    python_state = model.random.getstate()
+    first = a.draw("move")
+    assert first.hex() == "0x1.3b35ccc19dcdap-1"
+    assert a.draw("move", index=np.int64(1)).hex() == "0x1.185f8a4709f5fp-1"
+    assert b.draw("move").hex() == "0x1.edc0e883b4b9cp-2"
+    assert a.draw("κατεύθυνση").hex() == "0x1.9acad44b1ca9dp-1"
+    assert a.draw("move") == first
+    model.t = 1
+    assert a.draw("move").hex() == "0x1.77df80fac593cp-2"
+    assert model.rng.bit_generator.state == numpy_state
+    assert model.random.getstate() == python_state
+
+    with pytest.raises(ValueError, match="non-empty string"):
+        a.draw("")
+    with pytest.raises(ValueError, match="non-negative"):
+        a.draw("move", index=-1)
+
+
+def test_existing_draw_column_remains_accessible_on_agents():
+    model = am.Model({"seed": 7})
+    model.add_agents(2, agent_class=am.Agent, draw=[11, 7])
+    a, b = model.agents
+    assert (a.draw, b.draw) == (11, 7)
+    a.draw += 2
+    assert model.agents.draw.to_list() == [13, 7]
+
+
 def test_grid_random_position_no_global_leak():
     m = am.Model({"seed": 1})
     grid = GridEnvironment(m, size=(10, 10))

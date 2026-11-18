@@ -15,9 +15,12 @@ but filled by :mod:`ambr._id_index`; :meth:`_bump_id_version` invalidates them.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, NamedTuple, Type, Optional, Set, Tuple, TYPE_CHECKING
+from typing import Any, Dict, Iterable, List, NamedTuple, Type, Optional, Tuple, TYPE_CHECKING
+from collections import Counter
+from contextlib import contextmanager
 import copy
 import random
+from secrets import randbits
 import polars as pl
 import warnings
 import numpy as np
@@ -27,6 +30,7 @@ from .base import BaseModel
 from .population import Population
 from ._deprecation import warn_deprecated
 from ._id_index import resolve_positions
+from .gpu import DeviceRNG
 from .contract import (
     ContractCertificate,
     ContractMonitor,
@@ -40,7 +44,13 @@ from .execution import (
     begin_execution,
     begin_fast_execution,
     end_execution,
+    prepare_end_hook,
+    reconcile_host_frame,
+    refresh_tracked_device_columns,
     resolve_config,
+    sync_agent_writes,
+    sync_all_device_columns,
+    sync_device_column_to_frame,
 )
 
 if TYPE_CHECKING:
@@ -111,14 +121,20 @@ class Model(BaseModel):
         # Snapshot-view contract monitor (see contract.py). Mode 'off' adds
         # zero per-write overhead.
         self._contract = ContractMonitor()
+        self._auto_batch_enabled = False
+        self._auto_batches = 0
+        self._auto_batched_agent_calls = 0
         # Pre-step agent frame used by activation replay, and the order a
         # replay asks stage_agents / activate to follow.
         self._pre_step_state = None
         self._pre_step_rng = None
         self._pre_step_world = None
+        self._pre_step_roster = None
         self._activation_override_order = None
 
         super().__init__(parameters)  # sets self.random / self.rng / self.nprandom
+        seed = parameters.get("seed")
+        self._keyed_seed = randbits(128) if seed is None else int(seed)
         self.t = 0
         self._start_time = None
         self._last_progress_time = None
@@ -147,6 +163,17 @@ class Model(BaseModel):
         from .sequences import AgentList
         self.agents = AgentList(self, [])
 
+    def __getattribute__(self, name: str) -> Any:
+        if name in ("random", "rng", "nprandom"):
+            monitor = object.__getattribute__(self, "__dict__").get("_contract")
+            if monitor is not None and monitor._current_activation is not None:
+                if monitor._in_replay:
+                    monitor._replay_used_shared_rng = True
+                elif monitor.active:
+                    monitor._used_shared_rng = True
+                    monitor._shared_rng_activations.add(monitor._current_activation)
+        return super().__getattribute__(name)
+
     def cpu(self, mode: Optional[str] = None) -> "Model":
         """Place the next :meth:`run` on CPU. Returns ``self`` for chaining.
 
@@ -166,21 +193,30 @@ class Model(BaseModel):
             self._set_execution_mode(mode)
         return self
 
+    def vectorize(self) -> "Model":
+        """Select vectorized execution on the current device. Returns ``self``.
+
+        A model defined with ordinary ``setup()`` and ``step()`` methods can
+        use this selector. AMBER batches eligible agent calls automatically.
+        Models can also provide an explicit ``step_vectorized()`` hook.
+        """
+        self._set_execution_mode("vectorized")
+        return self
+
     def gpu(self, mode: Optional[str] = None) -> "Model":
         """Place the next :meth:`run` on GPU (device-resident columns). Returns ``self``.
 
         Args:
-            mode: optional execution style. GPU runs support the
-                ``'vectorized'`` view API; Python Agent objects use CPU OOP mode.
+            mode: defaults to ``'vectorized'`` for ordinary agent methods and
+                the vectorized view API, including after CPU OOP placement.
 
         Examples::
 
             model.gpu().run()
             model.gpu(mode="vectorized").run()
         """
+        self._set_execution_mode("vectorized" if mode is None else mode)
         self._device = "gpu"
-        if mode is not None:
-            self._set_execution_mode(mode)
         return self
 
     def approve_fast_path(self, evidence: str) -> "Model":
@@ -265,20 +301,36 @@ class Model(BaseModel):
 
     @property
     def agents_df(self) -> pl.DataFrame:
+        self._frame_for_columns()
+        sync_all_device_columns(self, dirty_only=True)
+        frame = self.population.data
+        self._exposed_agents_frame_id = id(frame)
+        execution = self._execution
+        if execution is not None and execution.config.device == "gpu":
+            exposed = execution.exposed_frame
+            if exposed is None or exposed[0] is not frame:
+                execution.exposed_frame = (frame, frame.clone())
+        return frame
+
+    def _frame_for_columns(self) -> pl.DataFrame:
+        """Read host schema and buffered state for backend-aware view operations."""
         self._flush_pending_writes()
         return self.population.data
 
     @agents_df.setter
     def agents_df(self, value):
+        sync_agent_writes(self)
         self._pending_writes = {}
         self._set_frame(value)
         self._bump_id_version()
+        self._contract.record_frame_replacement()
 
     def _set_frame(
         self,
         df: pl.DataFrame,
         *,
         written_columns: Optional[List[str]] = None,
+        target_ids: Optional[Iterable[Any]] = None,
     ) -> None:
         """Internal single write seam for the agent table.
 
@@ -293,15 +345,18 @@ class Model(BaseModel):
         omits this -- it is the sanctioned multi-write reducer).
         """
         self.population.replace_frame(df)
+        refresh_tracked_device_columns(self, written_columns)
         if written_columns is not None and self._contract.active:
-            self._contract.record_commit(written_columns)
+            self._contract.record_commit(written_columns, target_ids)
 
     def _queue_write(self, column: str, agent_id: Any, value: Any) -> None:
         self._pending_writes.setdefault(column, {})[agent_id] = value
         # Contract: count ordinary writes per (column, id) within a step so a
         # second write to an already-written cell (which the buffer would
         # silently clobber) is detectable as a partial-map conflict.
-        self._contract.record_buffered_write(column, agent_id)
+        contract = self._contract
+        if contract.active:
+            contract.record_buffered_write(column, agent_id)
 
     def _bump_id_version(self) -> None:
         """Invalidate id→row caches after the agent id set changes."""
@@ -310,20 +365,37 @@ class Model(BaseModel):
         self._id_pos_cache = None
         self._ids_arange_cache = None
 
-    def _flush_pending_writes(self) -> None:
-        """Apply all queued ``Agent`` attribute writes into ``population.data``.
+    def _flush_pending_writes(self, *, columns=None) -> None:
+        """Apply queued ``Agent`` writes, optionally for selected columns.
 
         Fast path: map ids → rows once via :func:`~ambr._id_index.resolve_positions`
         and scatter into Python lists (preserves ``None``; cheaper than a wide
         Polars update). Fallback: ``df.update(on='id')`` hash join.
         """
-        if not self._pending_writes:
+        execution = getattr(self, "_execution", None)
+        if execution is not None and execution.exposed_frame is not None:
+            reconcile_host_frame(self, execution)
+        pending = self._pending_writes
+        selected = pending if columns is None else {
+            name: pending[name] for name in columns if name in pending
+        }
+        if not selected:
             return
+        if execution is not None and execution.tracked_agents:
+            for name in selected.keys() & execution.dirty_columns:
+                sync_device_column_to_frame(self, name)
         # Clear before the write so an exception can't leave a stale buffer
         # that would double-apply on the next flush.
-        pending = self._pending_writes
-        self._pending_writes = {}
+        if columns is None:
+            self._pending_writes = {}
+        else:
+            for name in selected:
+                del pending[name]
+        self._apply_pending_writes(selected)
+        if execution is not None and execution.tracked_agents:
+            refresh_tracked_device_columns(self, selected)
 
+    def _apply_pending_writes(self, pending) -> None:
         df = self.population.data
 
         # Empty / missing id: build the frame entirely from the buffer.
@@ -381,24 +453,16 @@ class Model(BaseModel):
 
     # --- snapshot-view contract seams ---------------------------------------
 
-    def _contract_snapshot(self) -> Tuple[Dict[str, str], Set[Any]]:
-        """Return ({column: dtype-str}, id-set) of the committed population.
+    def _contract_snapshot(self) -> Tuple[Dict[str, str], Counter[Any]]:
+        """Return column types and ID multiplicities of the committed population.
 
         The schema carries dtypes (not just names) so that a mid-step dtype
         change -- e.g. an ``Int64`` attribute silently rewritten as ``Float64``
         -- surfaces as a schema mutation rather than passing unnoticed.
         """
-        from .device_columns import model_uses_device_columns, sync_all_device_columns
-
-        if model_uses_device_columns(self):
-            sync_all_device_columns(self)
         df = self.agents_df  # flushes pending writes
         schema = {name: str(dt) for name, dt in zip(df.columns, df.dtypes)}
-        if "id" in df.columns and df.height:
-            ids = set(df["id"].to_list())
-        else:
-            ids = set()
-        return schema, ids
+        return schema, Counter(df["id"]) if "id" in df.columns else Counter()
 
     def _contract_record_borrow(self, column: str) -> None:
         """Record a lane borrow of ``column``; flag it if already committed.
@@ -416,12 +480,13 @@ class Model(BaseModel):
         self,
         columns: Iterable[str],
         domains: Optional[Dict[str, str]] = None,
+        operator: str = "+",
     ) -> None:
         """Record columns written through a commutative reduction.
 
         ``domains`` maps each column to the dtype of the executed fold.
         """
-        self._contract.record_reduction(columns, domains=domains)
+        self._contract.record_reduction(columns, domains=domains, operator=operator)
 
     def setup(self): pass
     def step(self): pass
@@ -430,10 +495,13 @@ class Model(BaseModel):
         """Execute one vectorized step.
 
         Models with a distinct vectorized implementation can override this
-        hook. The default preserves the pre-mode API, where ``step()`` is the
-        model's single implementation.
+        hook. The default runs ``step()``, or ``step_oop()`` if that is the
+        model's only step implementation.
         """
-        return self.step()
+        step = self.step
+        if getattr(step, "__func__", None) is Model.step:
+            return self.step_oop()
+        return step()
 
     def step_oop(self):
         """Execute one object-oriented step.
@@ -464,17 +532,21 @@ class Model(BaseModel):
         Notes:
             * Vectorized models should encode order inside
               :meth:`step_vectorized` (see :func:`~ambr.scheduling.shuffled_ids`).
-            * Does not prove schedule equivalence; the contract monitor is
-              separate and operational only.
+            * Under contract checking, AMBER can certify order independence
+              for supported sequential and shuffled single-phase sweeps.
         """
         from .scheduling import activate, normalize_activation
 
         chosen = mode if mode is not None else self._activation
+        execution = self._execution
+        rng = self.rng
+        if execution is not None and execution.tracked_agents and rng is execution.device_rng:
+            rng = self._host_rng
         activate(
             self.agents,
             mode=normalize_activation(chosen),
             method=method,
-            rng=self.rng,
+            rng=rng,
         )
 
     def stage_agents(self, stage: str = "stage0") -> Iterable[Any]:
@@ -491,10 +563,6 @@ class Model(BaseModel):
         if active:
             mon.begin_stage(stage)
         ordered = list(self.agents)
-        override = getattr(self, "_activation_override_order", None)
-        if override is not None:
-            id_map = {getattr(agent, "id", None): agent for agent in ordered}
-            ordered = [id_map[aid] for aid in override if aid in id_map]
         try:
             for agent in ordered:
                 aid = getattr(agent, "id", None)
@@ -560,10 +628,6 @@ class Model(BaseModel):
         cols = type(self).agent_reporters
         if not cols:
             return
-        from .device_columns import model_uses_device_columns, sync_all_device_columns
-
-        if model_uses_device_columns(self):
-            sync_all_device_columns(self)
         df = self.agents_df
         have = [c for c in cols if c in df.columns]
         if not have:
@@ -659,18 +723,23 @@ class Model(BaseModel):
                 step_fn()
             else:
                 mon.begin_step(self._contract_snapshot())
+                step_finished = False
                 try:
                     self._pre_step_state = self.agents_df.clone()
                     self._pre_step_rng = self._capture_rng_state()
                     self._pre_step_world = self._capture_replay_world()
+                    self._pre_step_roster = self._snapshot_replay_roster()
                     step_fn()
+                    step_finished = True
                 finally:
                     cert = mon.end_step(
-                        self.t, self._contract_snapshot(), model=self
+                        self.t, self._contract_snapshot(),
+                        model=self if step_finished else None,
                     )
                     self._pre_step_state = None
                     self._pre_step_rng = None
                     self._pre_step_world = None
+                    self._pre_step_roster = None
 
                 if mon.mode == "warn":
                     for v in cert.violations:
@@ -688,6 +757,7 @@ class Model(BaseModel):
             self._pre_step_state = None
             self._pre_step_rng = None
             self._pre_step_world = None
+            self._pre_step_roster = None
             raise
 
     def replay_activation_swap(self, a: Any, b: Any) -> _ReplayOutcome:
@@ -709,9 +779,18 @@ class Model(BaseModel):
         pre = getattr(self, "_pre_step_state", None)
         if pre is None:
             return _ReplayOutcome(None, None)
+        if mon._activation_sweeps != 1:
+            return _ReplayOutcome(None, "replay requires a single recorded activation sweep")
         order = list(getattr(mon, "_activation_order", []))
         if a not in order or b not in order:
             return _ReplayOutcome(None, None)
+        if mon._sweep_rng_reason is not None:
+            return _ReplayOutcome(None, mon._sweep_rng_reason)
+        if mon._used_shared_rng:
+            return _ReplayOutcome(None, "shared random draws were accessed during activation")
+        forward_roster = self._snapshot_replay_roster()
+        if forward_roster is None or not self._replay_roster_matches(self._pre_step_roster):
+            return _ReplayOutcome(None, "population or agent roster changed during the step")
         entry_rng = getattr(self, "_pre_step_rng", None)
         post_rng = self._capture_rng_state()
         if (
@@ -729,6 +808,11 @@ class Model(BaseModel):
 
         original_post = self.agents_df.clone()
         saved_attrs = self._snapshot_agent_attrs()
+        forward_step_data = self._current_step_data
+        try:
+            recorded = copy.deepcopy(forward_step_data)
+        except Exception:
+            recorded = None
         swapped = list(order)
         index_a = swapped.index(a)
         index_b = swapped.index(b)
@@ -746,6 +830,8 @@ class Model(BaseModel):
         saved_stage = mon._current_stage
         saved_stage_violations = list(mon._stage_violations)
         mon._in_replay = True
+        mon._replay_used_shared_rng = False
+        mon._replay_sweep_rng_reason = None
         mon.mode = "off"
         mon.active = False
         witness: Optional[bool] = None
@@ -762,6 +848,7 @@ class Model(BaseModel):
                 self._pending_writes = {}
                 self._refresh_agent_cache(pre)
                 self._activation_override_order = swapped
+                self._begin_step_data()
                 execution = getattr(self, "_execution", None)
                 mode = (
                     execution.config.mode
@@ -775,10 +862,20 @@ class Model(BaseModel):
                 except Exception as exc:
                     reason = _replay_failure_reason(exc)
                 else:
-                    witness, reason = self._replay_compare(
-                        original_post, post_world, entry_world
-                    )
+                    if mon._replay_used_shared_rng:
+                        reason = "shared random draws were accessed during replay activation"
+                    elif mon._replay_sweep_rng_reason is not None:
+                        reason = mon._replay_sweep_rng_reason
+                    elif self._activation_override_order is not None:
+                        reason = "the recorded activation sweep did not run during replay"
+                    elif not self._replay_roster_matches(forward_roster):
+                        reason = "replay changed the population or agent roster"
+                    else:
+                        witness, reason = self._replay_compare(
+                            original_post, post_world, entry_world, recorded
+                        )
         finally:
+            self._current_step_data = forward_step_data
             post_rng_ok = self._restore_rng_state(post_rng)
             post_world_ok = self._restore_replay_world(post_world)
             if not post_rng_ok:
@@ -787,13 +884,22 @@ class Model(BaseModel):
             elif not post_world_ok:
                 witness = None
                 reason = "forward model state could not be restored"
+            root, objects, bindings, agent_type = forward_roster
+            self.agents = root
+            root._agent_objects[:] = objects
+            root._agents_by_id.clear()
+            root._agents_by_id.update(bindings)
+            root.agent_type = agent_type
             self._set_frame(original_post.clone())
+            self._bump_id_version()
             self._pending_writes = {}
             self._activation_override_order = None
             self._restore_agent_attrs(saved_attrs)
             mon.mode = saved_mode
             mon.active = saved_active
             mon._in_replay = False
+            mon._replay_used_shared_rng = False
+            mon._replay_sweep_rng_reason = None
             mon._current_activation = saved_current
             mon._activation_order = saved_order
             mon._activation_reads = saved_reads
@@ -803,6 +909,27 @@ class Model(BaseModel):
             mon._stage_violations = saved_stage_violations
         return _ReplayOutcome(witness, reason)
 
+    def _snapshot_replay_roster(self):
+        from .sequences import AgentList
+
+        root = self.agents
+        if type(root) is not AgentList:
+            return None
+        return root, tuple(root._agent_objects), dict(root._agents_by_id), root.agent_type
+
+    def _replay_roster_matches(self, snapshot) -> bool:
+        if snapshot is None:
+            return False
+        root, objects, bindings, agent_type = snapshot
+        return (
+            self.agents is root
+            and root.agent_type is agent_type
+            and len(root._agent_objects) == len(objects)
+            and all(a is b for a, b in zip(root._agent_objects, objects))
+            and root._agents_by_id.keys() == bindings.keys()
+            and all(root._agents_by_id[aid] is agent and agent.id == aid for aid, agent in bindings.items())
+        )
+
     # Public model attributes owned by the framework, not by the user's step.
     _REPLAY_FRAMEWORK_ATTRS = frozenset({
         "population",
@@ -811,7 +938,6 @@ class Model(BaseModel):
         "random",
         "rng",
         "nprandom",
-        "p",
         "model_df",
         "agents_df",
     })
@@ -886,7 +1012,9 @@ class Model(BaseModel):
                 oid = id(value)
                 if oid in nodes:
                     return ("node", oid)
-                nodes[oid] = ("ndarray", value, value.copy())
+                saved = value.copy()
+                saved.setflags(write=value.flags.writeable)
+                nodes[oid] = ("ndarray", value, saved)
                 return ("node", oid)
             raise TypeError("replay value cannot be restored")
 
@@ -960,12 +1088,14 @@ class Model(BaseModel):
                     ):
                         ok = False
                         continue
-                    if obj.shape != saved.shape:
-                        obj.resize(saved.shape, refcheck=False)
-                    if obj.shape != saved.shape:
-                        ok = False
-                        continue
-                    obj[...] = saved
+                    if not self._replay_values_equal(obj, saved):
+                        if not obj.flags.writeable:
+                            obj.setflags(write=True)
+                        if obj.shape != saved.shape:
+                            obj.resize(saved.shape, refcheck=False)
+                        obj[...] = saved
+                    if obj.flags.writeable != saved.flags.writeable:
+                        obj.setflags(write=saved.flags.writeable)
                 elif kind != "tuple":
                     ok = False
             except Exception:
@@ -1018,6 +1148,7 @@ class Model(BaseModel):
         original_post: pl.DataFrame,
         post_world: Any,
         entry_world: Any,
+        recorded: Any,
     ) -> Tuple[Optional[bool], Optional[str]]:
         try:
             frame_differs = not bool(original_post.equals(self.agents_df))
@@ -1034,7 +1165,14 @@ class Model(BaseModel):
             return None, "alias relationships are not one-to-one"
         if same_world is None:
             return None, "replay state could not be compared"
-        return bool(frame_differs or not same_world), None
+        if frame_differs or not same_world:
+            return True, None
+        if recorded is None:
+            return None, "recorded step values could not be captured"
+        try:
+            return not self._replay_values_equal(recorded, self._current_step_data), None
+        except Exception as exc:
+            return None, _replay_failure_reason(exc)
 
     def _replay_refs_equal(
         self,
@@ -1066,7 +1204,9 @@ class Model(BaseModel):
             return False
         kind = left_node[0]
         if kind == "ndarray":
-            return self._replay_values_equal(left_node[2], right_node[2])
+            left_array, right_array = left_node[2], right_node[2]
+            return (left_array.flags.writeable == right_array.flags.writeable
+                    and self._replay_values_equal(left_array, right_array))
         if kind in ("list", "tuple"):
             left_children = left_node[2]
             right_children = right_node[2]
@@ -1079,21 +1219,12 @@ class Model(BaseModel):
                 for item, other in zip(left_children, right_children)
             )
         if kind == "dict":
-            pending = list(right_node[2])
-            for key, ref in left_node[2]:
-                match_at = None
-                for index, (other_key, _other_ref) in enumerate(pending):
-                    if self._replay_values_equal(key, other_key):
-                        match_at = index
-                        break
-                if match_at is None:
-                    return False
-                _other_key, match = pending.pop(match_at)
-                if not self._replay_refs_equal(
-                    ref, left_nodes, match, right_nodes, forward, inverse
-                ):
-                    return False
-            return not pending
+            left_pairs, right_pairs = left_node[2], right_node[2]
+            return len(left_pairs) == len(right_pairs) and all(
+                self._replay_values_equal(key, other_key)
+                and self._replay_refs_equal(ref, left_nodes, other_ref, right_nodes, forward, inverse)
+                for (key, ref), (other_key, other_ref) in zip(left_pairs, right_pairs)
+            )
         return False
 
     def _replay_worlds_equal(self, left: Any, right: Any) -> Optional[bool]:
@@ -1135,12 +1266,18 @@ class Model(BaseModel):
         return list(getattr(self.agents, "_agent_objects", ()) or ())
 
     def _snapshot_agent_attrs(self) -> List[Tuple[Any, Dict[str, Any]]]:
-        """Copy public instance attributes so a replay can put them back."""
+        """Save public instance attributes and the framework's agent bindings."""
         saved: List[Tuple[Any, Dict[str, Any]]] = []
         for agent in self._agent_objects():
             attrs: Dict[str, Any] = {}
-            for key, value in list(agent.__dict__.items()):
-                if key in ("model", "id", "p") or str(key).startswith("_"):
+            for key, value in object.__getattribute__(agent, "__dict__").items():
+                if key in ("model", "id", "p"):
+                    attrs[key] = value
+                    continue
+                if key == "_ambr_container_cells":
+                    attrs[key] = value.copy()
+                    continue
+                if key.startswith("_"):
                     continue
                 try:
                     attrs[key] = copy.deepcopy(value)
@@ -1151,8 +1288,12 @@ class Model(BaseModel):
 
     def _restore_agent_attrs(self, saved: List[Tuple[Any, Dict[str, Any]]]) -> None:
         for agent, attrs in saved:
-            for key, value in attrs.items():
-                object.__setattr__(agent, key, value)
+            live = object.__getattribute__(agent, "__dict__")
+            live.pop("_ambr_container_cells", None)
+            for key in live.keys() - attrs.keys():
+                if not key.startswith("_"):
+                    del live[key]
+            live.update(attrs)
 
     def _refresh_agent_cache(self, df: pl.DataFrame) -> None:
         """Load already-present agent attributes from ``df`` without queueing."""
@@ -1163,12 +1304,17 @@ class Model(BaseModel):
             row = rows.get(agent.id)
             if row is None:
                 continue
-            for key in list(agent.__dict__):
+            attrs = object.__getattribute__(agent, "__dict__")
+            attrs.pop("_ambr_container_cells", None)
+            for key in list(attrs):
                 if key in ("model", "id", "p") or str(key).startswith("_"):
                     continue
                 if key not in df.columns:
                     continue
-                object.__setattr__(agent, key, df[key][row])
+                value = df[key][row]
+                if isinstance(value, pl.Series):
+                    value = value.to_list()
+                object.__setattr__(agent, key, value)
 
     def _underlying_generator(self, obj: Any) -> Any:
         """Return a NumPy/CuPy Generator hidden behind a thin wrapper, if any."""
@@ -1224,7 +1370,10 @@ class Model(BaseModel):
             device = (
                 getattr(execution, "device_rng", None) if execution is not None else None
             )
-            if device is not None:
+            if isinstance(device, DeviceRNG):
+                oid = keep("device_rng", device, device._snapshot_state())
+                bindings.append(("execution", "device_rng", oid))
+            elif device is not None:
                 device_gen = self._underlying_generator(device)
                 if device_gen is None:
                     return None
@@ -1263,6 +1412,29 @@ class Model(BaseModel):
             [item[1] for item in entry.streams] == [item[1] for item in post.streams]
             and entry.bindings == post.bindings
         )
+
+    @contextmanager
+    def _watch_sweep_rng(self):
+        """Check model-owned streams around agent calls, excluding scheduler draws."""
+        monitor = self._contract
+        if not (monitor.active or monitor._in_replay) or monitor._current_activation is not None:
+            yield
+            return
+        before = self._capture_rng_state()
+        try:
+            yield
+        finally:
+            after = self._capture_rng_state()
+            unchanged = None
+            if before is not None and after is not None and self._rng_same_stream_ids(before, after):
+                try:
+                    unchanged = all(
+                        self._replay_values_equal(left[3], right[3])
+                        for left, right in zip(before.streams, after.streams)
+                    )
+                except Exception:
+                    pass
+            monitor.record_sweep_rng_check(unchanged)
 
     def _rng_bound(self, place: str, name: str) -> Any:
         if place == "model":
@@ -1327,6 +1499,9 @@ class Model(BaseModel):
             for kind, _oid, obj, state in saved.streams:
                 if kind == "binding":
                     continue
+                if kind == "device_rng":
+                    obj._restore_state(state)
+                    continue
                 payload = copy.deepcopy(state)
                 if kind == "random":
                     obj.setstate(payload)
@@ -1369,6 +1544,8 @@ class Model(BaseModel):
         mode: Optional[str] = None,
         device: Optional[str] = None,
         backend: Optional[str] = None,
+        *,
+        auto_batch: bool = True,
     ) -> RunResults:
         """Run the simulation.
 
@@ -1376,9 +1553,9 @@ class Model(BaseModel):
         Use ``results['agents']`` or ``results.agents`` interchangeably.
 
         Device placement is Keras-style: call :meth:`cpu` or :meth:`gpu` on the
-        model (or pass ``device=`` / legacy ``backend=`` here). Mode can be set
-        on those fluent methods (``model.cpu(mode="vectorized")``) or here via
-        ``mode=``. On CPU, ``mode='vectorized'`` (default) dispatches
+        model (or pass ``device=`` / legacy ``backend=`` here). Use
+        :meth:`vectorize` to select vectorized execution on the chosen device,
+        or pass ``mode=`` here. On CPU, ``mode='vectorized'`` (default) dispatches
         :meth:`step_vectorized`; ``mode='oop'`` dispatches :meth:`step_oop` and
         expects tracked per-agent objects. Models that only implement
         :meth:`step` retain backwards-compatible fallback behavior.
@@ -1393,11 +1570,16 @@ class Model(BaseModel):
                 ``'raise'`` (raise :class:`~ambr.contract.ContractViolationError`
                 on the first step with an error-severity violation).
             mode: ``'vectorized'`` (default) or ``'oop'``. Overrides
-                :meth:`cpu` / :meth:`gpu` ``mode=`` and ``parameters['mode']``.
+                fluent placement and ``parameters['mode']``.
             device: ``'cpu'`` or ``'gpu'``. Overrides :meth:`cpu` / :meth:`gpu`.
                 Legacy alias: ``backend=``.
+            auto_batch: batch eligible own-field integer updates on the selected device.
+                Set to ``False`` to execute every agent call in Python.
         """
         self._contract.reset_run(contract)
+        self._auto_batch_enabled = auto_batch
+        self._auto_batches = 0
+        self._auto_batched_agent_calls = 0
 
         start_time = time.time()
         max_steps = steps if steps is not None else self.p.get('steps', 100)
@@ -1437,7 +1619,6 @@ class Model(BaseModel):
                 # device placement, teardown, and result assembly remain the
                 # same public Model lifecycle.
                 fast_runner(max_steps)
-                self.end()
             else:
                 if self.record_initial:
                     self._record_initial_state()
@@ -1448,7 +1629,8 @@ class Model(BaseModel):
                     if self._show_progress:
                         self._print_progress(self.t, max_steps)
 
-                self.end()
+            prepare_end_hook(self)
+            self.end()
         except Exception as exc:
             # Failures stay visible to the caller; no silent swallow.
             run_status = "failed"
@@ -1542,6 +1724,11 @@ class Model(BaseModel):
             extra={
                 # Keep requested step count alongside completed ``steps``.
                 "steps_requested": max_steps,
+                "auto_batch": {
+                    "enabled": self._auto_batch_enabled,
+                    "batches": self._auto_batches,
+                    "agent_calls": self._auto_batched_agent_calls,
+                },
             },
         )
         results = RunResults(
@@ -1560,6 +1747,9 @@ class Model(BaseModel):
     # --- Agent Management Delegates ---
     def add_agent(self, agent: Agent):
         """Add a single agent. Prefer :meth:`add_agents` for bulk creation."""
+        execution = getattr(self, "_execution", None)
+        if execution is not None and execution.tracked_agents:
+            sync_all_device_columns(self, dirty_only=True)
         # Forward Python attributes set on the instance (e.g. ``agent.wealth = 5``
         # before this call) into the population row.
         attributes = {
@@ -1569,6 +1759,7 @@ class Model(BaseModel):
         }
         self.population.add_agent(agent.id, self.t, **attributes)
         self._bump_id_version()
+        refresh_tracked_device_columns(self)
 
         from .sequences import AgentList
         if isinstance(self.agents, AgentList):
@@ -1593,6 +1784,10 @@ class Model(BaseModel):
         instances so ``AgentList.call`` and per-agent iteration work.
         """
         from .sequences import AgentList
+
+        execution = getattr(self, "_execution", None)
+        if execution is not None and execution.tracked_agents:
+            sync_all_device_columns(self, dirty_only=True)
 
         start_id = (
             self.population.data['id'].max() + 1
@@ -1624,11 +1819,21 @@ class Model(BaseModel):
                 if k not in agent_columns:
                     agent_columns[k] = vals
             self.population.batch_add_agents(n, step=self.t, **agent_columns)
+            # Explicit initial values take precedence over agent setup defaults.
+            for column in columns:
+                pending = self._pending_writes.get(column)
+                if pending:
+                    for agent_id in range(start_id, start_id + n):
+                        pending.pop(agent_id, None)
+                    if not pending:
+                        self._pending_writes.pop(column)
             self._bump_id_version()
+            refresh_tracked_device_columns(self)
             return self.agents
 
         self.population.batch_add_agents(n, step=self.t, **columns)
         self._bump_id_version()
+        refresh_tracked_device_columns(self)
 
         if not isinstance(self.agents, AgentList):
             return self.agents  # type: ignore[return-value]

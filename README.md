@@ -8,24 +8,24 @@
 
 AMBER is a Python framework for agent-based modeling that uses Polars for
 efficient columnar population state. It provides an AgentPy-shaped OOP lane and
-a high-performance vectorized lane (optional GPU on NVIDIA+CuPy). Multi-run
+a high-performance vectorized lane. Both can use NVIDIA GPUs through CuPy. Multi-run
 parallelism is **opt-in** (`Experiment` / `ParallelRunner` / `GPUEnsembleRunner`),
 not automatic from a single `.run()`.
 
 ## 🚀 Performance
 
-AMBER stores the entire population as a columnar Polars DataFrame and
-exposes a vectorized view API (`agents.where(...)`, `agents.at[ids]`,
-`scatter_add`) that compiles per-step updates down to a handful of
-columnar operations. Models can provide `step_vectorized()` and `step_oop()`
-for explicit native lanes; legacy models with only `step()` keep the fallback.
-The vectorized lane runs on GPU via `model.gpu().run()`.
+AMBER stores population state in Polars columns. CPU and GPU runs automatically
+batch eligible agent methods that add or subtract integer constants from an
+agent's own fields. A simple condition on that agent's own state can select
+which agents update. Other agent methods use the Python loop. Models can also
+write bulk updates directly with `agents.where(...)`, `agents.at[ids]`, or
+`scatter_add`. Compatible bulk code can run on a GPU with `model.gpu().run()`.
 
 ### GPU requirements (read this first)
 
 | Claim | Requires |
 |-------|----------|
-| CPU vectorized (default fast path) | `pip install ambr` (+ `ambr[perf]` / Numba recommended) |
+| CPU bulk updates | Column operations with `pip install ambr` (optional `ambr[perf]` / Numba) |
 | Headline **AMBER (GPU) vs FLAME** table below | **NVIDIA GPU + CuPy** (`pip install 'ambr[gpu]'` or a CUDA-matched wheel) |
 | Apple Metal / MPS | **Not supported** — AMBER does not use Mac GPU |
 
@@ -85,8 +85,8 @@ of byte-identical dynamics across frameworks.
 
 ![Framework scaling chart](https://raw.githubusercontent.com/a11to1n3/AMBER/main/benchmarks/results/scaling_chart.png)
 
-**API:** implement `step_vectorized()` (or legacy `step()`); place with
-`.cpu(mode="vectorized")` or `.gpu()`. GPU is vectorized-only. Private
+**Benchmark API:** the vectorized benchmark models implement `step_vectorized()`
+and run with `.cpu(mode="vectorized")` or `.gpu()`. Private
 optimized GPU loops require an explicit
 `approve_fast_path(evidence)` label (caller-attested provenance; AMBER
 checks presence of the label, not the evidence content) and
@@ -100,8 +100,8 @@ were verified locally on an NVIDIA RTX 3090, not by GitHub Actions.
 
 ## 🚀 Quick Start
 
-AMBER supports an **AgentPy-shaped OOP lane** and a **vectorized lane** on the
-same model. Start with whichever feels natural.
+Write a model with ordinary `setup()` and `step()` methods. Choose execution
+when you run it. Models can also supply explicit column operations.
 
 **AgentPy-shaped (method broadcast, `AgentList`):**
 
@@ -120,19 +120,339 @@ class WealthAgent(am.Agent):
 class WealthModel(am.Model):
     def setup(self):
         self.agents = am.AgentList(self, self.p.n, WealthAgent)
-    def step_oop(self):
-        # Explicit OOP lane (default mode is vectorized)
+    def step(self):
         self.agents.transfer()
     def update(self):
         self.record_model('total', int(self.agents.wealth.sum()))
 
-results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).cpu(mode="oop").run()
+results = WealthModel({'n': 50, 'steps': 20, 'seed': 1}).run()
 print(results.model.tail(3).to_dicts())      # also results['model']
 print(results.agents.head().to_dicts())
 print(results.info.get("mode"), results.info.get("execution_lane"))
 ```
 
-**Vectorized (columnar; best at large N):**
+### Automatic CPU and GPU batching
+
+To try this example from a clone, install the current checkout with
+`python -m pip install .` from the project directory.
+
+This model starts with 1,000 people at age zero. Half are active. In each of
+three steps, a person ages by one if active.
+
+```python
+import ambr as am
+
+class Person(am.Agent):
+    def setup(self):
+        self.age = 0
+        self.active = self.id % 2 == 0
+
+    def step(self):
+        if self.active:
+            self.age += 1
+
+class PopulationModel(am.Model):
+    def setup(self):
+        self.add_agents(self.p.n, agent_class=Person)
+
+    def step(self):
+        self.agents.step()
+
+params = {"n": 1_000, "steps": 3}
+results = PopulationModel(params).run()
+print(results.info["auto_batch"])
+```
+
+Choose a run call for the same model declaration.
+
+| Run call | What happens behind it |
+| --- | --- |
+| `PopulationModel(params).run()` | AMBER recognizes the rule and uses Polars to select and increment the active rows on CPU. |
+| `PopulationModel(params).vectorize().run()` | Selects vectorized mode on the current device. On CPU, this is the same mode as the default run. |
+| `PopulationModel(params).gpu().run()` | AMBER uses CuPy on NVIDIA CUDA to apply the rule. It keeps the batched columns on the device across steps until host code needs them. |
+| `PopulationModel(params).run(auto_batch=False)` | AMBER calls each agent's Python method. This is the reference run for comparing results. |
+
+Automatic batching handles supported integer additions and subtractions on an
+agent's own fields in sequential calls over a sufficiently large group of
+agents of one class. A condition can select agents using their own fields or
+a comparison such as `self.draw("move", index=2) < 0.45`. AMBER generates
+the same keyed draws on the host for CPU and GPU runs. On GPU, it uploads the
+selection mask and applies the updates to device columns. Rules involving other
+agents, shared random draws, custom attribute access, or unsupported types use
+the Python loop. Contract checking also uses the Python loop. The aging example records
+three batches and 3,000 agent calls replaced. After three steps, the active
+people are age 3 and the others are age 0. The headline GPU benchmarks above use
+explicit vectorized implementations.
+[Automatic batching implementation](src/ambr/_auto_batch.py)
+
+Bounded random walks also batch when their positions are stored as Float64.
+This agent uses the same rule on CPU and GPU. Its two axes use independent draw keys.
+
+```python
+import ambr as am
+
+
+class Walker(am.Agent):
+    def step(self):
+        self.x = max(0.0, min(100.0, self.x + (self.draw("x") * 2.0 - 1.0)))
+        self.y = max(0.0, min(100.0, self.y + (self.draw("y") * 2.0 - 1.0)))
+
+
+class Walk(am.Model):
+    def setup(self):
+        self.add_agents(1_000, agent_class=Walker, x=50.0, y=50.0)
+
+    def step(self):
+        self.agents.step()
+
+
+model = Walk({"seed": 42, "steps": 50})
+results = (model.gpu() if am.GPU_AVAILABLE else model.vectorize()).run()
+```
+
+#### The same rule in other frameworks
+
+Each example below implements the same aging rule for one of the peers in the
+[benchmark runner](benchmarks/run_all_frameworks.py).
+
+<details>
+<summary>AgentPy</summary>
+
+```python
+import agentpy as ap
+
+class Person(ap.Agent):
+    def setup(self):
+        self.age = 0
+        self.active = self.id % 2 == 0
+
+    def step(self):
+        if self.active:
+            self.age += 1
+
+class Population(ap.Model):
+    def setup(self):
+        self.agents = ap.AgentList(self, self.p.n, Person)
+
+    def step(self):
+        self.agents.step()
+
+Population({"n": 1_000, "steps": 3}).run()
+```
+
+`AgentList` broadcasts the call through `AttrIter`, which invokes each agent's
+bound method in Python. The one broadcast dispatches 1,000 Python calls per
+step. [AgentPy sequence source](https://agentpy.readthedocs.io/en/stable/_modules/agentpy/sequences.html)
+
+</details>
+
+<details>
+<summary>Mesa</summary>
+
+```python
+import mesa
+
+class Person(mesa.Agent):
+    def __init__(self, model):
+        super().__init__(model)
+        self.age = 0
+        self.active = self.unique_id % 2 == 0
+
+    def step(self):
+        if self.active:
+            self.age += 1
+
+class Population(mesa.Model):
+    def __init__(self, n):
+        super().__init__()
+        for _ in range(n):
+            Person(self)
+
+    def step(self):
+        self.agents.do("step")
+
+model = Population(1_000)
+for _ in range(3):
+    model.step()
+```
+
+Mesa registers the agents in the model's `AgentSet`. `do("step")` invokes one
+Python method per object in the current order. `shuffle_do("step")` selects a
+random activation order. [Mesa AgentSet API](https://mesa.readthedocs.io/stable/apis/agentset.html)
+
+</details>
+
+<details>
+<summary>mesa-frames</summary>
+
+This example uses the same `mesa-frames==0.1.0a0` API as the benchmark adapter.
+
+```python
+import polars as pl
+from mesa_frames import AgentSetPolars, ModelDF
+
+class People(AgentSetPolars):
+    def step(self):
+        ages = self.agents["age"] + self.agents["active"].cast(pl.Int64)
+        self.set("age", ages.to_numpy())
+
+class Population(ModelDF):
+    def __init__(self, n):
+        super().__init__()
+        people = People(self)
+        people.add(pl.DataFrame({
+            "unique_id": list(range(n)),
+            "age": [0] * n,
+            "active": [i % 2 == 0 for i in range(n)],
+        }))
+        self.agents += people
+
+    def step(self):
+        self.agents.do("step")
+
+model = Population(1_000)
+for _ in range(3):
+    model.step()
+```
+
+Each person is a row in a Polars table. The model calls `step()` once on the
+set. Polars computes the updated age column and `set()` writes it back.
+[mesa-frames 0.1.0a0](https://pypi.org/project/mesa-frames/0.1.0a0/),
+[benchmark adapter](benchmarks/models/mesa_frames_models.py)
+
+</details>
+
+<details>
+<summary>Melodie</summary>
+
+```python
+import Melodie
+
+class Person(Melodie.Agent):
+    def setup(self):
+        self.age = 0
+        self.active = self.id % 2 == 0
+
+    def step(self):
+        if self.active:
+            self.age += 1
+
+class Population(Melodie.Model):
+    def create(self):
+        self.people = self.create_agent_list(Person)
+
+    def setup(self):
+        self.people.setup_agents(1_000)
+
+    def run(self):
+        for _ in self.iterator(3):
+            for person in self.people:
+                person.step()
+```
+
+The Melodie simulator supplies the configuration and scenario and calls
+`create()`, `setup()`, and `run()`. The period loop invokes each Python agent
+object's method. [Melodie model lifecycle](https://abm4all.github.io/Melodie/html/api/model.html)
+
+</details>
+
+<details>
+<summary>SimPy</summary>
+
+```python
+import simpy
+
+def age_person(env, person):
+    for _ in range(3):
+        yield env.timeout(1)
+        if person["active"]:
+            person["age"] += 1
+
+env = simpy.Environment()
+people = [{"age": 0, "active": i % 2 == 0} for i in range(1_000)]
+for person in people:
+    env.process(age_person(env, person))
+env.run()
+```
+
+Each person is a generator process. SimPy puts its timeout on an event queue
+and resumes the process when its event is due. Events for the same time are
+processed one by one. [SimPy time and scheduling](https://simpy.readthedocs.io/en/stable/topical_guides/time_and_scheduling.html)
+
+</details>
+
+<details>
+<summary>Agents.jl</summary>
+
+```julia
+using Agents
+
+@agent struct Person(NoSpaceAgent)
+    age::Int
+    active::Bool
+end
+
+function age_person!(person, model)
+    if person.active
+        person.age += 1
+    end
+end
+
+model = StandardABM(Person; agent_step! = age_person!)
+for i in 0:999
+    add_agent!(model, 0, iseven(i))
+end
+step!(model, 3)
+```
+
+The scheduler calls `agent_step!` once per scheduled agent. Julia specializes
+the typed code and compiles it to native CPU code.
+[Agents.jl API](https://juliadynamics.github.io/Agents.jl/stable/api/),
+[Julia compiler specialization](https://docs.julialang.org/en/v1/manual/performance-tips/)
+
+</details>
+
+<details>
+<summary>FLAME GPU 2</summary>
+
+```python
+import pyflamegpu as fg
+
+rule = """
+FLAMEGPU_AGENT_FUNCTION(age_person, flamegpu::MessageNone, flamegpu::MessageNone) {
+    if (FLAMEGPU->getVariable<int>("active")) {
+        int age = FLAMEGPU->getVariable<int>("age");
+        FLAMEGPU->setVariable<int>("age", age + 1);
+    }
+    return flamegpu::ALIVE;
+}
+"""
+
+model = fg.ModelDescription("population")
+person = model.newAgent("person")
+person.newVariableInt("age", 0)
+person.newVariableInt("active", 0)
+model.newLayer().addAgentFunction(person.newRTCFunction("age_person", rule))
+
+people = fg.AgentVector(person, 1_000)
+for i in range(0, 1_000, 2):
+    people[i].setVariableInt("active", 1)
+
+sim = fg.CUDASimulation(model)
+sim.SimulationConfig().steps = 3
+sim.setPopulationData(people)
+sim.simulate()
+```
+
+Python declares the agent variables, initializes the population, and registers
+the agent function in a layer. FLAME GPU compiles the function at runtime and
+executes it in parallel on CUDA. An experimental API also transpiles restricted,
+decorated Python agent functions to C++.
+[FLAME GPU agent functions](https://docs.flamegpu.com/guide/agent-functions/defining-agent-functions.html)
+
+</details>
+
+### Explicit column operations
 
 ```python
 import ambr as am
@@ -222,8 +542,7 @@ off by default (`show_progress=True` to re-enable).
 
 ## ⚡ Vectorized View API
 
-The view API compiles per-step updates to a handful of Polars expressions
-— regardless of population size:
+The view API runs bulk operations on whole columns or selected rows:
 
 ```python
 def step(self):
@@ -268,40 +587,41 @@ declarative metrics, and set `record_initial = True` to capture a `t=0` row.
 
 ## 🔒 Snapshot-view contract
 
-**What this is:** an **operational runtime monitor** at instrumented read/write
-seams (OOP buffer vs view/lane, mutable borrows, cross-path writes).
-
-**What this is not:** a proof that a vectorized or GPU rewrite preserves an
-intended activation schedule, confluence, or bit-identical trajectories vs an
-OOP loop. `cert.clean` means *no monitored hazard was observed*, not that every
-possible ordering is equivalent.
-
-Whether a vectorized refactor preserves an intended update schedule remains a
-semantic question for the modeller. Run with a contract mode and inspect the
-per-step records:
+The snapshot-view contract checks instrumented reads and writes. `cert.clean`
+means no monitored hazard was observed. `cert.conditional_guarantee` is
+`"established"` when AMBER verifies order independence for a supported
+CPU activation sweep.
 
 ```python
 import ambr as am
 
+class Person(am.Agent):
+    def step(self):
+        if self.draw("earn") < 0.25:
+            self.wealth += 1
+
 class WealthModel(am.Model):
     def setup(self):
-        self.add_agents(50, wealth=1)
-    def step_vectorized(self):
-        donors = self.agents.where(self.agents.wealth > 0)
-        donors.wealth -= 1
-        self.agents.at[self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))].scatter_add(wealth=1)
+        self.add_agents(50, agent_class=Person, wealth=1)
 
-model = WealthModel({"steps": 20, "seed": 0, "show_progress": False})
-results = model.run(steps=20, contract="check")   # "off" | "check" | "warn" | "raise"
-for cert in results["contract"]:
-    if not cert.ok:
-        print(cert.step, cert.violations)
+    def step(self):
+        self.agents.step()
+
+results = WealthModel({"steps": 20, "seed": 7}).run(contract="check")
+cert = results["contract"][0]
+assert cert.conditional_guarantee == "established"
+print(cert.certification)
 ```
 
-`check` records a `ContractCertificate` per step; `warn` also emits a warning per
-violation; `raise` stops on the first error. Mode `off` (default) adds no monitor
-bookkeeping. `cert.clean` means that no monitored error or warning was observed,
-not that every possible activation order is equivalent.
+`check` records a `ContractCertificate` per step. `warn` also emits a warning per
+violation. `raise` stops on the first error. Mode `off` disables the monitor.
+The proof covers supported integer updates and exact, fixed-target integer
+reductions for one sequential or shuffled sweep at its observed entry state.
+`self.draw("earn")` gives the same uniform value for a given seed, step,
+agent ID, and event. Use `index=` for multiple draws within one event.
+Other rules and GPU runs receive `"not_established"` with a
+`cert.certification_reason`. Separately written vectorized and GPU kernels
+require reference comparisons.
 
 The monitor watches **two write paths** (and combinations):
 
@@ -310,21 +630,21 @@ The monitor watches **two write paths** (and combinations):
 * **Cross-path** — same column via both OOP and view in one step → `cross_path_write`
 * **Mutable raw arrays** — `agents.array(...)` → `uncertified_mutable_borrow`
 
-`scatter_add` is the sanctioned multi-write reducer (not treated as a conflicting
-ordinary commit). Prefer those APIs over assigning `population.data` directly.
+Ordinary view writes require unique target IDs. Use `scatter_add` or
+`scatter_max` for repeated targets.
 
 ## 🎮 GPU backend & batched calibration
 
-**Single-run (native):** place a vectorized model on device with
-`model.gpu().run()` when NVIDIA+CuPy are available. Prefer `step_vectorized()`
-(legacy `step()` still works).
-Numeric columns stay device-resident for the run. Contract modes use the
+**Single-run (native):** call `model.gpu().run()` when NVIDIA+CuPy are available.
+AMBER batches eligible ordinary agent rules on the GPU and also supports explicit
+column updates. It uses `step_vectorized()` when provided, otherwise `step()` or
+a standalone `step_oop()`. Numeric columns stay on the device until host access
+or teardown. Contract modes use the
 instrumented general path; private model-specific fast loops run only with
 `contract="off"` **and** an explicit per-instance
 `approve_fast_path(evidence)` declaration. The evidence string is a
 caller-supplied provenance label, not something AMBER verifies. Without it,
-`gpu().run()` uses the general path. Private loops are not covered by the
-monitor. OOP agents use `cpu(mode="oop")` — not GPU.
+`gpu().run()` uses the general path. Private loops bypass the monitor.
 
 ```python
 import ambr as am
@@ -419,6 +739,10 @@ derivative-free calibration at scale.
 
 ## 📦 Installation
 
+The automatic-batching examples and `.vectorize()` use this checkout.
+From the project directory, install it with `python -m pip install .`.
+The commands below install the published distribution and its extras.
+
 ```bash
 pip install ambr
 
@@ -441,7 +765,7 @@ am.print_status()
 - **Simple API**: AgentPy-shaped OOP lane + vectorized columnar views on one model
 - **High Performance**: Polars DataFrames; optional Numba (`ambr[perf]`) for scatters
 - **Device placement**: Keras-style `model.cpu(mode=...)` / `model.gpu()` with
-  `step_vectorized` / `step_oop` hooks (GPU is vectorized-only)
+  `step_vectorized` / `step_oop` hooks and automatic batching for eligible agent rules
 - **Speed lanes**: `am.print_status()` / `am.recommend(n)` / `ArrayKernelModel`
 - **Snapshot-view monitor**: operational diagnostics for observed write/borrow
   conflicts and uncertified mutable arrays (not a schedule proof)

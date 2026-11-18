@@ -9,7 +9,9 @@ import numpy as np
 from .execution import (
     active_execution,
     is_gpu_active,
+    reconcile_host_frame,
     sync_all_device_columns,
+    sync_device_column_to_frame,
 )
 from .gpu import scatter_add, to_host
 
@@ -26,6 +28,8 @@ class DeviceColumn:
 
     def _array(self):
         ex = active_execution(self._model)
+        if ex is not None and ex.exposed_frame is not None:
+            reconcile_host_frame(self._model, ex)
         if ex is None or self._name not in ex.device_columns:
             raise KeyError(self._name)
         self._model._contract_record_borrow(self._name)
@@ -41,6 +45,9 @@ class DeviceColumn:
         # observed by the assignment/scatter hooks below.
         ex = active_execution(self._model)
         if ex is not None and ex.config.device == "gpu":
+            if self._name in ex.agent_writes:
+                sync_device_column_to_frame(self._model, self._name)
+            ex.borrowed_columns.add(self._name)
             ex.dirty_columns.add(self._name)
         self._model._contract_record_mutable_borrow(self._name)
         return array
@@ -92,6 +99,9 @@ def device_resolve_positions(model: "Model", ids_on_device: Any) -> Any:
     xp = ex.xp
     ids_on_device = xp.asarray(ids_on_device, dtype=xp.int64).ravel()
     if ex.ids_are_arange:
+        n = model.population.data.height
+        if xp.any((ids_on_device < 0) | (ids_on_device >= n)).item():
+            raise KeyError("scatter target is outside the population")
         return ids_on_device
     from ._id_index import resolve_positions
 
@@ -107,6 +117,7 @@ def device_scatter_write(
     values: Any,
     *,
     positions_on_device: bool = False,
+    target_ids=None,
 ) -> None:
     """Scatter-write into a device-resident column (last write wins per index)."""
     ex = active_execution(model)
@@ -124,10 +135,12 @@ def device_scatter_write(
         if getattr(type(values), "__module__", "").split(".")[0] == xp.__name__
         else xp.asarray(values)
     )
+    if col_name in ex.agent_writes:
+        sync_device_column_to_frame(model, col_name)
     base[pos] = vals
     ex.device_columns[col_name] = base
     ex.dirty_columns.add(col_name)
-    model._contract.record_commit([col_name])
+    model._contract.record_commit([col_name], target_ids)
 
 
 def device_scatter_add(
@@ -138,10 +151,25 @@ def device_scatter_add(
     *,
     positions_on_device: bool = False,
 ) -> None:
-    """Scatter-add on a device-resident column; Polars stays stale until sync."""
+    """Scatter-add into a device-resident column."""
+    device_scatter_reduce(
+        model, col_name, positions, delta, "+", positions_on_device=positions_on_device
+    )
+
+
+def device_scatter_reduce(
+    model: "Model",
+    col_name: str,
+    positions: Any,
+    values: Any,
+    operator: str,
+    *,
+    positions_on_device: bool = False,
+) -> None:
+    """Apply a scatter reduction to a device-resident column."""
     ex = active_execution(model)
     if ex is None:
-        raise RuntimeError("device_scatter_add requires an active GPU run")
+        raise RuntimeError("device_scatter_reduce requires an active GPU run")
     xp = ex.xp
     base = ex.device_columns[col_name]
     pos = (
@@ -150,15 +178,20 @@ def device_scatter_add(
         else xp.asarray(positions, dtype=xp.int64)
     )
     d = (
-        delta
-        if getattr(type(delta), "__module__", "").split(".")[0] == xp.__name__
-        else xp.asarray(delta)
+        values
+        if getattr(type(values), "__module__", "").split(".")[0] == xp.__name__
+        else xp.asarray(values)
     )
-    scatter_add(base, pos, d)
+    if col_name in ex.agent_writes:
+        sync_device_column_to_frame(model, col_name)
+    if operator == "+":
+        scatter_add(base, pos, d)
+    else:
+        xp.maximum.at(base, pos, d)
     ex.device_columns[col_name] = base
     ex.dirty_columns.add(col_name)
     domain = str(getattr(base, "dtype", getattr(d, "dtype", "")))
-    model._contract_record_reduction([col_name], domains={col_name: domain})
+    model._contract_record_reduction([col_name], domains={col_name: domain}, operator=operator)
 
 
 # Re-export for contract snapshots / model hooks.

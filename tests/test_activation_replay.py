@@ -3,6 +3,7 @@
 import random
 
 import numpy as np
+import pytest
 
 from ambr.contract import ContractCertificate, ContractViolation
 from ambr.results import RunResults
@@ -83,6 +84,82 @@ class _CleanStaged(am.Model):
 
 def _races(cert):
     return [v for v in cert.violations if v.kind == "activation_race"]
+
+
+def test_replay_restores_parameter_graph_and_roster_after_a_replay_only_birth():
+    class Agent(am.Agent):
+        def step(self):
+            self.model.agents.by_id(0).x = self.id
+
+    class Model(am.Model):
+        model_reporters = {"counter": lambda m: m.p.counter, "count": lambda m: len(m.agents)}
+
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, x=0)
+
+        def step(self):
+            self.activate_agents()
+            self.p.counter += 1
+            if self.agents.by_id(0).x == 0:
+                self.add_agents(1, agent_class=Agent, x=0)
+
+    params = {**_params(), "counter": 0}
+    baseline = Model(params).run()
+    model = Model(params)
+    result = model.run(contract="check")
+    race, = _races(result["contract"][0])
+    assert race.divergence_witness is None
+    assert "roster" in race.divergence_reason
+    assert result.model.equals(baseline.model)
+    assert result.agents.equals(baseline.agents)
+    assert [agent.id for agent in model.agents] == [0, 1]
+    assert model.p.counter == 1
+
+
+def test_whole_column_read_is_attributed_to_the_active_agent():
+    class Agent(am.Agent):
+        def step(self):
+            if self.id == 0:
+                self.x = 1
+            else:
+                self.y = self.model.agents.x.sum()
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, x=0, y=0)
+
+        def step(self):
+            self.activate_agents()
+
+    result = Model(_params()).run(contract="check")
+    race, = _races(result["contract"][0])
+    assert race.columns == ["x"]
+    assert race.ids == [0, 1]
+    assert race.divergence_witness is True
+    assert result.agents["y"].to_list() == [0, 1]
+
+
+def test_mixed_reduction_operators_on_one_cell_report_a_divergent_witness():
+    class Agent(am.Agent):
+        def step(self):
+            if self.id == 0:
+                self.scatter_add(x=1)
+            else:
+                self.model.agents.by_id(0).scatter_max(x=5)
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, x=0)
+
+        def step(self):
+            self.activate_agents()
+
+    result = Model(_params()).run(contract="check")
+    race, = _races(result["contract"][0])
+    assert race.columns == ["x"]
+    assert race.ids == [0, 1]
+    assert race.divergence_witness is True
+    assert result.agents["x"].to_list() == [5, 0]
 
 
 def test_staged_conflict_does_not_recurse_and_witness_is_inconclusive():
@@ -302,7 +379,8 @@ def test_swapped_random_replacement_is_not_left_installed():
     plain_res = plain.run(contract="off")
     races = _races(res["contract"][0])
     assert races
-    assert all(v.divergence_witness is False for v in races)
+    assert all(v.divergence_witness is None for v in races)
+    assert all("random stream state could not be verified" in v.divergence_reason for v in races)
     assert checked.random is original
     assert checked.random.getstate() == plain.random.getstate()
     assert res["agents"].sort("id")["wealth"].to_list() == (
@@ -720,3 +798,69 @@ def test_failed_rng_restore_still_restores_forward_model_state():
     assert model.nprandom is None
     assert model.events is events
     assert events == [0, 1]
+
+
+@pytest.mark.parametrize("schedule", ["sequential", "broadcast"])
+@pytest.mark.parametrize("stream", ["random", "rng"])
+def test_replay_withholds_witness_for_a_cached_shared_draw(schedule, stream):
+    class Person(am.Agent):
+        def step(self):
+            if self.id == 0:
+                self.observed = self.model.agents.by_id(1).wealth
+            else:
+                self.wealth = 1
+            self.sample = self.model._cached_draw()
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Person, wealth=1, observed=0, sample=0.0)
+            self._cached_draw = getattr(self, stream).random
+
+        def step(self):
+            if schedule == "broadcast":
+                self.agents.step()
+            else:
+                self.activate_agents()
+
+    params = dict(_params(), seed=7)
+    unchecked_model = Model(params)
+    unchecked = unchecked_model.run()
+    checked_model = Model(params)
+    checked = checked_model.run(contract="check")
+    assert checked.agents.equals(unchecked.agents)
+    assert checked_model.random.getstate() == unchecked_model.random.getstate()
+    assert checked_model.rng.bit_generator.state == unchecked_model.rng.bit_generator.state
+    cert = checked["contract"][0]
+    assert any(v.kind == "premise_p3_violation" for v in cert.violations)
+    races = _races(cert)
+    assert races and all(v.divergence_witness is None for v in races)
+    assert all("shared random stream state changed" in v.divergence_reason for v in races)
+
+
+def test_replay_withholds_witness_when_only_the_swapped_branch_uses_a_cached_draw():
+    class Person(am.Agent):
+        def step(self):
+            if self.id == 0:
+                if self.model.agents.by_id(1).wealth == 2:
+                    self.sample = self.model._cached_draw()
+            else:
+                self.wealth = 2
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Person, wealth=1, sample=0.0)
+            self._cached_draw = self.random.random
+
+        def step(self):
+            self.activate_agents()
+
+    params = dict(_params(), seed=7)
+    model = Model(params)
+    result = model.run(contract="check")
+    assert result.agents["sample"].to_list() == [0.0, 0.0]
+    assert model.random.getstate() == random.Random(7).getstate()
+    cert = result["contract"][0]
+    assert all(v.kind != "premise_p3_violation" for v in cert.violations)
+    races = _races(cert)
+    assert races and all(v.divergence_witness is None for v in races)
+    assert all("shared random stream state changed" in v.divergence_reason for v in races)

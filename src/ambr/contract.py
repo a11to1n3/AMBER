@@ -36,17 +36,15 @@ The checks:
   births/deaths are reported as *warnings*; column removal and dtype change are
   *errors*.
 
-This is a conformance *monitor*, not a prover, with two known limits: (1) the
+The general conformance monitor has two known limits: (1) the
 schema/population diff is **endpoint-only** -- a mutation that is introduced and
 reverted within a single step is not caught; (2) raw ``population.data = ...``
 writes that bypass both ``_queue_write`` and the reported lane/view seams are
 invisible to the conflict check (``Population.data = ...`` is deprecated and
 warns; prefer ``agents.col = ...`` / ``agents.set`` / ``agents.commit``).
-Cell-level dependency and commutativity reasoning remains the job of model
-analysis or tests; a clean certificate is evidence only for the operations the
-runtime seams can observe. The certificate names that observed scope and the
-assumptions outside it. ``clean`` means no observed violation. It does not
-establish the conditional activation guarantee.
+``clean`` means no observed violation. The separate conditional guarantee is
+established only when the runtime verifies a supported deterministic activation
+sweep and its observed cell effects agree with the proof.
 
 A conflict closed while a stage is still open is reported as
 ``activation_race`` with ``divergence_witness is None``. Automatic replay
@@ -57,6 +55,7 @@ mode before it returns.
 from __future__ import annotations
 
 import sys
+from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 SEVERITY_ERROR = "error"
@@ -65,14 +64,15 @@ SEVERITY_WARNING = "warning"
 #: Valid values for ``Model.run(contract=...)``.
 CONTRACT_MODES = ("off", "check", "warn", "raise")
 
-# Snapshot type: ({column: dtype-str}, id-set)
-Snapshot = Tuple[Dict[str, str], Set[Any]]
+# Snapshot type: ({column: dtype-str}, ID multiplicities)
+Snapshot = Tuple[Dict[str, str], Counter[Any]]
 
 #: Seams a certificate can actually see. ``clean`` means none of these
 #: reported a violation. It does not cover state outside this tuple.
 OBSERVED_SCOPE = (
     "buffered Agent attribute writes",
     "attributed activation reads and writes",
+    "keyed agent draws",
     "lane and view column commits",
     "declared scatter reductions",
     "column borrows",
@@ -85,8 +85,8 @@ OBSERVED_ASSUMPTIONS = (
     "model state are outside the trace.",
 )
 
-#: The conditional activation guarantee is not established by this monitor.
 CONDITIONAL_GUARANTEE_NOT_ESTABLISHED = "not_established"
+CONDITIONAL_GUARANTEE_ESTABLISHED = "established"
 
 
 def _ieee_float_domain(domain: str) -> bool:
@@ -139,8 +139,8 @@ class ContractCertificate:
     ``ok`` is ``True`` when no *error*-severity violations were found (warnings
     do not flip it). ``clean`` is ``True`` only when there are no violations of
     any severity: no observed conflict on the seams in ``observed_scope``.
-    ``conditional_guarantee`` stays ``not_established``; a clean result does
-    not make an activation-order claim.
+    ``conditional_guarantee`` is established for the activation sweep described
+    by ``certification`` when the runtime verifies the supported premises.
     """
 
     def __init__(self, step: int):
@@ -149,6 +149,9 @@ class ContractCertificate:
         self.observed_scope = OBSERVED_SCOPE
         self.assumptions = OBSERVED_ASSUMPTIONS
         self.conditional_guarantee = CONDITIONAL_GUARANTEE_NOT_ESTABLISHED
+        self.certification: Optional[Dict[str, Any]] = None
+        self.certification_reason: Optional[str] = None
+        self.activations_traced = 0
 
     @property
     def ok(self) -> bool:
@@ -218,16 +221,32 @@ class ContractMonitor:
         self._cross_path_cols: Set[str] = set()
         # Step-entry snapshot for schema / population diff
         self._entry_schema: Optional[Dict[str, str]] = None
-        self._entry_ids: Optional[Set[Any]] = None
+        self._entry_ids: Optional[Counter[Any]] = None
         # Activation trace. A stage closes this trace without replay.
         self._current_stage: Optional[str] = None
         self._stage_open: bool = False
         self._stage_violations: List[ContractViolation] = []
         self._current_activation: Any = None
+        self._activation_stack: List[Any] = []
+        self._staged_activation_count = 0
+        self._unattributed_columns: Set[str] = set()
+        self._shared_rng_activations: Set[Any] = set()
         self._activation_order: List[Any] = []
+        self._activation_sweeps = 0
+        self._activation_count = 0
+        self._trace_gaps: Set[str] = set()
+        self._sweep_proof = None
+        self._sweep_reason: Optional[str] = None
         self._activation_reads: Dict[Any, Set[Tuple[str, Any]]] = {}
+        self._activation_column_reads: Dict[Any, Set[str]] = {}
         self._activation_writes: Dict[Any, Set[Tuple[str, Any]]] = {}
+        self._activation_reductions: Dict[Any, Set[Tuple[str, Any, str]]] = {}
+        self._activation_draws: Dict[Any, List[Tuple[int, int, Any, str, int, float]]] = {}
         self._in_replay: bool = False
+        self._used_shared_rng = False
+        self._sweep_rng_reason: Optional[str] = None
+        self._replay_sweep_rng_reason: Optional[str] = None
+        self._sweep_rng_changed = False
 
     def reset_run(self, mode: str) -> None:
         """Configure mode for a new ``Model.run`` and clear prior certificates."""
@@ -241,7 +260,8 @@ class ContractMonitor:
 
     def begin_step(self, snapshot: Snapshot) -> None:
         """Arm tracking for a step body; ``snapshot`` is step-entry state."""
-        self._entry_schema, self._entry_ids = snapshot
+        self._entry_schema, ids = snapshot
+        self._entry_ids = ids if isinstance(ids, Counter) else Counter(ids)
         self._write_counts = {}
         self._dup_cells = set()
         self._buffered_cols = set()
@@ -257,9 +277,24 @@ class ContractMonitor:
         self._stage_open = False
         self._stage_violations = []
         self._current_activation = None
+        self._activation_stack = []
+        self._staged_activation_count = 0
+        self._unattributed_columns = set()
+        self._shared_rng_activations = set()
+        self._activation_sweeps = 0
+        self._activation_count = 0
+        self._trace_gaps = set()
+        self._sweep_proof = None
+        self._sweep_reason = None
         self._activation_order = []
         self._activation_reads = {}
+        self._activation_column_reads = {}
         self._activation_writes = {}
+        self._activation_reductions = {}
+        self._activation_draws = {}
+        self._used_shared_rng = False
+        self._sweep_rng_reason = None
+        self._sweep_rng_changed = False
         self.active = True
 
     def end_step(
@@ -273,11 +308,12 @@ class ContractMonitor:
         self.active = False
         exit_schema, exit_ids = snapshot
         cert = ContractCertificate(step)
+        cert.activations_traced = self._activation_count
         self._check_duplicate_buffered(cert)
         self._check_cross_path(cert)
         self._check_schema(cert, exit_schema)
         self._check_lane_conflicts(cert)
-        self._check_population(cert, exit_ids)
+        self._check_population(cert, exit_ids if isinstance(exit_ids, Counter) else Counter(exit_ids))
         self._check_inexact_reductions(cert)
         if sys.exc_info()[0] is None:
             allow_replay = not self._stage_open and not self._in_replay
@@ -286,8 +322,47 @@ class ContractMonitor:
             )
         if self._stage_violations:
             cert.violations.extend(self._stage_violations)
+        if model is not None and model.mode == "oop" and self._unattributed_columns:
+            cert.add(ContractViolation(
+                "unattributed_writes",
+                "Agent writes or reductions occurred outside an instrumented activation.",
+                columns=sorted(self._unattributed_columns),
+            ))
+        if self._shared_rng_activations or self._sweep_rng_changed:
+            cert.add(ContractViolation(
+                "premise_p3_violation",
+                "The sweep accessed a shared random stream or changed its state. "
+                "Order witnesses require keyed draws.",
+                ids=sorted(self._shared_rng_activations, key=str),
+            ))
+        if self._trace_gaps:
+            cert.add(ContractViolation(
+                "incomplete_activation_trace",
+                f"Some effects could not be attributed: {', '.join(sorted(self._trace_gaps))}.",
+                severity=SEVERITY_WARNING,
+            ))
+        cert.certification_reason = self._certify_step(cert, model)
+        self._sweep_proof = None
         self.certificates.append(cert)
         return cert
+
+    def _certify_step(self, cert: ContractCertificate, model: Optional[Any]) -> Optional[str]:
+        if model is None:
+            return "The step did not finish."
+        if self._trace_gaps or self._unattributed_columns:
+            return "Some writes were outside the attributed activation trace."
+        if not cert.clean:
+            return "The monitor reported one or more contract violations."
+        if self._activation_sweeps != 1 or self._staged_activation_count or self._stage_open:
+            return "Certification requires one fully traced single-phase activation sweep."
+        proof = self._sweep_proof
+        if proof is None:
+            return self._sweep_reason or "No supported activation sweep was verified."
+        if self._activation_count != len(proof.ids) or not proof.matches(self):
+            return "The recorded activation effects did not match the verified sweep."
+        cert.conditional_guarantee = CONDITIONAL_GUARANTEE_ESTABLISHED
+        cert.certification = proof.evidence()
+        return None
 
     def record_buffered_write(self, column: str, agent_id: Any) -> None:
         """Count an ordinary OOP-path write; second write to a cell is a conflict."""
@@ -302,15 +377,27 @@ class ContractMonitor:
         if column in self._committed or column in self._reduced_cols:
             self._cross_path_cols.add(column)
 
-    def record_commit(self, columns: Iterable[str]) -> None:
-        """Record a whole-column lane/view commit of ``columns`` this step."""
+    def record_commit(self, columns: Iterable[str], target_ids: Optional[Iterable[Any]] = None) -> None:
+        """Record a lane/view commit and any known activation targets."""
         if not self.active:
             return
+        columns = tuple(columns)
         for c in columns:
             self._commit_counts[c] = self._commit_counts.get(c, 0) + 1
             self._committed.add(c)
             if c in self._buffered_cols or c in self._reduced_cols:
                 self._cross_path_cols.add(c)
+        if self._current_activation is not None:
+            if target_ids is None:
+                self._trace_gaps.add("column commit without target IDs")
+            else:
+                writes = self._activation_writes.setdefault(self._current_activation, set())
+                writes.update((column, aid) for aid in target_ids for column in columns)
+
+    def record_frame_replacement(self) -> None:
+        """Mark a frame replacement whose cell effects are outside the trace."""
+        if self.active and self._current_activation is not None:
+            self._trace_gaps.add("agent frame replacement")
 
     def record_reduction(
         self,
@@ -349,6 +436,8 @@ class ContractMonitor:
         self._borrowed.add(column)
         if column in self._committed:
             self._raw_cols.add(column)
+        if not self._in_replay and self._current_activation is not None:
+            self._activation_column_reads.setdefault(self._current_activation, set()).add(column)
 
     def record_mutable_borrow(self, column: str) -> None:
         """Record raw mutable array access that cannot be fully traced."""
@@ -358,6 +447,32 @@ class ContractMonitor:
         self._mutable_borrows.add(column)
 
     # --- activation trace ---------------------------------------------------
+
+    def begin_sweep(self, agents, method: str, single_phase: bool) -> None:
+        self._activation_sweeps += 1
+        if self._activation_sweeps != 1 or self._stage_open or self._current_activation is not None:
+            return
+        if single_phase:
+            from ._certify import verify_sweep
+
+            self._sweep_proof, self._sweep_reason = verify_sweep(agents, method)
+        else:
+            self._sweep_reason = "Certification requires a single-phase sweep with no method arguments."
+
+    def record_sweep_rng_check(self, unchanged: Optional[bool]) -> None:
+        """Keep replay inconclusive if the sweep changed a stream or could not be checked."""
+        if unchanged is True:
+            return
+        reason = (
+            "shared random stream state changed during an activation sweep"
+            if unchanged is False else "random stream state could not be verified during activation"
+        )
+        if self._in_replay:
+            self._replay_sweep_rng_reason = reason
+        else:
+            self._sweep_rng_reason = reason
+            if unchanged is False:
+                self._sweep_rng_changed = True
 
     def begin_stage(self, stage: str = "stage0") -> None:
         """Start a named stage. An open trace is closed without replay."""
@@ -385,15 +500,21 @@ class ContractMonitor:
         temp = ContractCertificate(0)
         self._check_activation_races(temp, model=None, allow_replay=False)
         self._stage_violations.extend(temp.violations)
+        self._staged_activation_count += len(self._activation_order)
         self._current_activation = None
         self._activation_order = []
         self._activation_reads = {}
+        self._activation_column_reads = {}
         self._activation_writes = {}
+        self._activation_reductions = {}
+        self._activation_draws = {}
 
     def begin_activation(self, agent_id: Any) -> None:
         """Mark the start of one agent activation inside the open step."""
         if not self.active or self._in_replay:
             return
+        self._activation_count += 1
+        self._activation_stack.append(self._current_activation)
         self._current_activation = agent_id
         if agent_id not in self._activation_reads:
             self._activation_order.append(agent_id)
@@ -402,7 +523,7 @@ class ContractMonitor:
 
     def end_activation(self) -> None:
         """Mark the end of the current activation."""
-        self._current_activation = None
+        self._current_activation = self._activation_stack.pop() if self._activation_stack else None
 
     def record_activation_read(self, column: str, agent_id: Any) -> None:
         """Record an ordinary attribute read by the active activation."""
@@ -411,12 +532,35 @@ class ContractMonitor:
         act = self._current_activation
         self._activation_reads.setdefault(act, set()).add((column, agent_id))
 
+    def record_keyed_draw(
+        self, seed: int, step: int, agent_id: Any, event: str, index: int, value: float
+    ) -> None:
+        """Record the key and value returned by the runtime's stateless generator."""
+        if not self.active or self._in_replay or self._current_activation is None:
+            return
+        draws = self._activation_draws.setdefault(self._current_activation, [])
+        draws.append((seed, step, agent_id, event, index, value))
+
     def record_activation_write(self, column: str, agent_id: Any) -> None:
         """Record an ordinary attribute write by the active activation."""
-        if not self.active or self._in_replay or self._current_activation is None:
+        if not self.active or self._in_replay:
+            return
+        if self._current_activation is None:
+            self._unattributed_columns.add(column)
             return
         act = self._current_activation
         self._activation_writes.setdefault(act, set()).add((column, agent_id))
+
+    def record_activation_reductions(self, columns, ids, operator: str) -> None:
+        """Attribute reduction targets to the activation that issued them."""
+        if not self.active or self._in_replay:
+            return
+        if self._current_activation is None:
+            if ids:
+                self._unattributed_columns.update(columns)
+            return
+        reductions = self._activation_reductions.setdefault(self._current_activation, set())
+        reductions.update((column, aid, operator) for column in columns for aid in ids)
 
     # --- internal checks ----------------------------------------------------
 
@@ -555,12 +699,22 @@ class ContractMonitor:
         ))
 
     def _check_population(
-        self, cert: ContractCertificate, exit_ids: Set[Any]
+        self, cert: ContractCertificate, exit_ids: Counter[Any]
     ) -> None:
         if self._entry_ids is None:
             return
-        born = exit_ids - self._entry_ids
-        died = self._entry_ids - exit_ids
+        duplicates = {
+            aid for counts in (self._entry_ids, exit_ids)
+            for aid, count in counts.items() if count > 1
+        }
+        if duplicates:
+            cert.add(ContractViolation(
+                "duplicate_agent_id",
+                "Agent IDs must be unique at step entry and exit.",
+                ids=sorted(duplicates, key=str),
+            ))
+        born = exit_ids.keys() - self._entry_ids.keys()
+        died = self._entry_ids.keys() - exit_ids.keys()
         if born or died:
             cert.add(ContractViolation(
                 "population_mutation",
@@ -577,7 +731,7 @@ class ContractMonitor:
         model: Optional[Any] = None,
         allow_replay: bool = False,
     ) -> None:
-        """Report cross-activation write/write and read/write overlaps.
+        """Report overlaps involving activation reads, writes, and reductions.
 
         ``allow_replay`` is false while a stage is open. The diagnostic is
         still recorded, and ``divergence_witness`` stays ``None``.
@@ -588,19 +742,19 @@ class ContractMonitor:
         position = {act: index for index, act in enumerate(order)}
         writers_by_cell: Dict[Tuple[str, Any], List[Any]] = {}
         readers_by_cell: Dict[Tuple[str, Any], List[Any]] = {}
+        readers_by_column: Dict[str, List[Any]] = {}
+        reducers_by_cell: Dict[Tuple[str, Any], Dict[Any, Set[str]]] = {}
         for act in order:
             for col, aid in self._activation_writes.get(act, ()):
-                writers = writers_by_cell.setdefault((col, aid), [])
-                if act not in writers:
-                    writers.append(act)
+                writers_by_cell.setdefault((col, aid), []).append(act)
             for col, aid in self._activation_reads.get(act, ()):
-                readers = readers_by_cell.setdefault((col, aid), [])
-                if act not in readers:
-                    readers.append(act)
+                readers_by_cell.setdefault((col, aid), []).append(act)
+            for col in self._activation_column_reads.get(act, ()):
+                readers_by_column.setdefault(col, []).append(act)
+            for col, aid, operator in self._activation_reductions.get(act, ()):
+                reducers_by_cell.setdefault((col, aid), {}).setdefault(act, set()).add(operator)
 
-        # (writer_or_first, reader_or_second, cell, kind). ``kind`` is
-        # "write" when two activations write the cell, "read" when one
-        # writes a cell another activation reads.
+        # (first activation, second activation, target cell, conflict kind).
         hazards: List[Tuple[Any, Any, Tuple[str, Any], str]] = []
         seen_hazards: Set[Tuple[Any, Any, Tuple[str, Any], str]] = set()
 
@@ -611,13 +765,28 @@ class ContractMonitor:
             seen_hazards.add(key)
             hazards.append(key)
 
-        for cell, writers in writers_by_cell.items():
+        for cell in dict.fromkeys((*writers_by_cell, *reducers_by_cell)):
+            writers = writers_by_cell.get(cell, ())
+            reducers = reducers_by_cell.get(cell, {})
             if len(writers) >= 2:
                 add_hazard(writers[0], writers[1], cell, "write")
             for writer in writers:
-                for reader in readers_by_cell.get(cell, ()):
-                    if reader != writer:
-                        add_hazard(writer, reader, cell, "read")
+                for reducer in reducers:
+                    add_hazard(writer, reducer, cell, "set_reduce")
+            if reducers and len(set.union(*reducers.values())) > 1:
+                reducer_order = list(reducers)
+                for index, first in enumerate(reducer_order):
+                    if len(reducers[first]) > 1:
+                        add_hazard(first, first, cell, "mixed_reductions")
+                    for second in reducer_order[index + 1:]:
+                        if reducers[first] != reducers[second]:
+                            add_hazard(first, second, cell, "mixed_reductions")
+            readers = (*readers_by_cell.get(cell, ()), *readers_by_column.get(cell[0], ()))
+            if readers:
+                for modifier in dict.fromkeys((*writers, *reducers)):
+                    for reader in readers:
+                        if reader != modifier:
+                            add_hazard(modifier, reader, cell, "read")
         if not hazards:
             return
 
@@ -630,6 +799,8 @@ class ContractMonitor:
 
         def witness_for(first: Any, second: Any) -> Tuple[Optional[bool], Optional[str]]:
             nonlocal replayed
+            if first == second:
+                return None, None
             left, right = (first, second)
             if position.get(left, 0) > position.get(right, 0):
                 left, right = right, left
@@ -655,7 +826,7 @@ class ContractMonitor:
             elif witness is False:
                 note = (
                     " Witness replay under swapped order produced "
-                    "identical final state."
+                    "identical final state (unconfirmed divergence)."
                 )
             else:
                 note = (
@@ -669,19 +840,22 @@ class ContractMonitor:
                     f"Distinct activations {first} and {second} wrote the "
                     f"same cell {cell}.{note}"
                 )
-                ids = [first, second]
-            else:
+            elif kind == "read":
+                direction = "read-after-write" if position[first] < position[second] else "write-after-read"
                 detail = (
-                    f"Activation {first} wrote cell {cell} and activation "
-                    f"{second} read it in the same step.{note}"
+                    f"Activation {first} modified cell {cell} and activation "
+                    f"{second} read it in the same step ({direction}).{note}"
                 )
-                ids = [first, second]
+            elif kind == "set_reduce":
+                detail = f"Activation {first} wrote cell {cell} and activation {second} reduced into it.{note}"
+            else:
+                detail = f"Activations used incompatible reduction operators on cell {cell}.{note}"
             cert.add(ContractViolation(
                 "activation_race",
                 detail,
                 severity=SEVERITY_ERROR,
                 columns=[col],
-                ids=ids,
+                ids=[first] if first == second else [first, second],
                 divergence_witness=witness,
                 divergence_reason=reason,
             ))

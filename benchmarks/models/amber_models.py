@@ -58,7 +58,7 @@ def _wealth_snapshot_step(model):
         recipient = model.random.choice(agents)
         delta[donor.id] -= 1
         delta[recipient.id] += 1
-    for agent in agents:
+    for agent in model.stage_agents("commit_wealth"):
         agent.wealth = entry[agent.id] + delta[agent.id]
 
 

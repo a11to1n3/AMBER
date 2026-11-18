@@ -56,6 +56,11 @@ class TestAgentList:
         assert agent_list[-1] == mock_agents[2]
         assert agent_list[-2] == mock_agents[1]
 
+    def test_creation_step_remains_a_column_without_an_agent_method(self):
+        model = am.Model({})
+        model.add_agents(3, age=0)
+        assert model.agents.step.to_list() == [0, 0, 0]
+
     def test_agentlist_getitem_out_of_bounds(self):
         """Test AgentList indexing with out of bounds."""
         mock_model = Mock()

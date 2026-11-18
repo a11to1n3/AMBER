@@ -74,7 +74,10 @@ def resolve_positions(model: Any, df: pl.DataFrame, ids_np: np.ndarray) -> np.nd
 
     # Contiguous [0, N) — common after bulk create.
     if df_ids_np.size == df.height and ids_are_arange(model, df_ids_np):
-        return np.asarray(ids_np, dtype=np.int64)
+        positions = np.asarray(ids_np, dtype=np.int64)
+        if np.any((positions < 0) | (positions >= df.height)):
+            raise KeyError("target ID is outside the population")
+        return positions
 
     # General id → row lookup, reused within the same id-version.
     cached: Optional[Tuple[int, Dict[int, int]]] = getattr(model, "_id_pos_cache", None)
@@ -90,3 +93,20 @@ def resolve_positions(model: Any, df: pl.DataFrame, ids_np: np.ndarray) -> np.nd
         dtype=np.int64,
         count=int(ids_np.size),
     )
+
+
+def resolve_position(model: Any, df: pl.DataFrame, agent_id: int) -> int:
+    """Read one position without converting the ID column after it is indexed."""
+    attrs = vars(model)
+    version = attrs["_id_version"]
+    if attrs.get("_ids_arange_cache") == (version, True):
+        position = int(agent_id)
+    else:
+        positions = attrs.get("_id_pos_cache")
+        if positions is not None and positions[0] == version:
+            position = positions[1][int(agent_id)]
+        else:
+            position = int(resolve_positions(model, df, np.asarray([agent_id]))[0])
+    if not 0 <= position < df.height:
+        raise KeyError(agent_id)
+    return position

@@ -4,9 +4,10 @@ GPU backend
 AMBER's GPU support has two layers:
 
 1. **Native placement (0.4.4, preferred for a single large run)** —
-   ``model.gpu().run()`` on a vectorized ``Model`` (``step_vectorized`` or
-   legacy ``step``). Numeric columns stay device-resident for the run.
-   Switch back with ``model.cpu(mode="vectorized").run()``. Private
+   ``model.gpu().run()`` on a ``Model`` with ordinary agent rules or explicit
+   vectorized operations. AMBER batches eligible agent calls and keeps their
+   numeric columns on the device until host code needs them.
+   Switch back with ``model.cpu().vectorize().run()``. Private
    model-specific loops require ``approve_fast_path(evidence)`` and
    ``contract="off"`` (see :doc:`contract`).
 2. **Array-module helpers** — ``get_array_module``, ``to_device``,

@@ -45,7 +45,7 @@ def _cupy_cuda_versions() -> Dict[str, Optional[str]]:
             # e.g. (12, 0) → "12.0"
             ver = cp.cuda.runtime.runtimeGetVersion()
             major, minor = divmod(int(ver), 1000)
-            out["cuda_version"] = f"{major}.{minor}"
+            out["cuda_version"] = f"{major}.{minor // 10}"
         except Exception:
             out["cuda_version"] = None
     except Exception:

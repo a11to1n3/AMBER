@@ -14,12 +14,13 @@ Modes
   sequential ``step()`` over a fixed list (no mid-step order effects from
   re-shuffling), **not** a proof of schedule equivalence.
 
-This module does **not** prove activation-schedule confluence; the snapshot-view
-contract remains an operational monitor only.
+The snapshot-view contract can certify order independence for supported
+sequential and shuffled single-phase sweeps.
 """
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Any, Iterable, List, Optional
 
 import numpy as np
@@ -54,6 +55,14 @@ def _rng_for(agents: Any, rng: Any = None):
     return np.random.default_rng()
 
 
+def _replay_order(ordered, model, override):
+    id_map = {agent.id: agent for agent in ordered}
+    if len(ordered) != len(override) or id_map.keys() != set(override):
+        raise ValueError("the activation sweep differs from the recorded sweep")
+    model._activation_override_order = None
+    return [id_map[agent_id] for agent_id in override]
+
+
 def activate(
     agents: Iterable[Any],
     mode: str = "sequential",
@@ -69,6 +78,11 @@ def activate(
         rng: NumPy Generator for ``random`` mode; defaults to ``model.rng``.
     """
     mode = normalize_activation(mode)
+    if mode == "sequential":
+        from ._auto_batch import try_batch
+
+        if try_batch(agents, method):
+            return
     ordered = _agent_list(agents)
     if not ordered:
         return
@@ -76,29 +90,34 @@ def activate(
     model = getattr(agents, "model", None)
     if model is None:
         model = getattr(ordered[0], "model", None)
+    mon = getattr(model, "_contract", None) if model is not None else None
     override = getattr(model, "_activation_override_order", None)
-    if override is not None:
-        id_map = {getattr(agent, "id", None): agent for agent in ordered}
-        ordered = [id_map[aid] for aid in override if aid in id_map]
-    elif mode == "random":
+    if mon is not None and mon._in_replay and (override is None or mode == "simultaneous"):
+        raise ValueError("replay requires one sequential or random activation sweep")
+    if mode == "random":
+        execution = getattr(model, "_execution", None)
         r = _rng_for(agents, rng)
-        # Local list shuffle — do not mutate AgentList structure.
+        if rng is None and execution is not None and execution.tracked_agents and r is execution.device_rng:
+            r = model._host_rng
+        if override is not None and r is not model.rng and r is not model._host_rng:
+            raise ValueError("random activation uses a stream outside the replay snapshot")
         order = list(range(len(ordered)))
         r.shuffle(order)
         ordered = [ordered[i] for i in order]
 
-    mon = getattr(model, "_contract", None) if model is not None else None
+    if override is not None:
+        ordered = _replay_order(ordered, model, override)
+    if mon is not None and mon.active:
+        mon.begin_sweep(agents, method, single_phase=mode != "simultaneous")
 
     def call(agent: Any, name: str) -> None:
         aid = getattr(agent, "id", None)
-        traced = (
-            mon is not None
-            and getattr(mon, "active", False)
-            and not getattr(mon, "_in_replay", False)
-            and aid is not None
-        )
+        replaying = mon is not None and mon._in_replay
+        traced = mon is not None and mon.active and aid is not None
         if traced:
             mon.begin_activation(aid)
+        elif replaying:
+            mon._current_activation = aid
         try:
             fn = getattr(agent, name, None)
             if callable(fn):
@@ -106,20 +125,29 @@ def activate(
         finally:
             if traced:
                 mon.end_activation()
+            elif replaying:
+                mon._current_activation = None
 
     if mode == "simultaneous":
-        # Phase 1 is the traced sweep. advance() stays untraced, matching the
-        # historical Mesa-style second pass.
-        for agent in ordered:
-            call(agent, method)
-        for agent in ordered:
-            adv = getattr(agent, "advance", None)
-            if callable(adv):
-                adv()
+        staged = mon is not None and mon.active and mon._current_activation is None and not mon._stage_open
+        if staged:
+            mon.begin_stage(method)
+        try:
+            for agent in ordered:
+                call(agent, method)
+            if staged:
+                mon.begin_stage("advance")
+            for agent in ordered:
+                call(agent, "advance")
+        finally:
+            if staged:
+                mon.end_stage()
         return
 
-    for agent in ordered:
-        call(agent, method)
+    watch_rng = model._watch_sweep_rng() if mon is not None and (mon.active or mon._in_replay) else nullcontext()
+    with watch_rng:
+        for agent in ordered:
+            call(agent, method)
 
 
 def shuffled_ids(agents: Any, rng: Any = None) -> np.ndarray:

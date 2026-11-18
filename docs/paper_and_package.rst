@@ -7,7 +7,7 @@ The research paper and the installable **PyPI package** are related but
 Package (source of truth for software claims)
 ---------------------------------------------
 
-* Name: ``ambr`` on PyPI (current line: **0.5.x**, Beta classifier).
+* Name: ``ambr`` on PyPI (Beta classifier).
 * Performance headlines in the **README / Sphinx** cite the committed
   snapshot::
 
@@ -19,8 +19,8 @@ Package (source of truth for software claims)
 * API and lanes: dual OOP + vectorized, ``model.gpu()``, ensemble calibration,
   contract monitor — as documented in this tree.
 
-Paper (historical / academic evaluation setting)
-------------------------------------------------
+Original arXiv evaluation
+-------------------------
 
 * arXiv: https://arxiv.org/abs/2601.16292
 * The paper’s **main empirical table** evaluates an **earlier** package line
@@ -28,6 +28,20 @@ Paper (historical / academic evaluation setting)
   (e.g. Apple M2), with GPU called out as future work in that setting.
 * Do **not** cite the paper table as the same claim as the 10M FLAME GPU
   README numbers without stating the different protocol.
+
+Round 73 and Round 75 reviewer evaluations
+-------------------------------------------
+
+Round 73 records GPU timings from research commit ``a29811d80283`` using
+approved workload-specific hooks on an RTX 5090. The README headline timings
+come from a separate July experiment based on ``cdb4f135``. The Round 73
+600-second guard was enforced by the CPU and peer-framework timing drivers.
+All 140 archived GPU timing attempts completed in less than three seconds.
+
+Round 75 reran the paper's timing and correctness checks with the
+``0.5.2+fix.11`` research wheel. The independent SIR transition comparisons
+use that same wheel and reach one million agents. Cite each result with its
+recorded version and protocol.
 
 How to cite
 -----------

@@ -109,6 +109,8 @@ Notes on the mapping
 
 * ``self.p`` / ``self.t`` / ``setup`` / ``step`` / ``update`` / ``run`` — same roles.
 * ``AgentList(model, n, AgentType)`` — supported; attribute and method broadcast work.
+* ``self.agents.step()`` also broadcasts after ``add_agents(..., agent_class=...)``.
+  Read the creation step from ``agents.frame["step"]`` or ``agents.numpy("step")``.
 * ``agents.random()`` — returns an **id** (use ``agents.by_id(id)`` for the object).
   AgentPy returns an agent instance; AMBER keeps ids cheap for the columnar store.
 * ``self.record(...)`` — still works (deprecated alias of ``record_model``; fine for
@@ -117,11 +119,15 @@ Notes on the mapping
   (dict + attributes). Keys: ``info``, ``agents``, ``model``.
 * Progress printing is **off** by default (``show_progress=True`` to restore demos).
 
-When to switch to the vectorized lane
--------------------------------------
+Execution options
+-----------------
 
-Keep AgentPy-style OOP while N is small or logic is inherently sequential.
-Move to the view API when loops dominate runtime::
+Use the same AgentPy-style declaration with ``model.run()`` or
+``model.vectorize().run()``. On NVIDIA with CuPy, use
+``model.gpu().run()``. AMBER batches eligible ordinary agent rules
+and runs other rules as Python calls.
+
+You can also write column operations directly in a model step::
 
    def step(self):
        donors = self.agents.where(self.agents.wealth > 0)
@@ -131,16 +137,6 @@ Move to the view API when loops dominate runtime::
 
 See :doc:`quickstart` for the full canonical-verb table, and
 :doc:`api/contract` if you enable ``contract='check'``.
-
-Vectorized lane on GPU (implement ``step_vectorized`` or legacy ``step``;
-requires **NVIDIA + CuPy**, not Apple Metal/MPS)::
-
-   model = MyVectorizedModel({"n": 10_000, "steps": 20, "seed": 0, "show_progress": False})
-   if am.GPU_AVAILABLE:
-       results = model.gpu().run()
-   else:
-       results = model.cpu(mode="vectorized").run()
-   # OOP agents: MyOOPModel(...).cpu(mode="oop").run()  # not on GPU
 
 See :doc:`going_faster` for placement, Numba, and ensemble calibration;
 :doc:`reproducibility` for CPU≠GPU bit-identical policy.

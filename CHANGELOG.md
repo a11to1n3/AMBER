@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+- Automatically batch bounded random-walk updates on committed Float64
+  columns with keyed draws on CPU and GPU.
+- CPU and GPU runs automatically batch supported integer updates guarded by
+  `Agent.draw(...)` while preserving per-agent draw values.
+- Swapped-order replay checks model-owned random streams around the sweep.
+  A cached shared draw now leaves the witness inconclusive.
+- `Agent.draw(event, index=0)` keys a uniform draw by seed, step and agent ID.
+  Supported keyed branches can earn a certificate under sequential or shuffled
+  activation. Saved certificates retain the draw provenance.
+- Contract checking certifies order independence for supported sequential CPU
+  sweeps with exact integer rules and preserves the verdict in saved results.
+  Agent method broadcasts record their activation effects.
+- Ordinary view writes reject repeated target IDs. The monitor checks ID
+  multiplicities at step endpoints and attributes view writes to each issuing
+  agent when the target IDs are known.
+- GPU views preserve selected IDs and read current device values. Host reports
+  see completed updates, and retained device arrays can still be written in
+  `end()`. GPU batching leaves unrelated pending agent values untouched.
+- Replay restores parameters and agent membership. The monitor traces
+  expression filters and both simultaneous phases, records shared random
+  streams and unattributed OOP writes, and persists activation counts.
+- Agents support `scatter_add()` and `scatter_max()` for reductions into
+  their own attributes. Activation tracing tracks reduction targets and
+  whole-column reads.
+- Flush pending writes and synchronize dirty CUDA columns before `end()`.
+  The hook can still use the active device and commit further updates.
+- Use `model.vectorize().run()` to select vectorized execution on the current
+  device from the run call. A single `setup()` / `step()` declaration works
+  with `run()`, `vectorize().run()`, and `gpu().run()`.
+- `agents.step()` broadcasts the agent method even when `add_agents()` created
+  a `step` column. Use `agents.frame["step"]` to read the creation step.
+- CPU and GPU runs automatically batch eligible integer additions and subtractions
+  in ordinary agent methods. Use the same model with `run()` or `gpu().run()`.
+  Results report the number of calls batched. Use `run(auto_batch=False)` to
+  compare with the Python loop.
+- Models that define only `step_oop()` can use the default run mode on either device.
+- Automatic batching supports a single condition on each agent's own state,
+  such as `if self.active:` or `if self.age < 65:`. Only selected agents receive writes.
+- Tracked agent reads use direct scalar column access. Agent reads and writes
+  skip monitor calls when tracking is inactive.
+- Tracked agent attributes now read the same state as the column API, including
+  values set by bulk writes and reductions.
+- Activation replay keeps the forward model metrics and consumes the scheduler's
+  random draws before swapping the recorded order. The witness stays inconclusive
+  if replay cannot isolate a sweep or match its random inputs.
+- Empty GPU reductions preserve earlier updates, and GPU batches see edits to
+  the live host frame. Python agent lists and dicts remain mutable after a frame
+  read. Replay restores supported CuPy RNG streams, array writeability, and
+  agent identities, and compares recorded step values.
+
 ## v0.5.2 - 2026-10-07
 
 Patch over 0.5.1. Counter-tape draws change: spec 2 mixes the seed before
