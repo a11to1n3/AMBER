@@ -5,6 +5,7 @@ Keras-style API on the model surface::
     model.cpu().run()
     model.cpu(mode="vectorized").run()
     model.cpu(mode="oop").run()
+    model.vectorize().run()
     model.gpu().run()
     model.gpu(mode="vectorized").run()
 
@@ -70,6 +71,11 @@ class ActiveExecution:
     dirty_columns: set[str] = field(default_factory=set)
     device_rng: Any = None
     ids_are_arange: bool = False
+    tracked_agents: bool = False
+    # Device-side masks of assignments that must reach the Python bindings
+    # as well as the frame. None means every row was assigned.
+    agent_writes: Dict[str, Any] = field(default_factory=dict)
+    borrowed_columns: set[str] = field(default_factory=set)
 
 
 def resolve_config(
@@ -115,6 +121,12 @@ def device_column_names(model: "Model") -> frozenset[str]:
     ex = active_execution(model)
     if ex is None:
         return frozenset()
+    if ex.tracked_agents:
+        # Automatic conditions use resident Boolean columns internally.
+        # The view API still exposes Boolean columns as Polars masks.
+        return frozenset(
+            name for name, array in ex.device_columns.items() if array.dtype != np.bool_
+        )
     return frozenset(ex.device_columns)
 
 
@@ -137,9 +149,12 @@ def active_rng(model: "Model"):
     return model._host_rng
 
 
-def _numeric_host_array(series: pl.Series) -> np.ndarray | None:
+def _numeric_host_array(series: pl.Series, *, allow_boolean: bool = False) -> np.ndarray | None:
     try:
         arr = series.to_numpy()
+        if allow_boolean and series.dtype == pl.Boolean and not series.null_count():
+            # Older Polars versions export Boolean series as object arrays.
+            return arr.astype(np.bool_, copy=False)
     except Exception:
         return None
     if not np.issubdtype(arr.dtype, np.number):
@@ -151,7 +166,7 @@ def _validate_mode(model: "Model", config: ExecutionConfig) -> None:
     if config.device == "gpu" and config.mode == "oop":
         raise ValueError(
             "GPU execution supports mode='vectorized' only; "
-            "use cpu(mode='oop') for Python Agent objects."
+            "use gpu().run() to batch eligible Agent methods automatically."
         )
     if config.mode != "oop":
         return
@@ -177,12 +192,17 @@ def begin_execution(model: "Model", config: ExecutionConfig) -> None:
     if config.device == "gpu":
         require_gpu()
         ex.xp = get_array_module(True)
+        from .sequences import AgentList
+
+        ex.tracked_agents = (
+            type(model.agents) is AgentList and bool(model.agents._agent_objects)
+        )
         df = model.agents_df
         for name in df.columns:
             if name == "step":
                 continue
-            arr = _numeric_host_array(df[name])
-            if arr is not None:
+            arr = _numeric_host_array(df[name], allow_boolean=ex.tracked_agents)
+            if arr is not None and (not ex.tracked_agents or not df[name].null_count()):
                 ex.device_columns[name] = to_device(arr)
         from ._id_index import ids_are_arange
 
@@ -230,7 +250,63 @@ def sync_device_column_to_frame(model: "Model", name: str) -> None:
         return
     host = to_host(ex.device_columns[name])
     df = model.population.data
+    if name in ex.agent_writes:
+        mask = ex.agent_writes[name]
+        selected = range(len(host)) if mask is None else to_host(mask).nonzero()[0]
+        bindings = model.agents._agents_by_id
+        pending = model._pending_writes.get(name, {})
+        ids = df["id"].to_list()
+        values = host.tolist()
+        for position in selected:
+            aid = ids[position]
+            if aid in bindings and aid not in pending:
+                object.__getattribute__(bindings[aid], "__dict__")[name] = values[position]
+        del ex.agent_writes[name]
     model.population.replace_frame(df.with_columns(pl.Series(name, host)))
+    if name not in ex.borrowed_columns:
+        ex.dirty_columns.discard(name)
+
+
+def sync_agent_writes(model: "Model") -> None:
+    """Materialize pending GPU assignments before inspecting Python bindings."""
+    ex = getattr(model, "__dict__", {}).get("_execution")
+    if ex is not None:
+        for name in tuple(ex.agent_writes):
+            sync_device_column_to_frame(model, name)
+
+
+def refresh_tracked_device_columns(model: "Model", columns=None) -> None:
+    """Refresh device mirrors after host updates."""
+    ex = active_execution(model)
+    if ex is None or ex.config.device != "gpu":
+        return
+    if not ex.tracked_agents:
+        if columns is None:
+            return
+        columns = ex.device_columns.keys() & set(columns)
+    frame = model.population.data
+    if columns is None:
+        ex.device_columns.clear()
+        ex.dirty_columns.clear()
+        ex.borrowed_columns.clear()
+        ex.agent_writes.clear()
+        ex.ids_are_arange = (
+            "id" in frame.columns
+            and np.array_equal(frame["id"].to_numpy(), np.arange(frame.height))
+        )
+        columns = frame.columns
+    for name in columns:
+        arr = _numeric_host_array(frame[name], allow_boolean=True) if name in frame.columns else None
+        current = ex.device_columns.get(name)
+        if name == "step" or arr is None or frame[name].null_count():
+            ex.device_columns.pop(name, None)
+        elif name in ex.borrowed_columns and current.shape == arr.shape and current.dtype == arr.dtype:
+            current[:] = to_device(arr)
+            continue
+        else:
+            ex.device_columns[name] = to_device(arr)
+        ex.dirty_columns.discard(name)
+        ex.borrowed_columns.discard(name)
 
 
 def sync_all_device_columns(model: "Model", *, dirty_only: bool = False) -> None:
@@ -240,8 +316,15 @@ def sync_all_device_columns(model: "Model", *, dirty_only: bool = False) -> None
     names = ex.dirty_columns if dirty_only else ex.device_columns
     for name in list(names):
         sync_device_column_to_frame(model, name)
-    if dirty_only:
-        ex.dirty_columns.clear()
+
+
+def prepare_end_hook(model: "Model") -> None:
+    """Publish completed state while the device context is still active."""
+    model._flush_pending_writes()
+    ex = active_execution(model)
+    if ex is not None and ex.config.device == "gpu":
+        sync_all_device_columns(model, dirty_only=True)
+        synchronize()
 
 
 def end_execution(model: "Model") -> None:

@@ -1,15 +1,15 @@
 Going faster (lanes)
 ====================
 
-AMBER does **not** hide speed behind a silent ``gpu=True`` flag that rewrites
-semantics. From **0.4.3** you place a run with Keras-style
-``model.cpu(mode=...).run()`` / ``model.gpu().run()`` (mode defaults to
-``vectorized``; ``run(mode=...)`` still overrides). From **0.4.4**, vectorized
-runs dispatch ``step_vectorized()`` and GPU keeps numeric columns
-device-resident; CPU OOP runs dispatch ``step_oop()`` over tracked Agent
-objects (GPU is vectorized-only). Legacy ``step()`` is the fallback when a
-lane hook is missing. There are still four **lanes** for *how* you write the
-step — helpers tell you which to pick.
+Use the same model with ``model.run()``, ``model.vectorize().run()``, or
+``model.gpu().run()`` on NVIDIA CUDA. Define ordinary ``setup()`` and
+``step()`` methods and call ``self.agents.step()`` or
+``self.activate_agents()`` to run the agents' rules.
+The default CPU run already uses automatic batching. ``vectorize()``
+selects the vectorized mode explicitly and preserves the selected device.
+The default mode uses ``step_vectorized()`` when defined, then ``step()``,
+then a standalone ``step_oop()``. When you set ``cpu(mode="oop")``, AMBER
+uses ``step_oop()`` first. Both devices can batch supported Python agent rules.
 
 Check this machine
 ------------------
@@ -67,13 +67,28 @@ For custom array kernels, reuse the same optional stack::
 Lane 1 — OOP (AgentPy-shaped)
 -----------------------------
 
-Always available. Best for small N or sequential logic. See :doc:`from_agentpy`.
+On CPU and GPU, AMBER automatically batches eligible own-field
+integer additions and subtractions in sequential activation and method
+broadcasts over a homogeneous tracked population. A rule such as
+``if self.active: self.age += 1`` batches only writes to the selected agents.
+The condition can check a Boolean or integer field, or compare an integer
+field with a constant. The original Python loop
+handles other methods, including transfers between agents, shared random draws,
+and methods with custom attribute access. Monitoring and debuggers retain the
+Python calls.
+Inspect ``results.info["auto_batch"]`` for the number of batches and agent
+calls replaced, or use ``run(auto_batch=False)`` to compare with the loop.
+Use the same model with ``gpu().run()`` on NVIDIA with CuPy. AMBER keeps
+batched columns on the device across steps until a host read, an agent-state
+snapshot, or teardown needs the data.
+See :doc:`from_agentpy` for the OOP API.
 
-Lane 2 — Vectorized (default fast path)
+Lane 2 — Vectorized column operations
 ---------------------------------------
 
-**There is no flag.** Use ``step_vectorized()`` for the vectorized lane with the
-view API (``where`` / column assign / ``scatter_add``). Do **not** mutate
+You can write column operations directly in ``step()`` or supply a dedicated
+``step_vectorized()`` hook. The view API includes
+``where``, column assignment, and ``scatter_add``. Do **not** mutate
 ``agents.array(...)`` in place — that returns a read-only snapshot on the CPU
 Polars path::
 
@@ -82,8 +97,8 @@ Polars path::
    recipients = self.rng.choice(self.agents.ids.to_numpy(), size=len(donors))
    self.agents.at[recipients].scatter_add(wealth=1)
 
-For object-oriented models, implement ``step_oop()`` and run with
-``model.cpu(mode="oop")``. GPU runs use the vectorized lane only.
+For models with both hooks, use ``model.cpu(mode="oop")`` to select
+``step_oop()`` explicitly.
 
 Use this for almost all CPU models above a few thousand agents.
 

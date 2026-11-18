@@ -27,6 +27,7 @@ from ._deprecation import warn_deprecated
 from ._id_index import resolve_positions
 from .agent import Agent
 from .model import Model
+from ._auto_batch import try_batch
 from .performance import apply_scatter_add, apply_scatter_write
 
 
@@ -119,12 +120,41 @@ def _commit_with_columns(
     series_list: List[pl.Series],
     *,
     written_columns: Optional[List[str]] = None,
+    target_ids=None,
 ) -> None:
     """Single seam: ``with_columns`` + optional contract commit."""
     model._set_frame(
         df.with_columns(series_list),
         written_columns=written_columns,
+        target_ids=target_ids,
     )
+
+
+def _ordinary_targets(model: Model, ids: pl.Series, df: pl.DataFrame):
+    """Validate ordinary assignment targets before writing any columns."""
+    full = _is_full_population(ids, df)
+    if len(ids) < 2:
+        unique = True
+    elif full:
+        # Most populations have increasing integer IDs. Avoid a hash pass for
+        # them and check actual values even after a direct frame replacement.
+        values = ids.to_numpy()
+        unique = (values.dtype.kind in "iu" and np.all(values[:-1] < values[1:]))
+    else:
+        unique = False
+    if not unique and ids.n_unique() != ids.len():
+        raise ValueError(
+            "Ordinary writes require unique target IDs. Use a scatter reduction for repeated targets."
+        )
+    positions = resolve_positions(model, df, ids.to_numpy()) if len(ids) and not full else None
+    return full, positions
+
+
+def _record_expression_reads(model: Model, df: pl.DataFrame, expression: pl.Expr) -> None:
+    if model._contract.active:
+        columns = df.columns if expression.meta.has_multiple_outputs() else expression.meta.root_names()
+        for name in columns:
+            model._contract_record_borrow(name)
 
 
 class _BaseView:
@@ -142,6 +172,9 @@ class _BaseView:
     # --- attribute protocol -------------------------------------------------
 
     def __getattr__(self, name: str):
+        return self._get_view_attribute(name)
+
+    def _get_view_attribute(self, name: str, *, broadcast: bool = True):
         if name.startswith("_") or name in _INTERNAL_ATTRS:
             raise AttributeError(
                 f"{type(self).__name__!r} object has no attribute {name!r}"
@@ -149,57 +182,44 @@ class _BaseView:
         model = self.__dict__.get("model")
         if model is None:
             raise AttributeError(name)
-        df = model.agents_df
-        if name not in df.columns:
-            # Backward-compat: callable methods on tracked Agent objects.
+        df = model._frame_for_columns()
+        has_column = name in df.columns
+        # Tracked agents may define step() alongside the creation-step column.
+        if broadcast and (name == "step" or not has_column):
             root = self._root()
             agents = getattr(root, "_agent_objects", None)
             if agents:
-                first = agents[0] if agents else None
-                method = getattr(first, name, None) if first is not None else None
+                method = getattr(agents[0], name, None)
                 if callable(method):
                     def _dispatch(*args, **kwargs):
-                        results = [getattr(a, name)(*args, **kwargs) for a in self]
+                        if not args and not kwargs and (count := try_batch(self, name)):
+                            return np.full(count, None, dtype=object)
+                        results = self._call_agents(name, args, kwargs, optional=False)
                         try:
                             return np.array(results)
                         except (ValueError, TypeError):
                             return results
                     return _dispatch
+        if not has_column:
             raise AttributeError(
                 f"{type(self).__name__!r} has no column {name!r}; "
                 f"available columns: {df.columns}"
             )
         model._contract_record_borrow(name)
         ids = self._ids_series()
+        from .device_columns import DeviceColumn
+        from .execution import device_column_names, get_device_column
+
+        resident = name in device_column_names(model)
         # Full population: return the column without a join.
         if _is_full_population(ids, df):
-            from .device_columns import DeviceColumn, model_uses_device_columns
-
-            # Only the root AgentList may expose a live device column; subset
-            # views (even when they cover every agent) read through the view.
-            from .execution import device_column_names
-
-            if (
-                type(self) is AgentList
-                and model_uses_device_columns(model)
-                and name in device_column_names(model)
-            ):
-                return DeviceColumn(model, name)
             if type(self) is AgentList:
-                return df[name]
+                return DeviceColumn(model, name) if resident else df[name]
         # Align Series with the view's id order (scatter views may repeat ids).
         # When name is "id", skip the join to avoid a duplicate-column error.
         if name == "id":
             return ids
-        from .device_columns import model_uses_device_columns
-
-        from .execution import device_column_names, get_device_column
-
-        if (
-            model_uses_device_columns(model)
-            and name in device_column_names(model)
-            and not _is_full_population(ids, df)
-        ):
+        if resident:
             from .gpu import to_host
 
             positions = resolve_positions(model, df, ids.to_numpy())
@@ -230,14 +250,15 @@ class _BaseView:
         4. Fallback → ``df.update(on='id')``
         """
         model = self.__dict__["model"]
-        model._flush_pending_writes()
-
         ids = self._ids_series()
         n = ids.len()
-        df = model.agents_df
+        df = model._frame_for_columns()
+        full, positions = _ordinary_targets(model, ids, df)
 
         # --- expression path ------------------------------------------------
         if isinstance(value, pl.Expr):
+            df = model.agents_df
+            _record_expression_reads(model, df, value)
             sub = df.filter(pl.col("id").is_in(ids.to_list())).select(
                 pl.col("id"), value.alias("__new__")
             )
@@ -248,11 +269,11 @@ class _BaseView:
                 .otherwise(pl.col(name))
                 .alias(name)
             ).drop("__new__")
-            model._set_frame(joined, written_columns=[name])
+            model._set_frame(joined, written_columns=[name], target_ids=ids)
             return
 
         # --- GPU whole-population: accept device/host arrays without Polars ---
-        if _is_full_population(ids, df) and type(self) is AgentList:
+        if full and type(self) is AgentList:
             from .device_columns import device_scatter_write, model_uses_device_columns
             from .execution import active_xp, device_column_names
 
@@ -276,27 +297,26 @@ class _BaseView:
                         f"to view of length {n} for column {name!r}"
                     )
                 device_scatter_write(
-                    model, name, pos, vals, positions_on_device=True
+                    model, name, pos, vals, positions_on_device=True, target_ids=ids
                 )
                 return
 
         values = _value_to_series(name, value, n)
 
         # --- whole-population fast path (root AgentList only) ---------------
-        if _is_full_population(ids, df) and type(self) is AgentList:
+        if full and type(self) is AgentList:
             _commit_with_columns(
-                model, df, [values.alias(name)], written_columns=[name]
+                model, df, [values.alias(name)], written_columns=[name], target_ids=ids
             )
             return
 
         # --- subset scatter-write (unique ids, existing numeric column) -----
-        ids_np = ids.to_numpy()
-        if n > 0 and len(np.unique(ids_np)) == n and name in df.columns:
+        if n > 0 and name in df.columns:
             try:
-                positions = resolve_positions(model, df, ids_np)
+                if positions is None:  # a subview in full table order
+                    positions = np.arange(n, dtype=np.int64)
                 vals = values.to_numpy()
                 from .device_columns import (
-                    device_resolve_positions,
                     device_scatter_write,
                     model_uses_device_columns,
                 )
@@ -308,17 +328,16 @@ class _BaseView:
                     and vals.dtype != object
                 ):
                     xp = active_xp(model)
-                    pos_dev = device_resolve_positions(
-                        model, xp.asarray(ids_np, dtype=xp.int64)
-                    )
                     device_scatter_write(
                         model,
                         name,
-                        pos_dev,
+                        xp.asarray(positions, dtype=xp.int64),
                         xp.asarray(vals),
                         positions_on_device=True,
+                        target_ids=ids,
                     )
                     return
+                df = model.agents_df
                 base = df[name].to_numpy()
                 # Object / mixed columns fall through to the join path.
                 if base.dtype != object and vals.dtype != object:
@@ -328,16 +347,18 @@ class _BaseView:
                         df,
                         [pl.Series(name, out, strict=False)],
                         written_columns=[name],
+                        target_ids=ids,
                     )
                     return
-            except (KeyError, TypeError, ValueError):
+            except (TypeError, ValueError):
                 pass
 
         # --- general update join --------------------------------------------
+        df = model.agents_df
         df = _ensure_columns(df, [name])
         update_df = pl.DataFrame([ids.rename("id"), values.rename(name)])
         model._set_frame(
-            df.update(update_df, on="id", how="left"), written_columns=[name]
+            df.update(update_df, on="id", how="left"), written_columns=[name], target_ids=ids
         )
 
     @property
@@ -362,6 +383,7 @@ class _BaseView:
         elif isinstance(predicate, pl.Expr):
             df = model.agents_df
             sub = df.filter(pl.col("id").is_in(base_ids.to_list())).filter(predicate)
+            _record_expression_reads(model, df, predicate)
             new_ids = sub["id"]
         elif hasattr(predicate, "dtype") and getattr(predicate.dtype, "kind", "") in (
             "b",
@@ -440,15 +462,51 @@ class _BaseView:
 
     def call(self, method_name: str, *args, **kwargs):
         """Invoke ``method_name`` on each Python Agent in this view."""
-        results = []
-        for agent in self:
-            method = getattr(agent, method_name, None)
-            if callable(method):
-                results.append(method(*args, **kwargs))
+        if not args and not kwargs and (count := try_batch(self, method_name)):
+            return np.full(count, None, dtype=object)
+        results = self._call_agents(method_name, args, kwargs, optional=True)
         try:
             return np.array(results)
         except ValueError:
             return results
+
+    def _call_agents(self, method_name, args, kwargs, *, optional):
+        model = self.__dict__["model"]
+        monitor = model._contract
+        ordered = self
+        if monitor.active:
+            monitor.begin_sweep(self, method_name, single_phase=not args and not kwargs)
+        if monitor._in_replay:
+            from .scheduling import _replay_order
+
+            override = model._activation_override_order
+            if override is None:
+                raise ValueError("replay requires one activation sweep")
+            ordered = _replay_order(list(self), model, override)
+        traced = monitor.active or monitor._in_replay
+        results = []
+        with model._watch_sweep_rng():
+            for agent in ordered:
+                aid = getattr(agent, "id", None) if traced else None
+                if aid is not None:
+                    if monitor._in_replay:
+                        monitor._current_activation = aid
+                    else:
+                        monitor.begin_activation(aid)
+                try:
+                    if optional:
+                        method = getattr(agent, method_name, None)
+                        if callable(method):
+                            results.append(method(*args, **kwargs))
+                    else:
+                        results.append(getattr(agent, method_name)(*args, **kwargs))
+                finally:
+                    if aid is not None:
+                        if monitor._in_replay:
+                            monitor._current_activation = None
+                        else:
+                            monitor.end_activation()
+        return results
 
     def random(self, n: int = 1, replace: bool = False):
         """Sample agent id(s) from this view (AgentPy-style helper).
@@ -492,9 +550,14 @@ class _BaseView:
 
     # --- ergonomic read / write --------------------------------------------
 
+    def _named_column(self, name: str):
+        if name == "step":
+            return self._get_view_attribute(name, broadcast=False)
+        return getattr(self, name)
+
     def _column_array(self, name: str):
         """Column as ndarray — zero-copy on GPU via :class:`~ambr.device_columns.DeviceColumn`."""
-        col = getattr(self, name)
+        col = self._named_column(name)
         if hasattr(col, "array"):
             return col.array
         self.__dict__["model"]._contract_record_mutable_borrow(name)
@@ -517,7 +580,7 @@ class _BaseView:
         'y')`` returns a tuple -- a one-call replacement for the repeated
         ``agents.x.to_numpy()`` idiom.
         """
-        arrays = tuple(getattr(self, c).to_numpy() for c in columns)
+        arrays = tuple(self._named_column(c).to_numpy() for c in columns)
         return arrays[0] if len(columns) == 1 else arrays
 
     def set(self, **columns: Any) -> None:
@@ -540,6 +603,7 @@ class _BaseView:
         ids = self._ids_series()
         n = ids.len()
         df = model.agents_df
+        full, _ = _ordinary_targets(model, ids, df)
 
         series_by_name: Dict[str, pl.Series] = {
             name: _value_to_series(name, value, n)
@@ -548,12 +612,13 @@ class _BaseView:
         names = list(series_by_name)
 
         # Whole-population: one with_columns for all columns.
-        if _is_full_population(ids, df):
+        if full:
             _commit_with_columns(
                 model,
                 df,
                 [s.alias(name) for name, s in series_by_name.items()],
                 written_columns=names,
+                target_ids=ids,
             )
             return
 
@@ -566,6 +631,7 @@ class _BaseView:
         model._set_frame(
             df.update(update_df, on="id", how="left"),
             written_columns=names,
+            target_ids=ids,
         )
 
     def update_where(self, predicate, **columns: Any) -> None:
@@ -595,14 +661,34 @@ class _BaseView:
         Deliberately omits ``written_columns`` so the contract treats scatter
         as the sanctioned multi-write reducer (not a partial-map conflict).
         """
-        if not increments:
+        self._scatter_reduce(increments, "+")
+
+    def scatter_max(self, **values: Any) -> None:
+        """Reduce each target by maximum, starting new columns at zero."""
+        self._scatter_reduce(values, "max")
+
+    def _record_scatter_targets(self, columns, operator: str) -> None:
+        monitor = self.__dict__["model"]._contract
+        if not monitor.active or (monitor._current_activation is None and self.model.mode != "oop"):
+            return
+        device_ids = self._device_ids_array()
+        if device_ids is not None:
+            from .gpu import to_host
+
+            ids = to_host(device_ids).tolist()
+        else:
+            ids = self._ids_series().to_list()
+        monitor.record_activation_reductions(columns, ids, operator)
+
+    def _scatter_reduce(self, values, operator: str) -> None:
+        if not values:
             return
         model = self.__dict__["model"]
         model._flush_pending_writes()
 
         from .device_columns import (
             device_resolve_positions,
-            device_scatter_add,
+            device_scatter_reduce,
             model_uses_device_columns,
         )
 
@@ -612,45 +698,63 @@ class _BaseView:
         if (
             model_uses_device_columns(model)
             and device_ids is not None
-            and all(col in device_column_names(model) for col in increments)
+            and all(col in device_column_names(model) for col in values)
         ):
             n = int(device_ids.size)
             if n == 0:
                 return
             positions = device_resolve_positions(model, device_ids)
             xp = active_xp(model)
-            for col_name, val in increments.items():
+            for col_name, val in values.items():
                 delta = _normalize_delta(col_name, val, n, xp=xp)
-                device_scatter_add(
+                device_scatter_reduce(
                     model,
                     col_name,
                     positions,
                     delta,
+                    operator,
                     positions_on_device=True,
                 )
+            self._record_scatter_targets(values, operator)
             return
 
-        ids = self._ids_series()
+        if device_ids is None:
+            ids = self._ids_series()
+        else:
+            from .gpu import to_host
+
+            ids = pl.Series("id", to_host(device_ids))
         n = ids.len()
-        df = model.agents_df
+        df = model._frame_for_columns()
         if n == 0:
             # Empty view: only ensure columns exist (no rows to update).
-            model._set_frame(_ensure_columns(df, list(increments)))
+            model._set_frame(_ensure_columns(df, list(values)))
             return
 
         positions = resolve_positions(model, df, ids.to_numpy())
 
         if model_uses_device_columns(model) and all(
-            col in device_column_names(model) for col in increments
+            col in device_column_names(model) for col in values
         ):
             xp = active_xp(model)
-            for col_name, val in increments.items():
+            for col_name, val in values.items():
                 delta = _normalize_delta(col_name, val, n, xp=xp)
-                device_scatter_add(model, col_name, positions, delta)
+                device_scatter_reduce(model, col_name, positions, delta, operator)
+            self._record_scatter_targets(values, operator)
             return
 
+        df = model.agents_df
+        # A mixed reduction can include columns that lack a device buffer.
+        # The host fold must see current values for its resident inputs.
+        from .execution import active_execution
+
+        execution = active_execution(model)
+        resident = set()
+        if execution is not None and not execution.tracked_agents:
+            resident = values.keys() & execution.device_columns.keys()
+
         delta_np: Dict[str, np.ndarray] = {
-            col: _normalize_delta(col, val, n) for col, val in increments.items()
+            col: _normalize_delta(col, val, n) for col, val in values.items()
         }
 
         new_columns: List[pl.Series] = []
@@ -661,13 +765,26 @@ class _BaseView:
                 base = df[col_name].to_numpy().copy()
             else:
                 base = np.zeros(df.height, dtype=delta.dtype)
-            out = apply_scatter_add(base, positions, delta)
+            if operator == "+":
+                out = apply_scatter_add(base, positions, delta)
+            else:
+                np.maximum.at(base, positions, delta)
+                out = base
             domains[col_name] = str(getattr(out, "dtype", delta.dtype))
             new_columns.append(pl.Series(col_name, out, strict=False))
 
-        model._contract_record_reduction(increments, domains=domains)
-        # No written_columns — scatter_add is the multi-write reducer.
+        # Reductions may commit repeatedly within a step.
         model._set_frame(df.with_columns(new_columns))
+        for column in new_columns:
+            if column.name in resident:
+                current = execution.device_columns[column.name]
+                uploaded = execution.xp.asarray(column.to_numpy())
+                if current.dtype == uploaded.dtype:
+                    current[:] = uploaded
+                else:
+                    execution.device_columns[column.name] = uploaded
+        model._contract_record_reduction(values, domains=domains, operator=operator)
+        self._record_scatter_targets(values, operator)
 
 
 def _scatter_view_from_key(model: Model, view: "_BaseView", key) -> "ScatterAgentList":
@@ -678,15 +795,13 @@ def _scatter_view_from_key(model: Model, view: "_BaseView", key) -> "ScatterAgen
 
     if model_uses_device_columns(model):
         xp = active_xp(model)
-        if isinstance(key, (int, np.integer)):
-            device_ids = xp.asarray([int(key)], dtype=xp.int64)
-        elif isinstance(key, pl.Series):
-            device_ids = xp.asarray(key.to_numpy(), dtype=xp.int64).ravel()
-        elif isinstance(key, list):
-            device_ids = xp.asarray(key, dtype=xp.int64).ravel()
-        else:
-            device_ids = xp.asarray(key, dtype=xp.int64).ravel()
-        ids = pl.Series("id", np.zeros(int(device_ids.size), dtype=np.int64))
+        ids = None
+        if isinstance(key, pl.Series):
+            key = key.to_numpy()
+        if isinstance(key, (int, np.integer, list, np.ndarray)):
+            key = np.asarray(key, dtype=np.int64).ravel()
+            ids = pl.Series("id", key)
+        device_ids = xp.asarray(key, dtype=xp.int64).ravel()
         scatter = ScatterAgentList(model, ids, parent=view._root())
         object.__setattr__(scatter, "_device_ids", device_ids)
         return scatter
@@ -781,7 +896,7 @@ class AgentList(_BaseView):
             ids = [a.id for a in self._agent_objects]
             return pl.Series("id", ids, dtype=pl.Int64)
         # Fall back to the full DataFrame for view-only or vectorized usage.
-        df = self.model.agents_df
+        df = self.model._frame_for_columns()
         return df["id"] if "id" in df.columns else pl.Series("id", [], dtype=pl.Int64)
 
     @property
@@ -808,7 +923,7 @@ class AgentList(_BaseView):
         if model is None:
             return 0
         try:
-            df = model.agents_df
+            df = model._frame_for_columns()
         except Exception:
             return 0
         if not isinstance(df, pl.DataFrame) or "id" not in df.columns:
@@ -981,9 +1096,9 @@ class AgentList(_BaseView):
 class _SubView(_BaseView):
     """Base for views backed by an explicit id list."""
 
-    def __init__(self, model: Model, ids: pl.Series, parent: AgentList):
+    def __init__(self, model: Model, ids: Optional[pl.Series], parent: AgentList):
         object.__setattr__(self, "model", model)
-        if ids.name != "id":
+        if ids is not None and ids.name != "id":
             ids = ids.rename("id")
         object.__setattr__(self, "_ids", ids)
         object.__setattr__(self, "_parent", parent)
@@ -997,7 +1112,7 @@ class _SubView(_BaseView):
     def __getitem__(self, idx):
         """Index by position (int/slice/list/ndarray) within this view."""
         if isinstance(idx, (int, np.integer)):
-            id_list = self._ids.to_list()
+            id_list = self._ids_series().to_list()
             aid = id_list[int(idx)]
             lookup = getattr(self._root(), "_agents_by_id", None) or {}
             agent = lookup.get(aid)
@@ -1005,12 +1120,12 @@ class _SubView(_BaseView):
                 return agent
             raise IndexError(f"Agent id={aid} not found in AgentList")
         if isinstance(idx, slice):
-            id_list = self._ids.to_list()[idx]
+            id_list = self._ids_series().to_list()[idx]
             lookup = getattr(self._root(), "_agents_by_id", None) or {}
             return [lookup.get(aid) for aid in id_list]
         if isinstance(idx, (list, np.ndarray)):
             arr = np.asarray(idx)
-            id_list = self._ids.to_list()
+            id_list = self._ids_series().to_list()
             if arr.dtype == bool:
                 return self._select_impl(arr)
             # List of positions → return a FilteredAgentList view
@@ -1029,7 +1144,7 @@ class _SubView(_BaseView):
         raise TypeError(f"{type(self).__name__} indices must be int, slice, list, or ndarray")
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self._ids.len()} agents)"
+        return f"{type(self).__name__}({self._ids_series().len()} agents)"
 
 
 class FilteredAgentList(_SubView):
@@ -1038,3 +1153,10 @@ class FilteredAgentList(_SubView):
 
 class ScatterAgentList(_SubView):
     """Id-indexed view produced by ``agents.at[ids]`` (ids may repeat)."""
+
+    def _ids_series(self) -> pl.Series:
+        if self._ids is None:
+            from .gpu import to_host
+
+            object.__setattr__(self, "_ids", pl.Series("id", to_host(self._device_ids)))
+        return self._ids

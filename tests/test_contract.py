@@ -355,6 +355,256 @@ def test_certificate_states_observed_scope_without_changing_clean():
     assert payload["observed_scope"] == list(cert.observed_scope)
     assert payload["assumptions"] == list(cert.assumptions)
     assert payload["conditional_guarantee"] == "not_established"
+    assert payload["certification"] is None
+    assert payload["certification_reason"]
+
+
+@pytest.mark.parametrize("operation", ["attribute", "set", "expression"])
+def test_repeated_ordinary_targets_are_rejected_before_mutation(operation):
+    model = am.Model(_params(steps=1))
+    model.add_agents(2, x=[10, 11])
+    targets = model.agents.at[[0, 0]]
+    with pytest.raises(ValueError, match="unique target IDs"):
+        if operation == "set":
+            targets.set(x=[20, 21])
+        elif operation == "expression":
+            targets.set(x=pl.col("x") + 1)
+        else:
+            targets.x = [20, 21]
+    assert model.agents_df["id"].to_list() == [0, 1]
+    assert model.agents_df["x"].to_list() == [10, 11]
+    targets.scatter_add(x=2)
+    assert model.agents_df["x"].to_list() == [14, 11]
+
+
+def test_repeated_population_ids_are_reported_even_when_the_id_set_is_unchanged():
+    class Model(CleanVectorModel):
+        def step(self):
+            self.agents_df = self.agents_df.vstack(self.agents_df.head(1))
+
+    with pytest.raises(ContractViolationError) as exc:
+        Model(_params(steps=1)).run(contract="raise")
+    cert = exc.value.certificate
+    assert [(v.kind, v.ids) for v in cert.violations] == [("duplicate_agent_id", [0])]
+
+
+def test_a_view_write_is_attributed_to_the_agent_that_issues_it():
+    class Person(_Walker):
+        def step(self):
+            if self.id == 0:
+                self.y = self.model.agents.by_id(1).x
+            else:
+                self.model.agents.at[[1]].set(x=9)
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Person, x=1, y=0)
+
+        def step(self):
+            self.agents.step()
+
+    result = Model(_params(steps=1)).run(contract="check")
+    cert = result["contract"][0]
+    race = next(v for v in cert.violations if v.kind == "activation_race")
+    assert set(race.ids) == {0, 1}
+    assert race.columns == ["x"]
+    assert race.divergence_witness is True
+    assert result.agents["y"].to_list() == [1, 0]
+    assert cert.conditional_guarantee == "not_established"
+
+
+def test_frame_replacement_inside_an_activation_reports_incomplete_trace():
+    class Person(_Walker):
+        def step(self):
+            self.model.agents_df = self.model.agents_df.with_columns(pl.col("x") + 1)
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Person)
+
+        def step(self):
+            self.activate_agents()
+
+    cert = Model(_params(steps=1)).run(contract="check")["contract"][0]
+    assert [v.kind for v in cert.violations] == ["incomplete_activation_trace"]
+    assert cert.conditional_guarantee == "not_established"
+
+
+class _OwnInteger(am.Agent):
+    def step(self):
+        if self.eligible:
+            self.x += 2
+
+
+class _AddInteger(am.Agent):
+    def step(self):
+        self.model.agents.at[[0]].scatter_add(x=-2)
+
+
+class _MaxInteger(am.Agent):
+    def step(self):
+        self.model.agents.at[[0]].scatter_max(x=12)
+
+
+class _CertificateModel(am.Model):
+    def setup(self):
+        self.add_agents(3, agent_class=self.p.agent_class, x=self.p.start, eligible=[True, False, True])
+
+    def step(self):
+        if self.p.dispatch == "activate":
+            self.activate_agents()
+        elif self.p.dispatch == "call":
+            self.agents.call("step")
+        else:
+            self.agents.step()
+
+
+@pytest.mark.parametrize("agent_class, dispatch, start, expected, operator", [
+    (_OwnInteger, "broadcast", 10, [12, 10, 12], None),
+    (_AddInteger, "activate", 10, [4, 10, 10], "+"),
+    (_MaxInteger, "call", 10, [12, 10, 10], "max"),
+])
+def test_positive_certificate_covers_exact_integer_sweep(
+    agent_class, dispatch, start, expected, operator, tmp_path, monkeypatch
+):
+    # The CI coverage tool observes Python execution without changing the model.
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+    model = _CertificateModel(_params(steps=1, agent_class=agent_class, dispatch=dispatch, start=start))
+    result = model.run(contract="check")
+    assert result.agents["x"].to_list() == expected
+    cert = result["contract"][0]
+    assert cert.clean
+    assert cert.conditional_guarantee == "established"
+    assert cert.certification_reason is None
+    assert cert.certification["scope"] == "activation_sweep"
+    assert cert.activations_traced == cert.certification["activation_count"] == 3
+    if operator:
+        assert cert.certification["reduction"] == {"column": "x", "target_id": 0, "operator": operator}
+    path = tmp_path / "sweep"
+    result.save(path)
+    saved = am.RunResults.load(path)["contract"][0]
+    assert saved["conditional_guarantee"] == "established"
+    assert saved["certification"] == cert.certification
+
+
+@pytest.mark.parametrize("agent_class, start", [
+    (_AddInteger, -(1 << 63) + 1),
+    (_MaxInteger, 1.0),
+])
+def test_clean_trace_can_withhold_the_conditional_guarantee(agent_class, start):
+    params = _params(steps=1, agent_class=agent_class, dispatch="broadcast", start=start, seed=12)
+    cert = _CertificateModel(params).run(contract="check")["contract"][0]
+    assert cert.clean
+    assert cert.activations_traced == 3
+    assert cert.conditional_guarantee == "not_established"
+    assert cert.certification is None
+    assert cert.certification_reason
+
+
+def test_certificate_withholds_verdict_under_an_interpreter_tracer(monkeypatch):
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: True)
+    params = _params(steps=1, agent_class=_OwnInteger, dispatch="broadcast", start=10)
+    cert = _CertificateModel(params).run(contract="check")["contract"][0]
+    assert cert.clean and cert.conditional_guarantee == "not_established"
+    assert "profiler" in cert.certification_reason
+
+
+class _KeyedWalker(am.Agent):
+    def step(self):
+        if self.draw("move") < 0.45:
+            self.x += 1
+
+
+class _IndexedWalker(am.Agent):
+    def step(self):
+        if self.draw("walk", index=2) >= 0.45:
+            self.x = self.x - 2
+
+
+class _StochasticSweep(am.Model):
+    def setup(self):
+        self.add_agents(12, agent_class=self.p.agent_class, x=0)
+
+    def step(self):
+        self.activate_agents(self.p.schedule)
+
+
+@pytest.mark.parametrize("agent_class, event, index", [
+    (_KeyedWalker, "move", 0),
+    (_IndexedWalker, "walk", 2),
+])
+def test_keyed_draw_certificate_under_shuffled_activation(agent_class, event, index, tmp_path, monkeypatch):
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+    params = _params(steps=3, seed=11, agent_class=agent_class)
+    sequential = _StochasticSweep(dict(params, schedule="sequential")).run(contract="check")
+    shuffled_model = _StochasticSweep(dict(params, schedule="random"))
+    shuffled = shuffled_model.run(contract="check")
+    assert shuffled_model._contract._activation_order != list(range(12))
+    assert shuffled.agents.equals(sequential.agents)
+    assert len(shuffled.agents["x"].unique()) > 1
+    unchecked = _StochasticSweep(dict(params, schedule="random")).run()
+    assert unchecked.agents.equals(shuffled.agents)
+    for t, (a, b) in enumerate(zip(sequential["contract"], shuffled["contract"])):
+        assert a.conditional_guarantee == b.conditional_guarantee == "established"
+        assert a.certification == b.certification
+        assert b.certification["keyed_randomness"] == {
+            "algorithm": "blake2b-53-v1",
+            "seed": 11,
+            "step": t,
+            "event": event,
+            "index": index,
+            "draw_count": 12,
+        }
+    path = tmp_path / "keyed-sweep"
+    shuffled.save(path)
+    saved = am.RunResults.load(path)["contract"]
+    assert saved[2]["certification"] == shuffled["contract"][2].certification
+
+
+@pytest.mark.parametrize("set_value, diverges", [(1, False), (9, True)])
+def test_keyed_draw_keeps_the_same_value_during_activation_replay(set_value, diverges):
+    class Person(am.Agent):
+        def step(self):
+            if self.id == 0:
+                value = self.model.agents.by_id(1).x
+                self.y = value + int(self.draw("bonus", index=2) < 0.5)
+            else:
+                self.x = self.p.set_value
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Person, x=1, y=0)
+
+        def step(self):
+            self.agents.step()
+
+    params = _params(steps=1, seed=7, set_value=set_value)
+    unchecked = Model(params).run()
+    checked = Model(params).run(contract="check")
+    assert checked.agents.equals(unchecked.agents)
+    cert = checked["contract"][0]
+    race = next(v for v in cert.violations if v.kind == "activation_race")
+    assert race.divergence_witness is diverges
+    assert cert.conditional_guarantee == "not_established"
+
+
+def test_draw_override_and_incomplete_trace_withhold_certificate(monkeypatch):
+    class Override(_KeyedWalker):
+        def draw(self, event):
+            return 0.1
+
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+    params = _params(steps=1, seed=11, schedule="sequential")
+    result = _StochasticSweep(dict(params, agent_class=Override)).run(contract="check")
+    cert = result["contract"][0]
+    assert cert.clean and cert.conditional_guarantee == "not_established"
+    assert "built-in keyed draw" in cert.certification_reason
+
+    monkeypatch.setattr("ambr.contract.ContractMonitor.record_keyed_draw", lambda *args: None)
+    result = _StochasticSweep(dict(params, agent_class=_KeyedWalker)).run(contract="check")
+    cert = result["contract"][0]
+    assert cert.clean and cert.conditional_guarantee == "not_established"
+    assert "effects did not match" in cert.certification_reason
 
 
 class FloatScatterModel(am.Model):

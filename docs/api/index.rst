@@ -94,9 +94,10 @@ Quick Reference
 
 **Device placement & lanes:**
 
-* :meth:`ambr.Model.cpu` / :meth:`ambr.Model.gpu` - Keras-style placement;
-  ``step_vectorized`` / ``step_oop`` (GPU is vectorized-only, NVIDIA+CuPy;
-  see :doc:`gpu`, :doc:`../going_faster`)
+* :meth:`ambr.Model.cpu` / :meth:`ambr.Model.gpu` - Device placement for
+  vectorized hooks and automatic batching of eligible agent rules.
+  GPU runs require NVIDIA and CuPy. See :doc:`gpu` and :doc:`../going_faster`.
+* :meth:`ambr.Model.vectorize` - Select vectorized execution on the current device.
 * :meth:`ambr.Model.approve_fast_path` / :meth:`ambr.Model.revoke_fast_path_approval`
   - opt-in private GPU loop; **caller-attested** label only
 * ``ambr.EXECUTION_DEVICES`` / ``EXECUTION_MODES`` / ``ExecutionConfig``
