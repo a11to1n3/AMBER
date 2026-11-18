@@ -69,6 +69,7 @@ benchmarks/results/amber_*.log
 !benchmarks/results/benchmark_results_snapshot_correct_10run_10m.json
 !benchmarks/results/summary_table_snapshot_correct_10run_10m.md
 !benchmarks/results/automatic_batching_0_6_0.json
+!benchmarks/results/framework_scaling_fix11.json
 
 # Local release notes / scratch (never ship)
 PR_DESCRIPTIONS.md
