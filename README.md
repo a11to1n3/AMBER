@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml/badge.svg)](https://github.com/a11to1n3/AMBER/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/a11to1n3/AMBER/graph/badge.svg)](https://codecov.io/gh/a11to1n3/AMBER)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%20to%203.13-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://img.shields.io/pypi/v/ambr.svg)](https://pypi.org/project/ambr/)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3_Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
@@ -211,9 +211,10 @@ a comparison such as `self.draw("move", index=2) < 0.45`. AMBER generates
 the same keyed draws on the host for CPU and GPU runs. On GPU, it uploads the
 selection mask and applies the updates to device columns. Rules involving other
 agents, shared random draws, custom attribute access, or unsupported types use
-the Python loop. Contract checking also uses the Python loop. The aging example records
-three batches and 3,000 agent calls replaced. After three steps, the active
-people are age 3 and the others are age 0.
+the Python loop. With contract checking enabled, agent methods run individually
+so the monitor can trace their effects. The aging example replaces 3,000 agent
+calls with three batches. After three steps, the active people are age 3 and
+the others are age 0.
 [Automatic batching implementation](src/ambr/_auto_batch.py)
 
 Bounded random walks also batch when their positions are stored as Float64.
@@ -558,19 +559,6 @@ print(Drift({"n": 100_000, "steps": 20, "show_progress": False}).run().info)
 the stdlib one. Both are seeded from the `seed` parameter. Progress printing is
 off by default (`show_progress=True` to re-enable).
 
-> **New in 0.5.0:** production-candidate. **Breaking / install:** matplotlib
-> moved to `ambr[viz]`; scikit-optimize was removed and replaced by SMAC
-> under `ambr[advanced]` (SMAC + ConfigSpace + scikit-learn). Python
-> **3.10–3.13** only. **API:** `record_model` inside `step()` is kept;
-> missing optimization metrics raise; SMAC defaults to `on_error='raise'`;
-> `RunResults.save` uses a versioned manifest. Upgrade with
-> `pip install -U 'ambr>=0.5.0'`. Full list:
-> [CHANGELOG.md](https://github.com/a11to1n3/AMBER/blob/main/CHANGELOG.md).
->
-> **0.4.7:** GPU claim script renamed to
-> [`scripts/run_gpu_claims.py`](https://github.com/a11to1n3/AMBER/blob/main/scripts/run_gpu_claims.py);
-> paper-campaign machine labels removed from user-facing docs.
-
 ## ⚡ Vectorized View API
 
 The view API runs bulk operations on whole columns or selected rows:
@@ -597,12 +585,13 @@ Ordinary agent rules and explicit column operations both have batching paths.
 | Task | Canonical | Legacy (deprecated → 1.0) |
 |------|-----------|---------------------------|
 | NumPy RNG | `self.rng` | `self.nprandom` |
-| Device / run mode | `model.cpu(mode=...).run()` / `model.gpu().run()` | `run(backend=...)` |
+| Device / run mode | `run()` / `vectorize().run()` / `gpu().run()` / `cpu(mode=...).run()` | `run(backend=...)` |
+| Agent-scoped uniform draw | `self.draw("event", index=0)` | — |
 | Record a model metric | `model_reporters = {...}` or `record_model(k, v)` | `record(k, v)` |
 | Filter agents | `agents.where(expr)` / `agents[mask]` / `agents.at[ids]` | `agents.select(...)` |
 | Per-agent write | `agent.col = v` | `agent.record(...)`, `agent.update_data(...)`, `update_agent_data` |
 | Bulk / multi-column write | `agents.set(**cols)` or `view.col = …` | `agents.record` / `update_data`, `batch_update_agents`, `Population.batch_*` |
-| Accumulate (duplicate ids) | `agents.at[ids].scatter_add(...)` | double ordinary writes in one step |
+| Reduce across repeated IDs | `agents.at[ids].scatter_add(...)` / `scatter_max(...)` | double ordinary writes in one step |
 | Array kernels | `agents.borrow` / `agents.commit` (or `TensorLane`) | hand-maintained parallel NumPy buffers |
 | Read agent objects | iterate `model.agents`, `agents.by_id(i)` | `agents.agents`, `agents.agent_ids` |
 | Bulk numpy round-trip | `agents.numpy(...)` + `agents.set(...)` | `.to_numpy()` + per-column assign only |
@@ -616,6 +605,8 @@ declarative metrics, and set `record_initial = True` to capture a `t=0` row.
 Agent attributes can hold mutable Python lists and dictionaries. After an
 in-place edit, assign the container to the attribute to publish its updated
 contents to the columnar store.
+Inside an agent method, `self.scatter_add(...)` and `self.scatter_max(...)`
+apply a reduction to that agent's own row.
 
 ## 🔒 Snapshot-view contract
 
@@ -648,16 +639,22 @@ print(cert.certification)
 `check` records a `ContractCertificate` per step. `warn` also emits a warning per
 violation. `raise` stops on the first error. Mode `off` disables the monitor.
 The proof covers supported integer updates and exact, fixed-target integer
-reductions for one sequential or shuffled sweep at its observed entry state.
-`self.draw("earn")` gives the same uniform value for a given seed, step,
-agent ID, and event. Use `index=` for multiple draws within one event.
+reductions for one sequential or shuffled CPU sweep at its observed entry
+state. `self.draw("earn")` gives a uniform value in `[0, 1)` keyed by the model
+seed, step, agent ID, event, and draw index. Reusing the key repeats the value.
+Use distinct events or indices for separate draws.
 Other rules and GPU runs receive `"not_established"` with a
 `cert.certification_reason`. Separately written vectorized and GPU kernels
 require reference comparisons.
 
+`results.save(path)` preserves the verdict, certification scope, activation
+count, and keyed-draw provenance when applicable. `am.RunResults.load(path)`
+returns the saved certificate fields as dictionaries under `results["contract"]`.
+
 For supported CPU and GPU sweeps, swapped-order replay can confirm a divergence
 and restore the forward model state. A witness is inconclusive when a replay
-cannot isolate the sweep or verify its random streams.
+cannot isolate the sweep or verify its random streams. A cached draw from
+a model-owned shared stream can make the witness inconclusive too.
 
 The monitor watches **two write paths** (and combinations):
 
@@ -667,16 +664,21 @@ The monitor watches **two write paths** (and combinations):
 * **Mutable raw arrays** — `agents.array(...)` → `uncertified_mutable_borrow`
 
 Ordinary view writes require unique target IDs. Use `scatter_add` or
-`scatter_max` for repeated targets.
+`scatter_max` for repeated targets. The monitor checks ID multiplicities at
+step boundaries and attributes view writes to the issuing agent when the
+targets are known. [Contract API](docs/api/contract.rst)
 
 ## 🎮 GPU backend & batched calibration
 
 **Single-run (native):** call `model.gpu().run()` when NVIDIA+CuPy are available.
+Check `am.GPU_AVAILABLE` to choose `model.cpu().run()` on a host without CUDA.
 AMBER batches eligible ordinary agent rules on the GPU and also supports explicit
 column updates. It uses `step_vectorized()` when provided, otherwise `step()` or
 a standalone `step_oop()`. Numeric columns stay on the device until host access
-or teardown. Contract modes use the
-instrumented general path; private model-specific fast loops run only with
+or teardown. Before `end()`, AMBER flushes pending writes and synchronizes
+dirty device columns so the hook sees completed updates. The device context
+stays active through `end()` and the final export includes its writes.
+Contract modes use the instrumented general path. Private model-specific fast loops run only with
 `contract="off"` **and** an explicit per-instance
 `approve_fast_path(evidence)` declaration. The evidence string is a
 caller-supplied provenance label, not something AMBER verifies. Without it,
@@ -775,7 +777,8 @@ derivative-free calibration at scale.
 
 ## 📦 Installation
 
-The examples on this page use the published AMBER 0.6.0 release.
+The examples on this page use AMBER 0.6.0. AMBER is tested and supported on
+Python 3.10 through 3.13.
 
 ```bash
 python -m pip install --upgrade ambr
@@ -804,8 +807,8 @@ am.print_status()
 - **Device placement**: Keras-style `model.cpu(mode=...)` / `model.gpu()` with
   `step_vectorized` / `step_oop` hooks and automatic batching for eligible agent rules
 - **Speed lanes**: `am.print_status()` / `am.recommend(n)` / `ArrayKernelModel`
-- **Snapshot-view monitor**: operational diagnostics for observed write/borrow
-  conflicts and uncertified mutable arrays (not a schedule proof)
+- **Snapshot-view contract**: write and borrow diagnostics, bounded replay, and
+  saved order-independence certificates for supported CPU sweeps
 - **GPU backend**: native vectorized path + optional approved private loops +
   CuPy helpers + batched ensemble for calibration
 - **Optimization**: grid / random / Bayesian (SMAC) search, plus GPU-batched calibration
