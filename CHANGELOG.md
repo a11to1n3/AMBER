@@ -7,7 +7,8 @@
   so `activation_race` covers these accessors.
 - Swapped-order replay restores every agent instance attribute, including
   underscore-prefixed ones, so `contract="check"` leaves forward results
-  unchanged when a replay sets private agent state.
+  unchanged when a replay sets private agent state. The top-level contents of
+  private lists, dicts, sets, and numeric arrays are restored in place.
 - `activation_race` violations list their activation IDs in sorted order, and
   the order of reported races does not depend on `PYTHONHASHSEED`.
 

@@ -282,3 +282,45 @@ def test_replay_is_inconclusive_when_only_the_swap_uses_shared_draws():
     assert result["agents"].equals(forward["agents"])
     assert result["model"].equals(forward["model"])
     assert checked.rng.random() == plain.rng.random()
+
+
+class PrivateContainerWriter(am.Agent):
+    def setup(self):
+        self._seen = []
+        self._counts = {}
+        self._values = set()
+        self._total = np.zeros(1, dtype=np.int64)
+
+    def step(self):
+        target = self.model.agents.by_id(0)
+        value = int(target.x)
+        self._seen.append(value)
+        self._counts[value] = self._counts.get(value, 0) + 1
+        self._values.add(value)
+        self._total += value
+        self.y = len(self._seen) + len(self._counts) + len(self._values) + int(self._total[0])
+        target.x = self.id + 1
+
+
+def test_replay_restores_private_container_contents_in_place():
+    class Model(RaceModel):
+        agent_class = PrivateContainerWriter
+
+        def setup(self):
+            self.add_agents(2, agent_class=self.agent_class, x=0, y=0)
+
+    params = {**PARAMETERS, "steps": 2}
+    plain = Model(params).cpu(mode="oop")
+    checked = Model(params).cpu(mode="oop")
+    forward = plain.run(contract="off")
+    result = checked.run(contract="check")
+
+    def private(model):
+        return [
+            (agent._seen, agent._counts, agent._values, agent._total.tolist())
+            for agent in model.agents
+        ]
+
+    assert witnesses(result) and all(witnesses(result))
+    assert result["agents"].equals(forward["agents"])
+    assert private(checked) == private(plain)

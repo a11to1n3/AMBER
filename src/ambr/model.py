@@ -911,7 +911,9 @@ class Model(BaseModel):
             self._bump_id_version()
             self._pending_writes = {}
             self._activation_override_order = None
-            self._restore_agent_attrs(saved_attrs)
+            if not self._restore_agent_attrs(saved_attrs):
+                witness = None
+                reason = "forward agent state could not be restored"
             mon.mode = saved_mode
             mon.active = saved_active
             mon._in_replay = False
@@ -1029,9 +1031,7 @@ class Model(BaseModel):
                 oid = id(value)
                 if oid in nodes:
                     return ("node", oid)
-                saved = value.copy()
-                saved.setflags(write=value.flags.writeable)
-                nodes[oid] = ("ndarray", value, saved)
+                nodes[oid] = ("ndarray", value, self._array_snapshot(value))
                 return ("node", oid)
             raise TypeError("replay value cannot be restored")
 
@@ -1097,22 +1097,8 @@ class Model(BaseModel):
                     obj.clear()
                     obj.update(resolved[oid])
                 elif kind == "ndarray":
-                    saved = payload
-                    if (
-                        not isinstance(obj, np.ndarray)
-                        or not isinstance(saved, np.ndarray)
-                        or obj.dtype != saved.dtype
-                    ):
+                    if not self._restore_array_in_place(obj, payload):
                         ok = False
-                        continue
-                    if not self._replay_values_equal(obj, saved):
-                        if not obj.flags.writeable:
-                            obj.setflags(write=True)
-                        if obj.shape != saved.shape:
-                            obj.resize(saved.shape, refcheck=False)
-                        obj[...] = saved
-                    if obj.flags.writeable != saved.flags.writeable:
-                        obj.setflags(write=saved.flags.writeable)
                 elif kind != "tuple":
                     ok = False
             except Exception:
@@ -1131,6 +1117,31 @@ class Model(BaseModel):
         except Exception:
             return False
         return ok
+
+    @staticmethod
+    def _array_snapshot(value: np.ndarray) -> np.ndarray:
+        """Copy ``value`` with its write flag for :meth:`_restore_array_in_place`."""
+        saved = value.copy()
+        saved.setflags(write=value.flags.writeable)
+        return saved
+
+    def _restore_array_in_place(self, obj: Any, saved: Any) -> bool:
+        """Write ``saved`` back into ``obj``. False when the dtype changed."""
+        if (
+            not isinstance(obj, np.ndarray)
+            or not isinstance(saved, np.ndarray)
+            or obj.dtype != saved.dtype
+        ):
+            return False
+        if not self._replay_values_equal(obj, saved):
+            if not obj.flags.writeable:
+                obj.setflags(write=True)
+            if obj.shape != saved.shape:
+                obj.resize(saved.shape, refcheck=False)
+            obj[...] = saved
+        if obj.flags.writeable != saved.flags.writeable:
+            obj.setflags(write=saved.flags.writeable)
+        return True
 
     def _replay_values_equal(self, left: Any, right: Any) -> bool:
         """Compare leaves and containers without using an array's truth value."""
@@ -1282,36 +1293,66 @@ class Model(BaseModel):
     def _agent_objects(self) -> List[Any]:
         return list(getattr(self.agents, "_agent_objects", ()) or ())
 
-    def _snapshot_agent_attrs(self) -> List[Tuple[Any, Dict[str, Any]]]:
+    def _snapshot_agent_attrs(
+        self,
+    ) -> List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]]:
         """Save every instance attribute of every tracked agent.
 
         Public values are deep-copied. Private values and the framework's
         bindings keep the forward objects, so a replay that adds, rebinds, or
         deletes a private attribute leaves no trace in the forward run.
+        Private lists, dicts, sets, and numeric arrays also keep a copy of
+        their top-level contents, which the restore writes back in place.
         """
-        saved: List[Tuple[Any, Dict[str, Any]]] = []
+        saved: List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]] = []
         for agent in self._agent_objects():
             attrs: Dict[str, Any] = {}
+            contents: List[Tuple[Any, Any]] = []
             for key, value in object.__getattribute__(agent, "__dict__").items():
                 if key == "_ambr_container_cells":
                     attrs[key] = value.copy()
                     continue
-                if key in ("model", "id", "p") or key.startswith("_"):
+                if key in ("model", "id", "p"):
                     attrs[key] = value
+                    continue
+                if key.startswith("_"):
+                    attrs[key] = value
+                    if type(value) in (list, dict, set):
+                        contents.append((value, value.copy()))
+                    elif isinstance(value, np.ndarray) and self._ndarray_replay_supported(value):
+                        contents.append((value, self._array_snapshot(value)))
                     continue
                 try:
                     attrs[key] = copy.deepcopy(value)
                 except Exception:
                     attrs[key] = value
-            saved.append((agent, attrs))
+            saved.append((agent, attrs, contents))
         return saved
 
-    def _restore_agent_attrs(self, saved: List[Tuple[Any, Dict[str, Any]]]) -> None:
-        """Put back exactly the attributes saved by :meth:`_snapshot_agent_attrs`."""
-        for agent, attrs in saved:
+    def _restore_agent_attrs(
+        self, saved: List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]]
+    ) -> bool:
+        """Put back what :meth:`_snapshot_agent_attrs` saved.
+
+        Returns False when a private array could not be written back.
+        """
+        ok = True
+        for agent, attrs, contents in saved:
             live = object.__getattribute__(agent, "__dict__")
             live.clear()
             live.update(attrs)
+            for obj, items in contents:
+                try:
+                    if isinstance(obj, np.ndarray):
+                        ok = self._restore_array_in_place(obj, items) and ok
+                    elif isinstance(obj, list):
+                        obj[:] = items
+                    else:
+                        obj.clear()
+                        obj.update(items)
+                except Exception:
+                    ok = False
+        return ok
 
     def _refresh_agent_cache(self, df: pl.DataFrame) -> None:
         """Load already-present agent attributes from ``df`` without queueing."""

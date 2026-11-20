@@ -80,7 +80,9 @@ occurs before this check. External random sources remain outside this trace.
 The comparison includes the final agent frame, supported public model state,
 and values recorded with ``record_model()`` during the step. After the replay,
 each agent's instance attributes, including underscore-prefixed ones, are
-restored to their forward bindings.
+restored to their forward bindings. Private lists, dicts, sets, and numeric
+arrays also get their top-level contents back in place; nested containers
+inside them are not copied.
 
 Write paths the monitor sees
 ----------------------------
