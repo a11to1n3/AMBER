@@ -5,8 +5,9 @@ Architecture
 * ``model.agents`` is an :class:`AgentList` — the full population view.
 * Filtered / scatter views come from ``agents.where(...)``, ``agents[mask]``,
   and ``agents.at[ids]``.
-* All column reads/writes go through ``model.agents_df`` / ``model._set_frame``
-  so Polars remains the single source of truth.
+* All column reads/writes go through ``model._agents_frame()`` /
+  ``model._set_frame`` so Polars remains the single source of truth. Views
+  record the reads and writes they expose to the contract monitor.
 
 Write path (DRY)
 ----------------
@@ -161,7 +162,7 @@ class _BaseView:
     """Attribute/assignment protocol shared by every view type.
 
     Subclasses implement :meth:`_ids_series` (the agents this view covers).
-    Reads join against ``model.agents_df``; writes go through
+    Reads join against the model's agent frame; writes go through
     :meth:`_write_column` / :meth:`set` / :meth:`scatter_add`.
     """
 
@@ -257,7 +258,7 @@ class _BaseView:
 
         # --- expression path ------------------------------------------------
         if isinstance(value, pl.Expr):
-            df = model.agents_df
+            df = model._agents_frame()
             _record_expression_reads(model, df, value)
             sub = df.filter(pl.col("id").is_in(ids.to_list())).select(
                 pl.col("id"), value.alias("__new__")
@@ -337,7 +338,7 @@ class _BaseView:
                         target_ids=ids,
                     )
                     return
-                df = model.agents_df
+                df = model._agents_frame()
                 base = df[name].to_numpy()
                 # Object / mixed columns fall through to the join path.
                 if base.dtype != object and vals.dtype != object:
@@ -354,7 +355,7 @@ class _BaseView:
                 pass
 
         # --- general update join --------------------------------------------
-        df = model.agents_df
+        df = model._agents_frame()
         df = _ensure_columns(df, [name])
         update_df = pl.DataFrame([ids.rename("id"), values.rename(name)])
         model._set_frame(
@@ -381,7 +382,7 @@ class _BaseView:
                 )
             new_ids = base_ids.filter(predicate)
         elif isinstance(predicate, pl.Expr):
-            df = model.agents_df
+            df = model._agents_frame()
             sub = df.filter(pl.col("id").is_in(base_ids.to_list())).filter(predicate)
             _record_expression_reads(model, df, predicate)
             new_ids = sub["id"]
@@ -602,7 +603,7 @@ class _BaseView:
         model._flush_pending_writes()
         ids = self._ids_series()
         n = ids.len()
-        df = model.agents_df
+        df = model._agents_frame()
         full, _ = _ordinary_targets(model, ids, df)
 
         series_by_name: Dict[str, pl.Series] = {
@@ -747,7 +748,7 @@ class _BaseView:
             self._record_scatter_targets(values, operator)
             return
 
-        df = model.agents_df
+        df = model._agents_frame()
         # A mixed reduction can include columns that lack a device buffer.
         # The host fold must see current values for its resident inputs.
         from .execution import active_execution

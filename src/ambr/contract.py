@@ -439,6 +439,18 @@ class ContractMonitor:
         if not self._in_replay and self._current_activation is not None:
             self._activation_column_reads.setdefault(self._current_activation, set()).add(column)
 
+    def record_frame_read(self, columns: Iterable[str]) -> None:
+        """Record a whole-frame read by the current activation.
+
+        ``model.agents_df`` and the agent helpers built on it expose every
+        column, so each column counts as a whole-column read. Frame reads
+        outside an activation are not recorded.
+        """
+        if not self.active or self._in_replay or self._current_activation is None:
+            return
+        for column in columns:
+            self.record_borrow(column)
+
     def record_mutable_borrow(self, column: str) -> None:
         """Record raw mutable array access that cannot be fully traced."""
         if not self.active:

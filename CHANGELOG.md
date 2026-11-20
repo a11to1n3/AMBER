@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Contract checking treats a read of `model.agents_df`, `Agent.get_data()`, or
+  `Agent.get_neighbors(...)` inside an activation as a read of every column,
+  so `activation_race` covers these accessors.
+
 ## v0.6.0 - 2026-11-18
 
 - Automatically batch bounded random-walk updates on committed Float64

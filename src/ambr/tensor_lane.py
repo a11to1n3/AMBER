@@ -113,7 +113,7 @@ def borrow_numeric(model, column: str) -> Tuple[np.ndarray, bool]:
     reading the old one. Borrow all inputs first, compute, then commit.
     """
     _maybe_record_borrow(model, column)
-    df = model.agents_df  # flushes pending writes; single source of truth
+    df = model._agents_frame()  # flushes pending writes; single source of truth
     return _series_as_readonly(df.get_column(column))
 
 
@@ -171,7 +171,7 @@ class TensorLane:
         return self._mode == "array" and ARRAY_BACKING_AVAILABLE
 
     def _df(self) -> pl.DataFrame:
-        return self.model.agents_df
+        return self.model._agents_frame()
 
     # --- packing / unpacking ------------------------------------------------
 
@@ -259,7 +259,7 @@ def commit_columns(model, **columns) -> None:
     Writes go through ``model._set_frame`` so the snapshot-view contract can
     witness the commit and flag same-step duplicate commits of a column.
     """
-    df = model.agents_df
+    df = model._agents_frame()
     names = list(columns)
     series = [
         _cast_to_existing(df, pl.Series(name, np.asarray(v)), name)

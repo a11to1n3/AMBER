@@ -88,6 +88,9 @@ Write paths the monitor sees
 * **Attributed activation reads and writes** -- ordinary agent attribute
   access and view writes with known targets during method broadcasts,
   ``activate_agents``, and staged activation, used to report ``activation_race``.
+  Reading ``model.agents_df``, ``Agent.get_data()``, or
+  ``Agent.get_neighbors(...)`` inside an activation counts as a read of every
+  column.
 * **Lane / view** -- ``agents.col = ...``, ``agents.set(...)``,
   ``agents.commit(...)``, and :class:`~ambr.tensor_lane.TensorLane` commits
   (per-column commit counting + borrow-after-commit).

@@ -301,6 +301,23 @@ class Model(BaseModel):
 
     @property
     def agents_df(self) -> pl.DataFrame:
+        """The current agent table, with pending writes applied.
+
+        Under contract checking, a read inside an activation counts as a
+        whole-column read of every column, as with a column view.
+        """
+        frame = self._agents_frame()
+        monitor = self._contract
+        if monitor.active:
+            monitor.record_frame_read(frame.columns)
+        return frame
+
+    def _agents_frame(self) -> pl.DataFrame:
+        """Return :attr:`agents_df` without recording a contract read.
+
+        Library paths that report their own reads, writes, or reductions use
+        this accessor.
+        """
         self._frame_for_columns()
         sync_all_device_columns(self, dirty_only=True)
         frame = self.population.data
@@ -460,7 +477,7 @@ class Model(BaseModel):
         change -- e.g. an ``Int64`` attribute silently rewritten as ``Float64``
         -- surfaces as a schema mutation rather than passing unnoticed.
         """
-        df = self.agents_df  # flushes pending writes
+        df = self._agents_frame()  # flushes pending writes
         schema = {name: str(dt) for name, dt in zip(df.columns, df.dtypes)}
         return schema, Counter(df["id"]) if "id" in df.columns else Counter()
 
@@ -628,7 +645,7 @@ class Model(BaseModel):
         cols = type(self).agent_reporters
         if not cols:
             return
-        df = self.agents_df
+        df = self._agents_frame()
         have = [c for c in cols if c in df.columns]
         if not have:
             return
@@ -725,7 +742,7 @@ class Model(BaseModel):
                 mon.begin_step(self._contract_snapshot())
                 step_finished = False
                 try:
-                    self._pre_step_state = self.agents_df.clone()
+                    self._pre_step_state = self._agents_frame().clone()
                     self._pre_step_rng = self._capture_rng_state()
                     self._pre_step_world = self._capture_replay_world()
                     self._pre_step_roster = self._snapshot_replay_roster()
@@ -806,7 +823,7 @@ class Model(BaseModel):
         if entry_world is None or post_world is None:
             return _ReplayOutcome(None, None)
 
-        original_post = self.agents_df.clone()
+        original_post = self._agents_frame().clone()
         saved_attrs = self._snapshot_agent_attrs()
         forward_step_data = self._current_step_data
         try:
@@ -1151,7 +1168,7 @@ class Model(BaseModel):
         recorded: Any,
     ) -> Tuple[Optional[bool], Optional[str]]:
         try:
-            frame_differs = not bool(original_post.equals(self.agents_df))
+            frame_differs = not bool(original_post.equals(self._agents_frame()))
         except Exception as exc:
             return None, _replay_failure_reason(exc)
         replay_world = self._capture_replay_world(
@@ -1735,7 +1752,7 @@ class Model(BaseModel):
             info=info,
             # agents_df flushes the buffered write queue so OOP /
             # update_agent_data writes land in the returned frame.
-            agents=self.agents_df,
+            agents=self._agents_frame(),
             model=model_df,
         )
         if self._contract.mode != "off":
