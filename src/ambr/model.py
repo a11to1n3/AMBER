@@ -130,6 +130,7 @@ class Model(BaseModel):
         self._pre_step_rng = None
         self._pre_step_world = None
         self._pre_step_roster = None
+        self._pre_step_agents = None
         self._activation_override_order = None
 
         super().__init__(parameters)  # sets self.random / self.rng / self.nprandom
@@ -746,6 +747,7 @@ class Model(BaseModel):
                     self._pre_step_rng = self._capture_rng_state()
                     self._pre_step_world = self._capture_replay_world()
                     self._pre_step_roster = self._snapshot_replay_roster()
+                    self._pre_step_agents = self._snapshot_private_agent_state()
                     step_fn()
                     step_finished = True
                 finally:
@@ -757,6 +759,7 @@ class Model(BaseModel):
                     self._pre_step_rng = None
                     self._pre_step_world = None
                     self._pre_step_roster = None
+                    self._pre_step_agents = None
 
                 if mon.mode == "warn":
                     for v in cert.violations:
@@ -775,6 +778,7 @@ class Model(BaseModel):
             self._pre_step_rng = None
             self._pre_step_world = None
             self._pre_step_roster = None
+            self._pre_step_agents = None
             raise
 
     def replay_activation_swap(self, a: Any, b: Any) -> _ReplayOutcome:
@@ -783,8 +787,8 @@ class Model(BaseModel):
         ``value`` is True when the agent frame or restored model state
         diverges, False when both match, and None when the swap is not a
         sound witness. ``reason`` explains an inconclusive result. The replay
-        restores the step-entry random streams and supported attribute graph,
-        then puts the forward objects back. Stream restoration and model-state
+        restores the step-entry random streams, supported attribute graph, and
+        private agent attributes, then puts the forward objects back. Stream restoration and model-state
         restoration are attempted separately, so one failure does not skip the
         other. An exception from the swapped execution is caught here. The
         forward frame, pending writes, per-agent attribute cache, activation
@@ -820,7 +824,8 @@ class Model(BaseModel):
         post_world = self._capture_replay_world(
             self._replay_world_objects(entry_world)
         )
-        if entry_world is None or post_world is None:
+        entry_agents = getattr(self, "_pre_step_agents", None)
+        if entry_world is None or post_world is None or entry_agents is None:
             return _ReplayOutcome(None, None)
 
         original_post = self._agents_frame().clone()
@@ -856,10 +861,13 @@ class Model(BaseModel):
         try:
             entry_rng_ok = self._restore_rng_state(entry_rng)
             entry_world_ok = self._restore_replay_world(entry_world)
+            entry_agents_ok = self._restore_private_agent_state(entry_agents)
             if not entry_rng_ok:
                 reason = "step-entry random streams could not be restored"
             elif not entry_world_ok:
                 reason = "step-entry model state could not be restored"
+            elif not entry_agents_ok:
+                reason = "step-entry agent state could not be restored"
             else:
                 self._set_frame(pre.clone())
                 self._pending_writes = {}
@@ -1317,10 +1325,7 @@ class Model(BaseModel):
                     continue
                 if key.startswith("_"):
                     attrs[key] = value
-                    if type(value) in (list, dict, set):
-                        contents.append((value, value.copy()))
-                    elif isinstance(value, np.ndarray) and self._ndarray_replay_supported(value):
-                        contents.append((value, self._array_snapshot(value)))
+                    self._keep_private_contents(value, contents)
                     continue
                 try:
                     attrs[key] = copy.deepcopy(value)
@@ -1341,17 +1346,71 @@ class Model(BaseModel):
             live = object.__getattribute__(agent, "__dict__")
             live.clear()
             live.update(attrs)
-            for obj, items in contents:
-                try:
-                    if isinstance(obj, np.ndarray):
-                        ok = self._restore_array_in_place(obj, items) and ok
-                    elif isinstance(obj, list):
-                        obj[:] = items
-                    else:
-                        obj.clear()
-                        obj.update(items)
-                except Exception:
-                    ok = False
+            ok = self._write_back_contents(contents) and ok
+        return ok
+
+    def _snapshot_private_agent_state(
+        self,
+    ) -> List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]]:
+        """Save each agent's private attributes at step entry.
+
+        Records the bindings and the top-level contents of private lists,
+        dicts, sets, and numeric arrays, so a replay can start from the state
+        the forward sweep started from.
+        """
+        saved: List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]] = []
+        for agent in self._agent_objects():
+            attrs: Dict[str, Any] = {}
+            contents: List[Tuple[Any, Any]] = []
+            for key, value in object.__getattribute__(agent, "__dict__").items():
+                if not key.startswith("_") or key == "_ambr_container_cells":
+                    continue
+                attrs[key] = value
+                self._keep_private_contents(value, contents)
+            saved.append((agent, attrs, contents))
+        return saved
+
+    def _restore_private_agent_state(
+        self, saved: List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]]
+    ) -> bool:
+        """Put private agent attributes back to a :meth:`_snapshot_private_agent_state`.
+
+        Public attributes are left to the agent cache refresh. Returns False
+        when a private array could not be written back.
+        """
+        ok = True
+        for agent, attrs, contents in saved:
+            live = object.__getattribute__(agent, "__dict__")
+            for key in [
+                key for key in live
+                if key.startswith("_") and key != "_ambr_container_cells" and key not in attrs
+            ]:
+                del live[key]
+            live.update(attrs)
+            ok = self._write_back_contents(contents) and ok
+        return ok
+
+    def _keep_private_contents(self, value: Any, contents: List[Tuple[Any, Any]]) -> None:
+        """Copy the top-level contents of a container that can be restored in place."""
+        if type(value) in (list, dict, set):
+            contents.append((value, value.copy()))
+        elif isinstance(value, np.ndarray) and self._ndarray_replay_supported(value):
+            contents.append((value, self._array_snapshot(value)))
+
+    def _write_back_contents(self, contents: List[Tuple[Any, Any]]) -> bool:
+        """Write saved top-level contents back into the same objects."""
+        ok = True
+        for obj, items in contents:
+            try:
+                if isinstance(obj, np.ndarray):
+                    ok = self._restore_array_in_place(obj, items) and ok
+                elif isinstance(obj, list):
+                    obj[:] = items
+                else:
+                    obj.clear()
+                    obj.update(items)
+            except Exception:
+                ok = False
         return ok
 
     def _refresh_agent_cache(self, df: pl.DataFrame) -> None:

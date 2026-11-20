@@ -324,3 +324,42 @@ def test_replay_restores_private_container_contents_in_place():
     assert witnesses(result) and all(witnesses(result))
     assert result["agents"].equals(forward["agents"])
     assert private(checked) == private(plain)
+
+
+class CountingWriter(am.Agent):
+    """Both orders write the same value; it depends only on private state."""
+
+    def step(self):
+        if self.model.p.state == "counter":
+            self._n = getattr(self, "_n", 0) + 1
+            value = self._n
+        else:
+            self._log.append(self.id)
+            value = len(self._log)
+        self.model.agents.by_id(0).x = value
+
+
+def test_replay_starts_from_step_entry_private_agent_state():
+    class Model(RaceModel):
+        agent_class = CountingWriter
+
+        def setup(self):
+            self.add_agents(2, agent_class=self.agent_class, x=0)
+            for agent in self.agents:
+                agent._log = []
+
+    for state in ("counter", "list"):
+        params = {**PARAMETERS, "steps": 2, "state": state}
+        plain = Model(params).cpu(mode="oop")
+        checked = Model(params).cpu(mode="oop")
+        forward = plain.run(contract="off")
+        result = checked.run(contract="check")
+
+        for cert in result["contract"]:
+            races = [v for v in cert.violations if v.kind == "activation_race"]
+            assert races and all(v.divergence_witness is False for v in races), state
+        assert result["agents"].equals(forward["agents"])
+        assert [vars(a).get("_n") for a in checked.agents] == [
+            vars(a).get("_n") for a in plain.agents
+        ]
+        assert [a._log for a in checked.agents] == [a._log for a in plain.agents]

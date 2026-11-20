@@ -9,6 +9,8 @@
   underscore-prefixed ones, so `contract="check"` leaves forward results
   unchanged when a replay sets private agent state. The top-level contents of
   private lists, dicts, sets, and numeric arrays are restored in place.
+- Swapped-order replay starts from the agents' step-entry private attributes,
+  so a rule that depends on private state does not report a false divergence.
 - `activation_race` violations list their activation IDs in sorted order, and
   the order of reported races does not depend on `PYTHONHASHSEED`.
 
