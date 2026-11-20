@@ -68,6 +68,8 @@ class Population:
         """
         if self._data.is_empty():
             return new_df
+        if self._data.columns == new_df.columns and self._data.schema == new_df.schema:
+            return pl.concat([self._data, new_df], how="vertical")
 
         # Get union of all columns
         all_cols = set(self._data.columns) | set(new_df.columns)
@@ -133,12 +135,17 @@ class Population:
     def batch_add_agents(self, count: int, step: int = 0, **attributes):
         """Adds multiple agents efficiently."""
         start_id = self._data['id'].max() + 1 if not self._data.is_empty() else 0
-        ids = range(start_id, start_id + count)
-
-        new_data = {
-            'id': list(ids),
-            'step': [step] * count
-        }
+        id_range = range(start_id, start_id + count)
+        if count > 0 and -(2**63) <= id_range.start < id_range.stop < 2**63:
+            ids = pl.int_range(id_range.start, id_range.stop, dtype=pl.Int64, eager=True)
+        else:
+            ids = list(id_range)
+        steps = (
+            pl.repeat(step, len(id_range), dtype=pl.Int64, eager=True)
+            if count > 0 and type(step) is int and -(2**63) <= step < 2**63
+            else [step] * count
+        )
+        new_data: Dict[str, Any] = {'id': ids, 'step': steps}
 
         for k, v in attributes.items():
             if isinstance(v, pl.Series):
@@ -148,7 +155,13 @@ class Population:
             elif isinstance(v, (list, np.ndarray)):
                 if len(v) != count:
                     raise ValueError(f"Attribute {k} length mismatch")
-                new_data[k] = list(v) if isinstance(v, np.ndarray) else v
+                if type(v) is np.ndarray and v.ndim == 1 and count and v.dtype.isnative and (
+                    v.dtype.kind in "biu" or v.dtype in (np.dtype("float32"), np.dtype("float64"))
+                ):
+                    # Polars can share NumPy memory, so detach from the caller's array.
+                    new_data[k] = v.copy()
+                else:
+                    new_data[k] = list(v) if isinstance(v, np.ndarray) else v
             else:
                 new_data[k] = [v] * count
 

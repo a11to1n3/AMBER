@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Create bulk population IDs and creation steps in Polars and load numeric
+  NumPy inputs without boxing each value in Python.
+- Evaluate whole-population view predicates and expression assignments directly
+  in Polars without building an ID membership filter or joining the result.
+
 ## v0.6.0 - 2026-11-18
 
 - Automatically batch bounded random-walk updates on committed Float64

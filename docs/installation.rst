@@ -14,6 +14,9 @@ Core dependencies:
 * **numpy** >= 1.21.0 - Numerical computing
 * **networkx** >= 2.5 - Graph and network analysis
 
+Polars 2.1 requires Python 3.11 or later. On Python 3.10, pip selects a
+compatible Polars release.
+
 Optional plotting (``ambr[viz]``) pulls in **matplotlib** >= 3.3.0.
 CI and documentation builds should set ``MPLBACKEND=Agg`` when a
 non-interactive backend is required; AMBER never forces a matplotlib backend.

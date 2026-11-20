@@ -244,7 +244,7 @@ class _BaseView:
 
         Path selection (fast → slow):
 
-        1. Polars expression → filter + join
+        1. Polars expression → direct projection or subset filter + join
         2. Full population → single ``with_columns``
         3. Unique subset + numeric column → Numba/NumPy scatter-write
         4. Fallback → ``df.update(on='id')``
@@ -259,6 +259,14 @@ class _BaseView:
         if isinstance(value, pl.Expr):
             df = model.agents_df
             _record_expression_reads(model, df, value)
+            if full and df["id"].null_count() == 0:
+                # Expression assignments keep the existing value on null results.
+                if name in df.columns:
+                    value = pl.coalesce(value, pl.col(name))
+                model._set_frame(
+                    df.with_columns(value.alias(name)), written_columns=[name], target_ids=ids
+                )
+                return
             sub = df.filter(pl.col("id").is_in(ids.to_list())).select(
                 pl.col("id"), value.alias("__new__")
             )
@@ -382,9 +390,10 @@ class _BaseView:
             new_ids = base_ids.filter(predicate)
         elif isinstance(predicate, pl.Expr):
             df = model.agents_df
-            sub = df.filter(pl.col("id").is_in(base_ids.to_list())).filter(predicate)
+            if not _is_full_population(base_ids, df) or df["id"].null_count():
+                df = df.filter(pl.col("id").is_in(base_ids.to_list()))
             _record_expression_reads(model, df, predicate)
-            new_ids = sub["id"]
+            new_ids = df.filter(predicate)["id"]
         elif hasattr(predicate, "dtype") and getattr(predicate.dtype, "kind", "") in (
             "b",
             "?",

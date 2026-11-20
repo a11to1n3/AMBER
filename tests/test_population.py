@@ -1,6 +1,7 @@
 """Tests for ambr.population module."""
 
 import pytest
+import numpy as np
 import polars as pl
 from unittest.mock import Mock, patch
 
@@ -45,6 +46,17 @@ class TestPopulation:
         assert pop.get_agent_value(0, 'wealth') == 10
         assert pop.get_agent_value(1, 'wealth') == 20
         assert pop.get_agent_value(2, 'wealth') == 30
+
+    def test_batch_add_numeric_array_preserves_dtype_and_owns_its_values(self):
+        pop = Population()
+        values = np.arange(8, dtype=np.int32)[::2]
+        pop.batch_add_agents(4, step=7, wealth=values)
+        pop.batch_add_agents(1, step=8, wealth=np.array([9], dtype=np.int32))
+        values[:] = -1
+        assert pop.data.schema == {"id": pl.Int64, "step": pl.Int64, "wealth": pl.Int32}
+        assert pop.data["id"].to_list() == [0, 1, 2, 3, 4]
+        assert pop.data["step"].to_list() == [7, 7, 7, 7, 8]
+        assert pop.data["wealth"].to_list() == [0, 2, 4, 6, 9]
 
     def test_batch_add_agents_length_mismatch(self):
         pop = Population(schema={})

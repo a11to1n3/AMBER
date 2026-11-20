@@ -446,6 +446,20 @@ class TestAgentListViews:
         view = m.agents.where(pl.col("wealth") >= 13)
         assert view.ids.to_list() == [3, 4]
 
+    def test_polars_expression_assignments_preserve_null_and_subset_semantics(self):
+        import polars as pl
+
+        m = self._make_model()
+        m.agents.wealth = pl.when(pl.col("id") % 2 == 0).then(pl.col("wealth") * 2)
+        assert m.agents.wealth.to_list() == [20, 11, 24, 13, 28]
+        m.agents.total = pl.col("wealth").sum()
+        assert m.agents.total.to_list() == [96] * 5
+
+        subset = m.agents.at[[2, 0]]
+        assert subset.where(pl.col("wealth") == pl.col("wealth").max()).ids.to_list() == [2]
+        subset.total = pl.col("wealth").sum()
+        assert m.agents.total.to_list() == [44, 96, 44, 96, 96]
+
     def test_getitem_bool_series_is_mask(self):
         import polars as pl
 
