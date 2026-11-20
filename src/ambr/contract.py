@@ -89,6 +89,15 @@ CONDITIONAL_GUARANTEE_NOT_ESTABLISHED = "not_established"
 CONDITIONAL_GUARANTEE_ESTABLISHED = "established"
 
 
+def _ordered(items: Iterable[Any]) -> List[Any]:
+    """Return ``items`` sorted, so reports do not depend on set hash order."""
+    items = list(items)
+    try:
+        return sorted(items)
+    except TypeError:
+        return sorted(items, key=repr)
+
+
 def _ieee_float_domain(domain: str) -> bool:
     """Return whether ``domain`` names an IEEE floating-point dtype."""
     text = str(domain).strip().lower()
@@ -756,14 +765,16 @@ class ContractMonitor:
         readers_by_cell: Dict[Tuple[str, Any], List[Any]] = {}
         readers_by_column: Dict[str, List[Any]] = {}
         reducers_by_cell: Dict[Tuple[str, Any], Dict[Any, Set[str]]] = {}
+        # Sets are walked in sorted order so the hazard order, the replayed
+        # pairs, and the report do not depend on PYTHONHASHSEED.
         for act in order:
-            for col, aid in self._activation_writes.get(act, ()):
+            for col, aid in _ordered(self._activation_writes.get(act, ())):
                 writers_by_cell.setdefault((col, aid), []).append(act)
-            for col, aid in self._activation_reads.get(act, ()):
+            for col, aid in _ordered(self._activation_reads.get(act, ())):
                 readers_by_cell.setdefault((col, aid), []).append(act)
-            for col in self._activation_column_reads.get(act, ()):
+            for col in _ordered(self._activation_column_reads.get(act, ())):
                 readers_by_column.setdefault(col, []).append(act)
-            for col, aid, operator in self._activation_reductions.get(act, ()):
+            for col, aid, operator in _ordered(self._activation_reductions.get(act, ())):
                 reducers_by_cell.setdefault((col, aid), {}).setdefault(act, set()).add(operator)
 
         # (first activation, second activation, target cell, conflict kind).
@@ -867,7 +878,7 @@ class ContractMonitor:
                 detail,
                 severity=SEVERITY_ERROR,
                 columns=[col],
-                ids=[first] if first == second else [first, second],
+                ids=[first] if first == second else _ordered((first, second)),
                 divergence_witness=witness,
                 divergence_reason=reason,
             ))

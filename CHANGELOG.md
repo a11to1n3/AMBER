@@ -8,6 +8,8 @@
 - Swapped-order replay restores every agent instance attribute, including
   underscore-prefixed ones, so `contract="check"` leaves forward results
   unchanged when a replay sets private agent state.
+- `activation_race` violations list their activation IDs in sorted order, and
+  the order of reported races does not depend on `PYTHONHASHSEED`.
 
 ## v0.6.0 - 2026-11-18
 
