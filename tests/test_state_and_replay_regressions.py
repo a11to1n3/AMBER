@@ -159,6 +159,43 @@ def test_replay_keeps_forward_metrics_and_agent_bindings():
     assert "replay_only" not in vars(model.agents.by_id(0))
 
 
+class PrivateStateWriter(am.Agent):
+    def step(self):
+        self._calls = getattr(self, "_calls", 0) + 1
+        target = self.model.agents.by_id(0)
+        if self.id == 1:
+            if getattr(self, "_ran_first", False):
+                self.y = 100
+            # Agent 1 runs first only in the swapped replay of step 0.
+            if target.x == 0 and self.model.t == 0:
+                self._ran_first = True
+        target.x = self.id + 1
+
+
+def test_replay_does_not_leak_private_agent_attributes_into_the_forward_run():
+    class Model(RaceModel):
+        agent_class = PrivateStateWriter
+
+        def setup(self):
+            self.add_agents(2, agent_class=self.agent_class, x=0, y=0)
+
+    params = {**PARAMETERS, "steps": 2}
+    plain = Model(params).cpu(mode="oop")
+    checked = Model(params).cpu(mode="oop")
+    forward = plain.run(contract="off")
+    result = checked.run(contract="check")
+
+    def private(model):
+        return [
+            {key: value for key, value in vars(agent).items() if key.startswith("_")}
+            for agent in model.agents
+        ]
+
+    assert witnesses(result) and all(witnesses(result))
+    assert result["agents"].equals(forward["agents"])
+    assert private(checked) == private(plain) == [{"_calls": 2}, {"_calls": 2}]
+
+
 class SameValueWriter(Writer):
     def step(self):
         self.model.agents.by_id(0).x = 1

@@ -1283,18 +1283,21 @@ class Model(BaseModel):
         return list(getattr(self.agents, "_agent_objects", ()) or ())
 
     def _snapshot_agent_attrs(self) -> List[Tuple[Any, Dict[str, Any]]]:
-        """Save public instance attributes and the framework's agent bindings."""
+        """Save every instance attribute of every tracked agent.
+
+        Public values are deep-copied. Private values and the framework's
+        bindings keep the forward objects, so a replay that adds, rebinds, or
+        deletes a private attribute leaves no trace in the forward run.
+        """
         saved: List[Tuple[Any, Dict[str, Any]]] = []
         for agent in self._agent_objects():
             attrs: Dict[str, Any] = {}
             for key, value in object.__getattribute__(agent, "__dict__").items():
-                if key in ("model", "id", "p"):
-                    attrs[key] = value
-                    continue
                 if key == "_ambr_container_cells":
                     attrs[key] = value.copy()
                     continue
-                if key.startswith("_"):
+                if key in ("model", "id", "p") or key.startswith("_"):
+                    attrs[key] = value
                     continue
                 try:
                     attrs[key] = copy.deepcopy(value)
@@ -1304,12 +1307,10 @@ class Model(BaseModel):
         return saved
 
     def _restore_agent_attrs(self, saved: List[Tuple[Any, Dict[str, Any]]]) -> None:
+        """Put back exactly the attributes saved by :meth:`_snapshot_agent_attrs`."""
         for agent, attrs in saved:
             live = object.__getattribute__(agent, "__dict__")
-            live.pop("_ambr_container_cells", None)
-            for key in live.keys() - attrs.keys():
-                if not key.startswith("_"):
-                    del live[key]
+            live.clear()
             live.update(attrs)
 
     def _refresh_agent_cache(self, df: pl.DataFrame) -> None:

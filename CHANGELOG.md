@@ -5,6 +5,9 @@
 - Contract checking treats a read of `model.agents_df`, `Agent.get_data()`, or
   `Agent.get_neighbors(...)` inside an activation as a read of every column,
   so `activation_race` covers these accessors.
+- Swapped-order replay restores every agent instance attribute, including
+  underscore-prefixed ones, so `contract="check"` leaves forward results
+  unchanged when a replay sets private agent state.
 
 ## v0.6.0 - 2026-11-18
 
