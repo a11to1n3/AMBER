@@ -278,7 +278,7 @@ class AMBERVectorizedWealthTransfer(am.Model):
 
     def _setup_gpu_fast(self):
         import cupy as cp
-        from ambr.gpu import make_device_rng
+        from ambr.gpu import make_keyed_device_rng
 
         n = int(self.p.get('n', 100))
         self.population.replace_frame(
@@ -287,7 +287,7 @@ class AMBERVectorizedWealthTransfer(am.Model):
                 'step': np.zeros(n, dtype=np.int64),
             })
         )
-        rng = make_device_rng(self.p.get('seed'))
+        rng = make_keyed_device_rng(self.p.get('seed'))
         return {
             'id': cp.arange(n, dtype=cp.int64),
             'wealth': cp.full(
@@ -360,7 +360,9 @@ class AMBERVectorizedWealthTransfer(am.Model):
                     from rng.counter_rng import EVT_RECIPIENT
                 except ImportError:
                     EVT_RECIPIENT = 1
-                donor_ids = to_host(ids[donor_positions]).astype(np.int64)
+                donor_ids = ids[donor_positions]
+                if not getattr(rng, "device_keys", False):
+                    donor_ids = to_host(donor_ids).astype(np.int64)
                 rng.set_agent_keys(donor_ids, EVT_RECIPIENT)
             recipients = rng.choice(ids, size=donor_count)
             fused_wealth_transfer(wealth, donor_positions, recipients)
@@ -575,12 +577,12 @@ class AMBERVectorizedSIRModel(am.Model):
 
     def _setup_gpu_fast(self):
         import cupy as cp
-        from ambr.gpu import make_device_rng
+        from ambr.gpu import make_keyed_device_rng
 
         n = int(self.p.get('n', 100))
         world_size = float(self.p.get('world_size', 100))
         initial_infected = int(self.p.get('initial_infected', 5))
-        rng = make_device_rng(self.p.get('seed'))
+        rng = make_keyed_device_rng(self.p.get('seed'))
         status = cp.zeros(n, dtype=cp.int8)
         status[:initial_infected] = 1
         self.population.replace_frame(
@@ -765,11 +767,11 @@ class AMBERVectorizedRandomWalk(am.Model):
 
     def _setup_gpu_fast(self):
         import cupy as cp
-        from ambr.gpu import make_device_rng
+        from ambr.gpu import make_keyed_device_rng
 
         n = int(self.p.get('n', 100))
         world_size = float(self.p.get('world_size', 100))
-        rng = make_device_rng(self.p.get('seed'))
+        rng = make_keyed_device_rng(self.p.get('seed'))
         self.population.replace_frame(
             pl.DataFrame({
                 'id': np.arange(n, dtype=np.int64),
@@ -926,10 +928,10 @@ class AMBERVectorizedSchelling(am.Model):
 
     def _setup_gpu_fast(self):
         import cupy as cp
-        from ambr.gpu import make_device_rng
+        from ambr.gpu import make_keyed_device_rng
 
         n = int(self.p.get('n', 100))
-        rng = make_device_rng(self.p.get('seed'))
+        rng = make_keyed_device_rng(self.p.get('seed'))
         x, y, t, self.G = schelling_setup(
             n,
             self.p.get('density', 0.8),

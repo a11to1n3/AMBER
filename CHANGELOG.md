@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `ambr.gpu.make_keyed_device_rng` returns a counter-based GPU generator.
+  Each draw is a SplitMix64 function of seed, step, event, agent ID and
+  stream, the rule the SIR infection kernel already uses, so its values do not
+  depend on the CUDA device. The four timed GPU benchmark models draw from it
+  on their fast path. CuPy's `default_rng` sizes its state by the device's
+  multiprocessor count, so the same seed gave different draws on different
+  GPU models.
 - Contract checking treats a read of `model.agents_df`, `Agent.get_data()`, or
   `Agent.get_neighbors(...)` inside an activation as a read of every column,
   so `activation_race` covers these accessors.

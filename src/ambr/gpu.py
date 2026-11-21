@@ -123,6 +123,327 @@ def make_device_rng(seed=None) -> DeviceRNG:
     return DeviceRNG(_cp.random.default_rng(seed))
 
 
+# --- Keyed (counter-based) draws --------------------------------------------
+#
+# A keyed draw is a pure function of (seed, step, event, key, partner, draw),
+# computed with SplitMix64 exactly as the SIR infection kernel and
+# tests/test_sir_counter_tape.py specify (spec 2: the seed is mixed before the
+# step is folded in).  Nothing in it depends on the CUDA device, the launch
+# configuration or the order in which threads run, so one seed yields the same
+# values on every GPU and on the NumPy reference below.
+
+_MASK64 = (1 << 64) - 1
+_SPLITMIX_GOLDEN = 0x9E3779B97F4A7C15
+_SPLITMIX_M1 = 0xBF58476D1CE4E5B9
+_SPLITMIX_M2 = 0x94D049BB133111EB
+_TWO_POW_M53 = 1.0 / (1 << 53)
+
+#: Event tag of draws made before the first :meth:`KeyedDeviceRNG.begin_step`.
+EVT_INIT = 8
+#: Event tag of :meth:`KeyedDeviceRNG.permutation`.
+EVT_PRIORITY = 7
+
+
+def _mix64(z: int) -> int:
+    z = (z + _SPLITMIX_GOLDEN) & _MASK64
+    z = ((z ^ (z >> 30)) * _SPLITMIX_M1) & _MASK64
+    z = ((z ^ (z >> 27)) * _SPLITMIX_M2) & _MASK64
+    return (z ^ (z >> 31)) & _MASK64
+
+
+def _keyed_prefix(seed: int, step: int, event: int) -> int:
+    x = _mix64(int(seed) & _MASK64)
+    x = _mix64(x ^ (int(step) & _MASK64))
+    return _mix64(x ^ (int(event) & _MASK64))
+
+
+def keyed_rng64(seed, step, event, key, partner=0, draw=0) -> int:
+    """64-bit keyed draw for one key (pure-Python reference)."""
+    x = _keyed_prefix(seed, step, event)
+    for v in (key, partner, draw):
+        x = _mix64(x ^ (int(v) & _MASK64))
+    return _mix64(x)
+
+
+def keyed_u01(seed, step, event, key, partner=0, draw=0) -> float:
+    """Keyed U[0, 1) draw from the top 53 bits of :func:`keyed_rng64`."""
+    return (keyed_rng64(seed, step, event, key, partner, draw) >> 11) * _TWO_POW_M53
+
+
+def _mix64_np(z):
+    z = z + _np.uint64(_SPLITMIX_GOLDEN)
+    z = (z ^ (z >> _np.uint64(30))) * _np.uint64(_SPLITMIX_M1)
+    z = (z ^ (z >> _np.uint64(27))) * _np.uint64(_SPLITMIX_M2)
+    return z ^ (z >> _np.uint64(31))
+
+
+def _keyed64_np(size: int, keys, prefix: int, partner: int, draw: int):
+    """NumPy reference of the device kernel: uint64 draws for indices 0..size-1."""
+    k = _np.arange(size, dtype=_np.uint64)
+    if keys is not None and keys.size:
+        m = min(size, int(keys.size))
+        k[:m] = _np.asarray(keys[:m], dtype=_np.int64).view(_np.uint64)
+    with _np.errstate(over="ignore"):
+        x = _mix64_np(_np.uint64(prefix) ^ k)
+        x = _mix64_np(x ^ _np.uint64(partner & _MASK64))
+        x = _mix64_np(x ^ _np.uint64(draw & _MASK64))
+        return _mix64_np(x)
+
+
+_KEYED_PREAMBLE = r"""
+__device__ __forceinline__ unsigned long long ambr_mix64(unsigned long long z) {
+    z += 0x9E3779B97F4A7C15ULL;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+__device__ __forceinline__ unsigned long long ambr_keyed64(
+        unsigned long long key, unsigned long long prefix,
+        unsigned long long partner, unsigned long long draw) {
+    unsigned long long x = ambr_mix64(prefix ^ key);
+    x = ambr_mix64(x ^ partner);
+    x = ambr_mix64(x ^ draw);
+    return ambr_mix64(x);
+}
+"""
+# The key of element i is keys[i] while i < nkeys, else i itself.
+_KEYED_INPUTS = "raw int64 keys, int64 nkeys, uint64 prefix, uint64 partner, uint64 draw"
+_KEYED_KEY = (
+    "unsigned long long k = i < nkeys ? (unsigned long long)keys[i] "
+    ": (unsigned long long)i; "
+    "unsigned long long r = ambr_keyed64(k, prefix, partner, draw); "
+)
+_KEYED_U = "double u = (double)(r >> 11) * (1.0 / 9007199254740992.0); "
+_keyed_kernels: dict = {}
+
+
+def _keyed_kernel(kind: str):
+    kernel = _keyed_kernels.get(kind)
+    if kernel is not None:
+        return kernel
+    if kind == "u01":
+        kernel = _cp.ElementwiseKernel(
+            _KEYED_INPUTS, "T out", _KEYED_KEY + _KEYED_U + "out = (T)u;",
+            "ambr_keyed_u01", preamble=_KEYED_PREAMBLE,
+        )
+    elif kind == "uniform":
+        # __dmul_rn/__dadd_rn forbid fused multiply-add, so the device value
+        # equals NumPy's low + span * u bit for bit.
+        kernel = _cp.ElementwiseKernel(
+            _KEYED_INPUTS + ", float64 low, float64 span", "T out",
+            _KEYED_KEY + _KEYED_U + "out = (T)__dadd_rn(low, __dmul_rn(span, u));",
+            "ambr_keyed_uniform", preamble=_KEYED_PREAMBLE,
+        )
+    elif kind == "int":
+        kernel = _cp.ElementwiseKernel(
+            _KEYED_INPUTS + ", int64 low, uint64 span", "int64 out",
+            _KEYED_KEY + "out = low + (long long)(r % span);",
+            "ambr_keyed_int", preamble=_KEYED_PREAMBLE,
+        )
+    else:  # pragma: no cover - internal misuse
+        raise ValueError(kind)
+    _keyed_kernels[kind] = kernel
+    return kernel
+
+
+def _size_tuple(size):
+    if isinstance(size, (int, _np.integer)):
+        return (int(size),)
+    return tuple(int(s) for s in size)
+
+
+class KeyedDeviceRNG(DeviceRNG):
+    """Counter-based random generator whose draws do not depend on the GPU.
+
+    Element ``i`` of a bulk draw is keyed by ``(seed, step, event, key_i,
+    partner, stream)``, where ``key_i`` is the agent identity bound by
+    :meth:`set_agent_keys` (or ``i`` when no identity is bound) and ``stream``
+    counts the bulk draws made since :meth:`begin_step`, so ``dx`` and ``dy``
+    drawn back to back are independent.  Integer and choice draws reduce the
+    64-bit value modulo the range, as the counter tape does.
+
+    With ``xp=numpy`` the same draws are computed on the host; tests use that
+    as the reference for the CUDA kernels.
+    """
+
+    #: :meth:`set_agent_keys` accepts device arrays without a host copy.
+    device_keys = True
+
+    def __init__(self, seed, xp=None):
+        self._rng = None
+        self.global_seed = int(seed) & _MASK64
+        self._xp = _cp if xp is None else xp
+        self.step = 0
+        self._event = EVT_INIT
+        self._stream = 0
+        self._cursor = 0
+        self._keys = None
+
+    def __getattr__(self, name):
+        raise AttributeError(f"KeyedDeviceRNG has no attribute {name!r}")
+
+    # --- step and key control ----------------------------------------------
+
+    def begin_step(self, step: int, event: int = EVT_INIT) -> None:
+        """Start the draws of logical step ``step`` under event tag ``event``."""
+        self.step = int(step)
+        self._event = int(event)
+        self._stream = 0
+        self._cursor = 0
+        self._keys = None
+
+    def set_agent_keys(self, agent_ids, event=None) -> None:
+        """Key the next bulk draws by ``agent_ids`` instead of position."""
+        self._keys = self._xp.asarray(agent_ids, dtype=self._xp.int64).ravel()
+        self._cursor = 0
+        if event is not None:
+            self._event = int(event)
+
+    # --- internals ---------------------------------------------------------
+
+    def _on_device(self) -> bool:
+        return GPU_AVAILABLE and self._xp is _cp
+
+    def _prefix(self, event=None) -> int:
+        return _keyed_prefix(
+            self.global_seed, self.step, self._event if event is None else event
+        )
+
+    def _key_at(self, i: int) -> int:
+        if self._keys is not None and i < int(self._keys.size):
+            return int(self._keys[i])
+        return i
+
+    def _launch(self, kind, shape, dtype, *, event=None, keys=None, partner=0, extra=()):
+        """Draw ``shape`` keyed values of ``kind`` from the current stream."""
+        keys = self._keys if keys is None and event is None else keys
+        prefix = self._prefix(event)
+        draw = self._stream
+        n = 1
+        for s in shape:
+            n *= s
+        if self._on_device():
+            out = _cp.empty(shape, dtype=dtype)
+            if keys is None or not keys.size:
+                keys_arg, nkeys = _cp.zeros(1, dtype=_cp.int64), 0
+            else:
+                keys_arg, nkeys = keys, int(keys.size)
+            _keyed_kernel(kind)(
+                keys_arg, nkeys, _np.uint64(prefix), _np.uint64(partner),
+                _np.uint64(draw), *extra, out,
+            )
+            return out
+        r = _keyed64_np(n, keys, prefix, partner, draw)
+        if kind == "int":
+            low, span = extra
+            out = low + (r % _np.uint64(span)).astype(_np.int64)
+        else:
+            u = (r >> _np.uint64(11)).astype(_np.float64) * _TWO_POW_M53
+            if kind == "uniform":
+                low, span = extra
+                u = low + span * u
+            out = u
+        return out.astype(dtype, copy=False).reshape(shape)
+
+    def _advance(self, n: int) -> None:
+        self._cursor += n
+        self._stream += 1
+
+    # --- generator surface -------------------------------------------------
+
+    def random(self, size=None, dtype=None):
+        dtype = _np.dtype(_np.float64 if dtype is None else dtype)
+        if size is None:
+            v = keyed_u01(
+                self.global_seed, self.step, self._event,
+                self._key_at(self._cursor), 0, self._stream,
+            )
+            self._cursor += 1
+            return dtype.type(v)
+        shape = _size_tuple(size)
+        out = self._launch("u01", shape, dtype)
+        self._advance(out.size)
+        return out
+
+    def uniform(self, low=0.0, high=1.0, size=None, dtype=None):
+        dtype = _np.dtype(_np.float64 if dtype is None else dtype)
+        span = float(high - low)
+        if size is None:
+            u = self.random()
+            return dtype.type(float(low) + span * float(u))
+        shape = _size_tuple(size)
+        out = self._launch("uniform", shape, dtype, extra=(float(low), span))
+        self._advance(out.size)
+        return out
+
+    def integers(self, low, high=None, size=None, dtype=None, endpoint=False):
+        if high is None:
+            low, high = 0, low
+        low, high = int(low), int(high) + (1 if endpoint else 0)
+        if high <= low:
+            raise ValueError("high must be greater than low")
+        span = high - low
+        if size is None:
+            r = keyed_rng64(
+                self.global_seed, self.step, self._event,
+                self._key_at(self._cursor), 0, self._stream,
+            )
+            self._cursor += 1
+            return low + r % span
+        shape = _size_tuple(size)
+        out = self._launch("int", shape, _np.int64, extra=(low, _np.uint64(span)))
+        self._advance(out.size)
+        return out if dtype is None else out.astype(dtype, copy=False)
+
+    def choice(self, a, size=None, replace=True, p=None):
+        if p is not None:
+            raise NotImplementedError("weighted choice is not supported for keyed draws")
+        pool = self._xp.asarray(a)
+        n = int(pool.size)
+        if n == 0:
+            raise ValueError("choice requires a non-empty array")
+        if size is None:
+            return pool[self.integers(0, n)]
+        size = int(size)
+        if not replace:
+            if size > n:
+                raise ValueError(f"cannot sample {size} unique items from {n}")
+            order = self._xp.argsort(self.random(n))
+            return pool[order[:size]]
+        return pool[self.integers(0, n, size=size)]
+
+    def permutation(self, x):
+        """Permutation keyed by position under :data:`EVT_PRIORITY`."""
+        m = int(x) if isinstance(x, (int, _np.integer)) else int(len(x))
+        u = self._launch("u01", (m,), _np.float64, event=EVT_PRIORITY)
+        self._stream += 1
+        order = self._xp.argsort(u)
+        if isinstance(x, (int, _np.integer)):
+            return order
+        return self._xp.asarray(x)[order]
+
+    # --- replay hooks used by Model ----------------------------------------
+
+    def _snapshot_state(self):
+        keys = None if self._keys is None else self._keys.copy()
+        return (self.step, self._event, self._stream, self._cursor, keys)
+
+    def _restore_state(self, snapshot):
+        self.step, self._event, self._stream, self._cursor, keys = snapshot
+        self._keys = None if keys is None else keys.copy()
+
+
+def make_keyed_device_rng(seed=None, xp=None) -> KeyedDeviceRNG:
+    """Create a :class:`KeyedDeviceRNG`; ``seed=None`` draws a fresh 64-bit seed."""
+    if xp is None:
+        require_gpu()
+    if seed is None:
+        import secrets
+
+        seed = secrets.randbits(64)
+    return KeyedDeviceRNG(seed, xp=xp)
+
+
 def scatter_add(base, indices, values):
     """Scatter-add *values* into *base* at *indices* (1-D NumPy or CuPy arrays).
 
