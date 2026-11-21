@@ -34,7 +34,7 @@ from .sequences import _SCATTER_SEAMS
 _MODEL_SEAMS = {
     name: getattr_static(Model, name)
     for name in ("_apply_pending_writes", "_flush_pending_writes", "_frame_for_columns",
-                 "_set_frame", "_contract_record_reduction", "agents_df")
+                 "_set_frame", "_contract_record_reduction", "agents_df", "_agents_frame")
 }
 _MODEL_SET = Model.__setattr__
 

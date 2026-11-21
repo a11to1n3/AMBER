@@ -78,7 +78,12 @@ through a cached method. Replay leaves the witness inconclusive when a
 stream changes or its state cannot be verified. The scheduler's shuffle
 occurs before this check. External random sources remain outside this trace.
 The comparison includes the final agent frame, supported public model state,
-and values recorded with ``record_model()`` during the step.
+and values recorded with ``record_model()`` during the step. The swapped
+replay starts from each agent's private attributes as they were at step
+entry. After the replay, each agent's instance attributes, including
+underscore-prefixed ones, are restored to their forward bindings. Private
+lists, dicts, sets, and numeric arrays also get their top-level contents back
+in place; nested containers inside them are not copied.
 
 Write paths the monitor sees
 ----------------------------
@@ -88,6 +93,9 @@ Write paths the monitor sees
 * **Attributed activation reads and writes** -- ordinary agent attribute
   access and view writes with known targets during method broadcasts,
   ``activate_agents``, and staged activation, used to report ``activation_race``.
+  Reading ``model.agents_df``, ``Agent.get_data()``, or
+  ``Agent.get_neighbors(...)`` inside an activation counts as a read of every
+  column.
 * **Lane / view** -- ``agents.col = ...``, ``agents.set(...)``,
   ``agents.commit(...)``, and :class:`~ambr.tensor_lane.TensorLane` commits
   (per-column commit counting + borrow-after-commit).

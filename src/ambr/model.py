@@ -130,6 +130,7 @@ class Model(BaseModel):
         self._pre_step_rng = None
         self._pre_step_world = None
         self._pre_step_roster = None
+        self._pre_step_agents = None
         self._activation_override_order = None
 
         super().__init__(parameters)  # sets self.random / self.rng / self.nprandom
@@ -301,6 +302,23 @@ class Model(BaseModel):
 
     @property
     def agents_df(self) -> pl.DataFrame:
+        """The current agent table, with pending writes applied.
+
+        Under contract checking, a read inside an activation counts as a
+        whole-column read of every column, as with a column view.
+        """
+        frame = self._agents_frame()
+        monitor = self._contract
+        if monitor.active:
+            monitor.record_frame_read(frame.columns)
+        return frame
+
+    def _agents_frame(self) -> pl.DataFrame:
+        """Return :attr:`agents_df` without recording a contract read.
+
+        Library paths that report their own reads, writes, or reductions use
+        this accessor.
+        """
         self._frame_for_columns()
         sync_all_device_columns(self, dirty_only=True)
         frame = self.population.data
@@ -460,7 +478,7 @@ class Model(BaseModel):
         change -- e.g. an ``Int64`` attribute silently rewritten as ``Float64``
         -- surfaces as a schema mutation rather than passing unnoticed.
         """
-        df = self.agents_df  # flushes pending writes
+        df = self._agents_frame()  # flushes pending writes
         schema = {name: str(dt) for name, dt in zip(df.columns, df.dtypes)}
         return schema, Counter(df["id"]) if "id" in df.columns else Counter()
 
@@ -628,7 +646,7 @@ class Model(BaseModel):
         cols = type(self).agent_reporters
         if not cols:
             return
-        df = self.agents_df
+        df = self._agents_frame()
         have = [c for c in cols if c in df.columns]
         if not have:
             return
@@ -725,10 +743,11 @@ class Model(BaseModel):
                 mon.begin_step(self._contract_snapshot())
                 step_finished = False
                 try:
-                    self._pre_step_state = self.agents_df.clone()
+                    self._pre_step_state = self._agents_frame().clone()
                     self._pre_step_rng = self._capture_rng_state()
                     self._pre_step_world = self._capture_replay_world()
                     self._pre_step_roster = self._snapshot_replay_roster()
+                    self._pre_step_agents = self._snapshot_private_agent_state()
                     step_fn()
                     step_finished = True
                 finally:
@@ -740,6 +759,7 @@ class Model(BaseModel):
                     self._pre_step_rng = None
                     self._pre_step_world = None
                     self._pre_step_roster = None
+                    self._pre_step_agents = None
 
                 if mon.mode == "warn":
                     for v in cert.violations:
@@ -758,6 +778,7 @@ class Model(BaseModel):
             self._pre_step_rng = None
             self._pre_step_world = None
             self._pre_step_roster = None
+            self._pre_step_agents = None
             raise
 
     def replay_activation_swap(self, a: Any, b: Any) -> _ReplayOutcome:
@@ -766,8 +787,8 @@ class Model(BaseModel):
         ``value`` is True when the agent frame or restored model state
         diverges, False when both match, and None when the swap is not a
         sound witness. ``reason`` explains an inconclusive result. The replay
-        restores the step-entry random streams and supported attribute graph,
-        then puts the forward objects back. Stream restoration and model-state
+        restores the step-entry random streams, supported attribute graph, and
+        private agent attributes, then puts the forward objects back. Stream restoration and model-state
         restoration are attempted separately, so one failure does not skip the
         other. An exception from the swapped execution is caught here. The
         forward frame, pending writes, per-agent attribute cache, activation
@@ -803,10 +824,11 @@ class Model(BaseModel):
         post_world = self._capture_replay_world(
             self._replay_world_objects(entry_world)
         )
-        if entry_world is None or post_world is None:
+        entry_agents = getattr(self, "_pre_step_agents", None)
+        if entry_world is None or post_world is None or entry_agents is None:
             return _ReplayOutcome(None, None)
 
-        original_post = self.agents_df.clone()
+        original_post = self._agents_frame().clone()
         saved_attrs = self._snapshot_agent_attrs()
         forward_step_data = self._current_step_data
         try:
@@ -839,10 +861,13 @@ class Model(BaseModel):
         try:
             entry_rng_ok = self._restore_rng_state(entry_rng)
             entry_world_ok = self._restore_replay_world(entry_world)
+            entry_agents_ok = self._restore_private_agent_state(entry_agents)
             if not entry_rng_ok:
                 reason = "step-entry random streams could not be restored"
             elif not entry_world_ok:
                 reason = "step-entry model state could not be restored"
+            elif not entry_agents_ok:
+                reason = "step-entry agent state could not be restored"
             else:
                 self._set_frame(pre.clone())
                 self._pending_writes = {}
@@ -894,7 +919,9 @@ class Model(BaseModel):
             self._bump_id_version()
             self._pending_writes = {}
             self._activation_override_order = None
-            self._restore_agent_attrs(saved_attrs)
+            if not self._restore_agent_attrs(saved_attrs):
+                witness = None
+                reason = "forward agent state could not be restored"
             mon.mode = saved_mode
             mon.active = saved_active
             mon._in_replay = False
@@ -1012,9 +1039,7 @@ class Model(BaseModel):
                 oid = id(value)
                 if oid in nodes:
                     return ("node", oid)
-                saved = value.copy()
-                saved.setflags(write=value.flags.writeable)
-                nodes[oid] = ("ndarray", value, saved)
+                nodes[oid] = ("ndarray", value, self._array_snapshot(value))
                 return ("node", oid)
             raise TypeError("replay value cannot be restored")
 
@@ -1080,22 +1105,8 @@ class Model(BaseModel):
                     obj.clear()
                     obj.update(resolved[oid])
                 elif kind == "ndarray":
-                    saved = payload
-                    if (
-                        not isinstance(obj, np.ndarray)
-                        or not isinstance(saved, np.ndarray)
-                        or obj.dtype != saved.dtype
-                    ):
+                    if not self._restore_array_in_place(obj, payload):
                         ok = False
-                        continue
-                    if not self._replay_values_equal(obj, saved):
-                        if not obj.flags.writeable:
-                            obj.setflags(write=True)
-                        if obj.shape != saved.shape:
-                            obj.resize(saved.shape, refcheck=False)
-                        obj[...] = saved
-                    if obj.flags.writeable != saved.flags.writeable:
-                        obj.setflags(write=saved.flags.writeable)
                 elif kind != "tuple":
                     ok = False
             except Exception:
@@ -1114,6 +1125,31 @@ class Model(BaseModel):
         except Exception:
             return False
         return ok
+
+    @staticmethod
+    def _array_snapshot(value: np.ndarray) -> np.ndarray:
+        """Copy ``value`` with its write flag for :meth:`_restore_array_in_place`."""
+        saved = value.copy()
+        saved.setflags(write=value.flags.writeable)
+        return saved
+
+    def _restore_array_in_place(self, obj: Any, saved: Any) -> bool:
+        """Write ``saved`` back into ``obj``. False when the dtype changed."""
+        if (
+            not isinstance(obj, np.ndarray)
+            or not isinstance(saved, np.ndarray)
+            or obj.dtype != saved.dtype
+        ):
+            return False
+        if not self._replay_values_equal(obj, saved):
+            if not obj.flags.writeable:
+                obj.setflags(write=True)
+            if obj.shape != saved.shape:
+                obj.resize(saved.shape, refcheck=False)
+            obj[...] = saved
+        if obj.flags.writeable != saved.flags.writeable:
+            obj.setflags(write=saved.flags.writeable)
+        return True
 
     def _replay_values_equal(self, left: Any, right: Any) -> bool:
         """Compare leaves and containers without using an array's truth value."""
@@ -1151,7 +1187,7 @@ class Model(BaseModel):
         recorded: Any,
     ) -> Tuple[Optional[bool], Optional[str]]:
         try:
-            frame_differs = not bool(original_post.equals(self.agents_df))
+            frame_differs = not bool(original_post.equals(self._agents_frame()))
         except Exception as exc:
             return None, _replay_failure_reason(exc)
         replay_world = self._capture_replay_world(
@@ -1265,35 +1301,117 @@ class Model(BaseModel):
     def _agent_objects(self) -> List[Any]:
         return list(getattr(self.agents, "_agent_objects", ()) or ())
 
-    def _snapshot_agent_attrs(self) -> List[Tuple[Any, Dict[str, Any]]]:
-        """Save public instance attributes and the framework's agent bindings."""
-        saved: List[Tuple[Any, Dict[str, Any]]] = []
+    def _snapshot_agent_attrs(
+        self,
+    ) -> List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]]:
+        """Save every instance attribute of every tracked agent.
+
+        Public values are deep-copied. Private values and the framework's
+        bindings keep the forward objects, so a replay that adds, rebinds, or
+        deletes a private attribute leaves no trace in the forward run.
+        Private lists, dicts, sets, and numeric arrays also keep a copy of
+        their top-level contents, which the restore writes back in place.
+        """
+        saved: List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]] = []
         for agent in self._agent_objects():
             attrs: Dict[str, Any] = {}
+            contents: List[Tuple[Any, Any]] = []
             for key, value in object.__getattribute__(agent, "__dict__").items():
-                if key in ("model", "id", "p"):
-                    attrs[key] = value
-                    continue
                 if key == "_ambr_container_cells":
                     attrs[key] = value.copy()
                     continue
+                if key in ("model", "id", "p"):
+                    attrs[key] = value
+                    continue
                 if key.startswith("_"):
+                    attrs[key] = value
+                    self._keep_private_contents(value, contents)
                     continue
                 try:
                     attrs[key] = copy.deepcopy(value)
                 except Exception:
                     attrs[key] = value
-            saved.append((agent, attrs))
+            saved.append((agent, attrs, contents))
         return saved
 
-    def _restore_agent_attrs(self, saved: List[Tuple[Any, Dict[str, Any]]]) -> None:
-        for agent, attrs in saved:
+    def _restore_agent_attrs(
+        self, saved: List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]]
+    ) -> bool:
+        """Put back what :meth:`_snapshot_agent_attrs` saved.
+
+        Returns False when a private array could not be written back.
+        """
+        ok = True
+        for agent, attrs, contents in saved:
             live = object.__getattribute__(agent, "__dict__")
-            live.pop("_ambr_container_cells", None)
-            for key in live.keys() - attrs.keys():
-                if not key.startswith("_"):
-                    del live[key]
+            live.clear()
             live.update(attrs)
+            ok = self._write_back_contents(contents) and ok
+        return ok
+
+    def _snapshot_private_agent_state(
+        self,
+    ) -> List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]]:
+        """Save each agent's private attributes at step entry.
+
+        Records the bindings and the top-level contents of private lists,
+        dicts, sets, and numeric arrays, so a replay can start from the state
+        the forward sweep started from.
+        """
+        saved: List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]] = []
+        for agent in self._agent_objects():
+            attrs: Dict[str, Any] = {}
+            contents: List[Tuple[Any, Any]] = []
+            for key, value in object.__getattribute__(agent, "__dict__").items():
+                if not key.startswith("_") or key == "_ambr_container_cells":
+                    continue
+                attrs[key] = value
+                self._keep_private_contents(value, contents)
+            saved.append((agent, attrs, contents))
+        return saved
+
+    def _restore_private_agent_state(
+        self, saved: List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]]
+    ) -> bool:
+        """Put private agent attributes back to a :meth:`_snapshot_private_agent_state`.
+
+        Public attributes are left to the agent cache refresh. Returns False
+        when a private array could not be written back.
+        """
+        ok = True
+        for agent, attrs, contents in saved:
+            live = object.__getattribute__(agent, "__dict__")
+            for key in [
+                key for key in live
+                if key.startswith("_") and key != "_ambr_container_cells" and key not in attrs
+            ]:
+                del live[key]
+            live.update(attrs)
+            ok = self._write_back_contents(contents) and ok
+        return ok
+
+    def _keep_private_contents(self, value: Any, contents: List[Tuple[Any, Any]]) -> None:
+        """Copy the top-level contents of a container that can be restored in place."""
+        if type(value) in (list, dict, set):
+            contents.append((value, value.copy()))
+        elif isinstance(value, np.ndarray) and self._ndarray_replay_supported(value):
+            contents.append((value, self._array_snapshot(value)))
+
+    def _write_back_contents(self, contents: List[Tuple[Any, Any]]) -> bool:
+        """Write saved top-level contents back into the same objects."""
+        ok = True
+        for obj, items in contents:
+            try:
+                if isinstance(obj, np.ndarray):
+                    ok = self._restore_array_in_place(obj, items) and ok
+                elif isinstance(obj, list):
+                    obj[:] = items
+                else:
+                    obj.clear()
+                    obj.update(items)
+            except Exception:
+                ok = False
+        return ok
 
     def _refresh_agent_cache(self, df: pl.DataFrame) -> None:
         """Load already-present agent attributes from ``df`` without queueing."""
@@ -1735,7 +1853,7 @@ class Model(BaseModel):
             info=info,
             # agents_df flushes the buffered write queue so OOP /
             # update_agent_data writes land in the returned frame.
-            agents=self.agents_df,
+            agents=self._agents_frame(),
             model=model_df,
         )
         if self._contract.mode != "off":

@@ -3,6 +3,7 @@
 import random
 
 import numpy as np
+import polars as pl
 import pytest
 
 from ambr.contract import ContractCertificate, ContractViolation
@@ -137,6 +138,53 @@ def test_whole_column_read_is_attributed_to_the_active_agent():
     assert race.ids == [0, 1]
     assert race.divergence_witness is True
     assert result.agents["y"].to_list() == [0, 1]
+
+
+_FRAME_READS = {
+    "model.agents_df": lambda agent: int(agent.model.agents_df["x"].sum()),
+    "Agent.get_data": lambda agent: int(
+        agent.model.agents.by_id(0).get_data()["x"][0]
+    ),
+    "Agent.get_neighbors": lambda agent: len(agent.get_neighbors(pl.col("x") > 0)),
+}
+
+
+@pytest.mark.parametrize("sweep", ["activate_agents", "stage_agents"])
+@pytest.mark.parametrize("path", sorted(_FRAME_READS))
+def test_frame_level_reads_are_attributed_to_the_active_agent(path, sweep):
+    read = _FRAME_READS[path]
+
+    class Agent(am.Agent):
+        def step(self):
+            if self.id == 0:
+                self.x = 1
+            else:
+                self.y = read(self)
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, x=0, y=0)
+            if self.p.reverse:
+                self.agents.reverse()
+
+        def step_oop(self):
+            if sweep == "activate_agents":
+                self.activate_agents("sequential")
+            else:
+                for agent in self.stage_agents("read"):
+                    agent.step()
+
+    # The value agent 1 reads depends on the activation order.
+    for reverse, expected_y in ((False, 1), (True, 0)):
+        params = {**_params(), "reverse": reverse}
+        result = Model(params).cpu(mode="oop").run(contract="check")
+        cert = result["contract"][0]
+        assert result.agents.sort("id")["y"].to_list() == [0, expected_y]
+        assert not cert.clean
+        races = [v for v in _races(cert) if v.columns == ["x"]]
+        assert races and all(set(v.ids) == {0, 1} for v in races)
+        if sweep == "activate_agents":
+            assert all(v.divergence_witness is True for v in races)
 
 
 def test_mixed_reduction_operators_on_one_cell_report_a_divergent_witness():

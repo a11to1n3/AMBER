@@ -6,6 +6,11 @@ duplicate unreduced writes (OOP path), schema mutation, and population
 mutation. Also locks in backward compatibility of the default ('off') path.
 """
 
+import os
+import subprocess
+import sys
+import textwrap
+
 import numpy as np
 import polars as pl
 import pytest
@@ -647,3 +652,49 @@ def test_float_scatter_add_warns_but_stays_ok():
     # raise mode treats warnings as non-fatal.
     raised = FloatScatterModel(_params(steps=1)).run(contract="raise")
     assert raised["contract"][0].ok and not raised["contract"][0].clean
+
+
+_MONEY_RACES = textwrap.dedent(
+    """
+    import ambr as am
+
+    class Donor(am.Agent):
+        def step(self):
+            if self.wealth > 0:
+                self.scatter_add(wealth=-1)
+                self.model.agents.at[[1 - self.id]].scatter_add(wealth=1)
+
+    class Money(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Donor, wealth=[1, 0])
+
+        def step_oop(self):
+            self.activate_agents("sequential")
+
+    cert = Money({"steps": 1}).cpu(mode="oop").run(contract="check")["contract"][0]
+    for v in cert.violations:
+        if v.kind == "activation_race":
+            print(v.columns, v.ids, v.detail)
+    """
+)
+
+
+def test_activation_race_report_does_not_depend_on_the_hash_seed():
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
+    path = os.pathsep.join(filter(None, [src, os.environ.get("PYTHONPATH")]))
+    reports = set()
+    for seed in ("0", "1", "2"):
+        proc = subprocess.run(
+            [sys.executable, "-c", _MONEY_RACES],
+            env={**os.environ, "PYTHONHASHSEED": seed, "PYTHONPATH": path},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert proc.returncode == 0, proc.stderr
+        races = proc.stdout.splitlines()
+        # Each agent reads its own cell and reduces into both cells.
+        assert len(races) == 2
+        assert all(race.startswith("['wealth'] [0, 1] ") for race in races)
+        reports.add(proc.stdout)
+    assert len(reports) == 1
