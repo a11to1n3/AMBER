@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Column writes accept CuPy arrays on every route. `agents.col = ...` with a
+  Boolean array, `agents.set(...)`, writes through `where(...)` views,
+  `agents.commit(...)`, `add_agents(...)` attribute arrays, and 0-d device scalars
+  previously stored the whole array in every row (an Object column) or raised;
+  they now write one value per agent.
 - Contract checking treats a read of `model.agents_df`, `Agent.get_data()`, or
   `Agent.get_neighbors(...)` inside an activation as a read of every column,
   so `activation_race` covers these accessors.

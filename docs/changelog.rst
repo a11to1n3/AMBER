@@ -9,6 +9,10 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 -------------
 
+* Column writes, ``set()``, view writes, ``commit()`` and ``add_agents()`` accept
+  CuPy arrays and write one value per agent; Boolean device arrays and
+  ``set()`` previously stored the whole array in every row.
+
 [0.6.0] - 2026-11-18
 --------------------
 
