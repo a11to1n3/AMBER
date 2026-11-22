@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Column writes accept CuPy arrays on every route. `agents.col = ...` with a
+  Boolean array, `agents.set(...)`, writes through `where(...)` views,
+  `agents.commit(...)`, `add_agents(...)` attribute arrays, and 0-d device scalars
+  previously stored the whole array in every row (an Object column) or raised;
+  they now write one value per agent.
+
 ## v0.6.0 - 2026-11-18
 
 - Automatically batch bounded random-walk updates on committed Float64

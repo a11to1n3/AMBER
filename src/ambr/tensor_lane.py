@@ -42,6 +42,8 @@ from typing import List, Tuple
 import numpy as np
 import polars as pl
 
+from .gpu import host_value
+
 
 # --- behavioural capability probes (run once, cached) ----------------------
 
@@ -262,7 +264,7 @@ def commit_columns(model, **columns) -> None:
     df = model.agents_df
     names = list(columns)
     series = [
-        _cast_to_existing(df, pl.Series(name, np.asarray(v)), name)
+        _cast_to_existing(df, pl.Series(name, np.asarray(host_value(v))), name)
         for name, v in columns.items()
     ]
     model._set_frame(df.with_columns(series), written_columns=names)
