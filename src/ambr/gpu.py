@@ -52,6 +52,19 @@ def to_host(array):
     return _np.asarray(array)
 
 
+def host_value(value):
+    """Copy a CuPy array to host for host-side column writes.
+
+    Returns a NumPy array, or a Python scalar for a 0-d array. Any other
+    value is returned unchanged. Without this, host write paths that accept
+    lists and NumPy arrays treat a device array as one scalar value.
+    """
+    if GPU_AVAILABLE and isinstance(value, _cp.ndarray):
+        host = _cp.asnumpy(value)
+        return host.item() if host.ndim == 0 else host
+    return value
+
+
 def synchronize() -> None:
     """Block until all queued GPU work has finished (for honest timing)."""
     if GPU_AVAILABLE:

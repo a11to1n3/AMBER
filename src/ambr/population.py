@@ -4,6 +4,7 @@ import polars as pl
 import numpy as np
 
 from ._deprecation import warn_deprecated
+from .gpu import host_value
 
 if TYPE_CHECKING:
     pass
@@ -141,6 +142,7 @@ class Population:
         }
 
         for k, v in attributes.items():
+            v = host_value(v)
             if isinstance(v, pl.Series):
                 if v.len() != count:
                     raise ValueError(f"Attribute {k} length mismatch")
