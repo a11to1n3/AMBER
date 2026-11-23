@@ -940,6 +940,24 @@ class Model(BaseModel):
             mon._stage_violations = saved_stage_violations
         return _ReplayOutcome(witness, reason)
 
+    def _step_changed_replay_state(self) -> Optional[bool]:
+        """Whether model or private agent state differs from step entry.
+
+        Compares the state graph a replay restores with its step-entry
+        snapshot. None when either cannot be captured or compared.
+        """
+        entry = getattr(self, "_pre_step_world", None)
+        if entry is None:
+            return None
+        current = self._capture_replay_world(self._replay_world_objects(entry))
+        if current is None:
+            return None
+        try:
+            same = self._replay_worlds_equal(entry, current)
+        except _ReplayAliasMismatch:
+            return True
+        return None if same is None else not same
+
     def _snapshot_replay_roster(self):
         from .sequences import AgentList
 

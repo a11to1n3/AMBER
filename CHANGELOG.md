@@ -30,6 +30,12 @@
   cross-activation replay. These pairs use the five-replay budget first, and
   a reported pair left out by the budget says so in `divergence_reason`.
   Two-writer reports are unchanged.
+- The order-independence certificate is withheld when the step also commits a
+  column or replaces the agent frame outside the verified sweep, or changes
+  model or private agent state (for example `self.agents.other = ...` or
+  `self.total = ...` after `self.agents.step()`), and when that state cannot
+  be compared with step entry. A step that is only a supported sweep is
+  certified as before.
 - `activation_race` violations list their activation IDs in sorted order, and
   the order of reported races does not depend on `PYTHONHASHSEED`.
 

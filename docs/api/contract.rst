@@ -46,7 +46,12 @@ optionally under one local or keyed draw condition, or calls ``scatter_add``
 or ``scatter_max`` with a constant integer and a single fixed target shared
 by the agents. AMBER checks unique IDs, committed inputs, non-null ``Int64``
 arithmetic, safe bounds, and agreement between the predicted and observed
-cell effects and draw values.
+cell effects and draw values. The step must be that sweep alone: a column
+commit or agent-frame replacement outside the sweep, or a change to model
+attributes or private agent attributes between step entry and step end,
+withholds the verdict. When that state holds an object the replay snapshot
+cannot represent (see below), the change cannot be ruled out and the verdict
+is also withheld.
 ``cert.certification`` records the scope and premises in the saved results.
 
 For other methods and execution paths, the verdict is ``not_established``

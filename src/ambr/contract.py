@@ -48,7 +48,9 @@ invisible to the conflict check (``Population.data = ...`` is deprecated and
 warns; prefer ``agents.col = ...`` / ``agents.set`` / ``agents.commit``).
 ``clean`` means no observed violation. The separate conditional guarantee is
 established only when the runtime verifies a supported deterministic activation
-sweep and its observed cell effects agree with the proof.
+sweep, its observed cell effects agree with the proof, and the step changed
+nothing else: no column commit or frame replacement outside the sweep, and
+model and private agent state equal to step entry.
 
 A conflict closed while a stage is still open is reported as
 ``activation_race`` with ``divergence_witness is None``. Automatic replay
@@ -259,6 +261,8 @@ class ContractMonitor:
         # Columns committed or reduced by an activation of the current sweep
         # or stage. Activation reads are checked against this set only.
         self._trace_committed: Set[str] = set()
+        # Column-level writes made outside any activation in this step.
+        self._unswept_writes: Set[str] = set()
         # (operator, dtype) recorded for each reduced column this step.
         self._reduction_domains: Dict[str, Set[Tuple[str, str]]] = {}
         # Columns touched by both buffered and lane/view paths in this step
@@ -318,6 +322,7 @@ class ContractMonitor:
         self._mutable_borrows = set()
         self._reduced_cols = set()
         self._trace_committed = set()
+        self._unswept_writes = set()
         self._reduction_domains = {}
         self._cross_path_cols = set()
         self._current_stage = None
@@ -403,11 +408,25 @@ class ContractMonitor:
             return "The monitor reported one or more contract violations."
         if self._activation_sweeps != 1 or self._staged_activation_count or self._stage_open:
             return "Certification requires one fully traced single-phase activation sweep."
+        if self._unswept_writes:
+            return (
+                f"The step wrote {', '.join(sorted(self._unswept_writes))} outside "
+                f"the verified activation sweep."
+            )
         proof = self._sweep_proof
         if proof is None:
             return self._sweep_reason or "No supported activation sweep was verified."
         if self._activation_count != len(proof.ids) or not proof.matches(self):
             return "The recorded activation effects did not match the verified sweep."
+        changed = getattr(model, "_step_changed_replay_state", None)
+        changed = changed() if callable(changed) else None
+        if changed is None:
+            return (
+                "Model and private agent state could not be compared with step "
+                "entry, so changes outside the verified sweep cannot be ruled out."
+            )
+        if changed:
+            return "The step changed model or private agent state outside the verified activation sweep."
         cert.conditional_guarantee = CONDITIONAL_GUARANTEE_ESTABLISHED
         cert.certification = proof.evidence()
         return None
@@ -435,7 +454,9 @@ class ContractMonitor:
             self._committed.add(c)
             if c in self._buffered_cols or c in self._reduced_cols:
                 self._cross_path_cols.add(c)
-        if self._current_activation is not None:
+        if self._current_activation is None:
+            self._unswept_writes.update(f"column {c!r}" for c in columns)
+        else:
             self._trace_committed.update(columns)
             if target_ids is None:
                 self._trace_gaps.add("column commit without target IDs")
@@ -445,8 +466,12 @@ class ContractMonitor:
 
     def record_frame_replacement(self) -> None:
         """Mark a frame replacement whose cell effects are outside the trace."""
-        if self.active and self._current_activation is not None:
+        if not self.active:
+            return
+        if self._current_activation is not None:
             self._trace_gaps.add("agent frame replacement")
+        else:
+            self._unswept_writes.add("the agent frame")
 
     def record_reduction(
         self,
@@ -468,7 +493,9 @@ class ContractMonitor:
             return
         domains = domains or {}
         columns = tuple(columns)
-        if self._current_activation is not None:
+        if self._current_activation is None:
+            self._unswept_writes.update(f"column {c!r}" for c in columns)
+        else:
             self._trace_committed.update(columns)
         for c in columns:
             self._reduced_cols.add(c)
