@@ -147,6 +147,7 @@ class Model(BaseModel):
         self._pre_step_world = None
         self._pre_step_world_reason = None
         self._pre_step_roster = None
+        self._pre_step_globals = None
         self._activation_override_order = None
 
         super().__init__(parameters)  # sets self.random / self.rng / self.nprandom
@@ -765,6 +766,7 @@ class Model(BaseModel):
                     self._pre_step_world = self._capture_replay_world(None, entry_reasons)
                     self._pre_step_world_reason = entry_reasons[0] if entry_reasons else None
                     self._pre_step_roster = self._snapshot_replay_roster()
+                    self._pre_step_globals = self._capture_global_random()
                     step_fn()
                     step_finished = True
                 finally:
@@ -777,6 +779,7 @@ class Model(BaseModel):
                     self._pre_step_world = None
                     self._pre_step_world_reason = None
                     self._pre_step_roster = None
+                    self._pre_step_globals = None
 
                 if mon.mode == "warn":
                     for v in cert.violations:
@@ -796,6 +799,7 @@ class Model(BaseModel):
             self._pre_step_world = None
             self._pre_step_world_reason = None
             self._pre_step_roster = None
+            self._pre_step_globals = None
             raise
 
     def replay_activation_swap(self, a: Any, b: Any) -> _ReplayOutcome:
@@ -853,6 +857,8 @@ class Model(BaseModel):
                 "step-entry model or agent state could not be captured; "
                 "the swap was not run"
             ))
+        entry_globals = getattr(self, "_pre_step_globals", None)
+        forward_globals = self._capture_global_random()
 
         original_post = self._agents_frame().clone()
         saved_attrs = self._snapshot_agent_attrs()
@@ -887,10 +893,15 @@ class Model(BaseModel):
         try:
             entry_rng_ok = self._restore_rng_state(entry_rng)
             entry_world_ok = self._restore_replay_world(entry_world)
+            # The global ``random`` and legacy ``numpy.random`` streams are
+            # not model state, but agent code often draws from them.
+            entry_globals_ok = self._restore_global_random(entry_globals)
             if not entry_rng_ok:
                 reason = "step-entry random streams could not be restored"
             elif not entry_world_ok:
                 reason = "step-entry model or agent state could not be restored"
+            elif not entry_globals_ok:
+                reason = "the step-entry global random states could not be restored"
             else:
                 self._set_frame(pre.clone())
                 self._pending_writes = {}
@@ -926,12 +937,16 @@ class Model(BaseModel):
             self._current_step_data = forward_step_data
             post_rng_ok = self._restore_rng_state(post_rng)
             post_world_ok = self._restore_replay_world(post_world)
+            post_globals_ok = self._restore_global_random(forward_globals)
             if not post_rng_ok:
                 witness = None
                 reason = "forward random streams could not be restored"
             elif not post_world_ok:
                 witness = None
                 reason = "forward model state could not be restored"
+            elif not post_globals_ok:
+                witness = None
+                reason = "the forward global random states could not be restored"
             root, objects, bindings, agent_type = forward_roster
             self.agents = root
             root._agent_objects[:] = objects
@@ -958,6 +973,25 @@ class Model(BaseModel):
             mon._current_stage = saved_stage
             mon._stage_violations = saved_stage_violations
         return _ReplayOutcome(witness, reason)
+
+    @staticmethod
+    def _capture_global_random() -> Optional[Tuple[Any, Any]]:
+        """The states of the global ``random`` and legacy ``numpy.random`` streams."""
+        try:
+            return random.getstate(), np.random.get_state()
+        except Exception:
+            return None
+
+    @staticmethod
+    def _restore_global_random(saved: Optional[Tuple[Any, Any]]) -> bool:
+        if saved is None:
+            return False
+        try:
+            random.setstate(saved[0])
+            np.random.set_state(saved[1])
+            return True
+        except Exception:
+            return False
 
     def _step_changed_replay_state(self) -> Optional[bool]:
         """Whether model or private agent state differs from step entry.
@@ -1160,6 +1194,7 @@ class Model(BaseModel):
         "_last_progress_time",
         "_model_data",
         "_pending_writes",
+        "_pre_step_globals",
         "_pre_step_rng",
         "_pre_step_roster",
         "_pre_step_state",

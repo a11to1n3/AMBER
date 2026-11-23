@@ -4,6 +4,8 @@ Each test here pairs a monitored run with ``contract="off"`` or checks the
 certificate and the swapped-order witness for state that ordinary models hold.
 """
 
+import random
+
 import numpy as np
 import pytest
 
@@ -101,3 +103,34 @@ def test_value_keys_never_raise_and_unbuildable_keys_are_unknown():
     assert _value_key(np.float64("nan")) == _value_key(np.float64("nan"))
     assert _value_key(np.float64(0.0)) != _value_key(np.float64(-0.0))
     assert _value_key(np.timedelta64(5, "ns")) != _value_key(np.timedelta64(5, "ps"))
+
+
+@pytest.mark.parametrize("draw", ["random", "numpy.random"])
+def test_check_matches_off_when_agents_draw_from_the_global_streams(draw):
+    class Agent(am.Agent):
+        def step(self):
+            value = random.random() if draw == "random" else float(np.random.random())
+            self.y = value
+            self.model.agents.by_id(0).x = self.id
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, x=0, y=0.0)
+
+        def step(self):
+            self.agents.step()
+
+    def run(mode):
+        random.seed(5)
+        np.random.seed(5)
+        result = Model({**PARAMS, "steps": 3}).run(contract=mode)
+        after = (random.random(), float(np.random.random()))
+        return result, result.agents.sort("id")["y"].to_list(), after
+
+    plain, plain_y, plain_after = run("off")
+    checked, checked_y, checked_after = run("check")
+    assert checked_y == plain_y
+    assert checked_after == plain_after
+    # The race was replayed, so the comparison above covers the replay.
+    witnesses = [race.divergence_witness for step in range(3) for race in _races(checked, step)]
+    assert witnesses and all(witness is not None for witness in witnesses)
