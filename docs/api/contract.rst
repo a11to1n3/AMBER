@@ -103,12 +103,17 @@ NumPy arrays, and bound methods, mutating them in place so aliases are kept.
 Containers are matched by exact type: a subclass can hold state outside its
 items or override the methods a restore calls, so it is not snapshotted.
 A NumPy view is restored through the array that owns its memory, so writes
-through another view of that memory are undone too. The model, its agents, and its
-random streams are kept by identity. When this state reaches any other
-object, for example a custom class instance, a generator other than the
-model's streams, or a Polars frame, the swap is not run: the witness is
-``None`` and ``divergence_reason`` names the attribute. Module globals and
-class attributes are outside this snapshot.
+through another view of that memory are undone too. Slot attributes
+(``__slots__``) are included. A function in this state is restored with its
+own state (code, defaults, attributes, and closure cells), and a class with
+its namespace and bases; a class with a custom metaclass is not supported.
+The model, its agents, and its random streams are kept by identity. When this
+state reaches any other object, for example a module, a custom class
+instance, a generator other than the model's streams, or a Polars frame, the
+swap is not run: the witness is ``None`` and ``divergence_reason`` names the
+attribute. Module globals, including those a stored function reads or
+writes, and the attributes of a class reached only through ``type(obj)`` are
+outside this snapshot.
 
 Write paths the monitor sees
 ----------------------------

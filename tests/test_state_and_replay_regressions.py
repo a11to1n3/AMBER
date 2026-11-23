@@ -605,3 +605,130 @@ def test_replay_restores_the_full_state_of_supported_containers(state, witness, 
     else:
         assert reason in race.divergence_reason
         assert "the swap was not run" in race.divergence_reason
+
+
+def _make_default_hook():
+    # A fresh function per model, with no closure: its mutable default is
+    # the only state it holds.
+    def hook(calls=[]):  # noqa: B006 - the shared default is the state under test
+        calls.append(1)
+        return len(calls)
+
+    return hook
+
+
+def _make_closure_counter():
+    count = 0
+
+    def tick():
+        nonlocal count
+        count += 1
+        return count
+
+    return tick
+
+
+class _CodeStateRace(am.Agent):
+    """Both activations write 1 to agent 0's x and bump state held in code."""
+
+    def step(self):
+        self.model.agents.by_id(0).x = 1
+        state = self.model.p.state
+        model = self.model
+        if state in ("function_default", "closure"):
+            model.hook()
+        elif state in ("class_counter", "module_counter"):
+            model.shared.count += 1
+        elif state == "model_slot":
+            model._slot_count += 1
+        elif state == "agent_slot":
+            agent = model.agents.by_id(0)
+            agent._marks += 1
+
+
+class _SlottedAgent(_CodeStateRace):
+    __slots__ = ("_marks",)
+
+
+class _CodeStateModel(am.Model):
+    __slots__ = ("_slot_count",)
+
+    def setup(self):
+        state = self.p.state
+        if state == "function_default":
+            self.hook = _make_default_hook()
+        elif state == "closure":
+            self.hook = _make_closure_counter()
+        elif state == "class_counter":
+            self.shared = type("Shared", (), {"count": 0})
+        elif state == "module_counter":
+            import types
+
+            self.shared = types.ModuleType("shared_counter")
+            self.shared.count = 0
+        self._slot_count = 0
+        self.add_agents(2, agent_class=_SlottedAgent, x=0)
+        for agent in self.agents:
+            agent._marks = 0
+
+    def step_oop(self):
+        self.activate_agents("sequential")
+
+    def observed(self):
+        state = self.p.state
+        if state == "function_default":
+            return len(self.hook.__defaults__[0])
+        if state == "closure":
+            return self.hook.__closure__[0].cell_contents
+        if state in ("class_counter", "module_counter"):
+            return self.shared.count
+        if state == "model_slot":
+            return self._slot_count
+        return [agent._marks for agent in self.agents]
+
+
+@pytest.mark.parametrize("state, witness, reason", [
+    # A function's defaults, attributes, and closure cells are its own state.
+    ("function_default", False, None),
+    ("closure", False, None),
+    # A class bound in model state is restored with its namespace.
+    ("class_counter", False, None),
+    # A module's globals are not snapshotted, so the swap is not run.
+    ("module_counter", None, "model attribute 'shared' holds a module"),
+    # Slot values are not in the instance __dict__.
+    ("model_slot", False, None),
+    ("agent_slot", False, None),
+])
+def test_replay_restores_state_held_in_code_and_slots_or_skips(state, witness, reason):
+    params = {**PARAMETERS, "state": state}
+    plain = _CodeStateModel(params).cpu(mode="oop")
+    plain.run(contract="off")
+    checked = _CodeStateModel(params).cpu(mode="oop")
+    result = checked.run(contract="check")
+
+    assert checked.observed() == plain.observed()
+    race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
+    assert race.divergence_witness is witness
+    if reason is None:
+        assert race.divergence_reason is None
+    else:
+        assert reason in race.divergence_reason
+        assert "the swap was not run" in race.divergence_reason
+
+
+def test_entry_side_skip_reason_names_the_attribute():
+    import threading
+
+    class Model(_CodeStateModel):
+        def setup(self):
+            super().setup()
+            self._lock = threading.Lock()
+
+        def step_oop(self):
+            del self._lock
+            super().step_oop()
+
+    result = Model({**PARAMETERS, "state": "model_slot"}).cpu(mode="oop").run(contract="check")
+    race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
+    assert race.divergence_witness is None
+    assert "model attribute '_lock' holds a lock object" in race.divergence_reason

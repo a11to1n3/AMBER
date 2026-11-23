@@ -27,7 +27,10 @@
   subclass or an `ndarray` subclass) skips the swap instead of running user
   methods during the restore. A `defaultdict`'s `default_factory` is restored
   with its items, and a NumPy view is restored through the array that owns its
-  memory.
+  memory. A function or class stored in this state is restored with its own
+  state (a function's defaults, attributes, and closure cells; a class's
+  namespace), slot attributes are included, and a stored module skips the
+  swap.
 - The race check chooses swapped-order replays by coverage. With three or more
   writers to one cell, it swaps the last writer with one earlier writer per
   distinct written value (previously only the first two writers). Activations
