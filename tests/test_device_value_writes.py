@@ -6,7 +6,10 @@ column) or the write failed. The same model runs on CPU with NumPy arrays,
 which checks that host behaviour is unchanged.
 """
 
+from datetime import datetime
+
 import numpy as np
+import polars as pl
 import pytest
 
 import ambr as am
@@ -207,6 +210,50 @@ def test_commit_broadcasts_scalars_and_keeps_arrays_and_lists():
     np.testing.assert_array_equal(frame["z"].to_numpy(), np.full(N, 2.0))
     np.testing.assert_array_equal(frame["a"].to_numpy(), np.arange(N) * 1.0)
     np.testing.assert_array_equal(frame["li"].to_numpy(), np.arange(N) * 1.0)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, datetime(2020, 1, 2), {"k": 1}, 2**70],
+    ids=["none", "datetime", "dict", "int-above-int64"],
+)
+def test_commit_scalar_to_new_column_infers_dtype_as_assignment(value):
+    frames = {}
+    for route in ("commit", "assign"):
+
+        class NewColumn(am.Model):
+            def setup(self):
+                self.add_agents(N, w=np.arange(N))
+
+            def step_vectorized(self):
+                if route == "commit":
+                    self.agents.commit(c=value)
+                else:
+                    self.agents.c = value
+
+        model = NewColumn({"seed": 1})
+        model.cpu(mode="vectorized").run(steps=1)
+        frames[route] = model.agents_df
+    dtype = frames["commit"].schema["c"]
+    assert dtype != pl.Object
+    assert dtype == frames["assign"].schema["c"]
+    assert frames["commit"]["c"].to_list() == [value] * N
+
+
+@pytest.mark.parametrize("kind", NARROW_KINDS)
+def test_commit_0d_numpy_to_new_column_keeps_dtype(kind):
+    class NewColumn(am.Model):
+        def setup(self):
+            self.add_agents(N, w=np.arange(N))
+
+        def step_vectorized(self):
+            self.agents.commit(c=np.asarray(3, dtype=kind), d=np.asarray(3, dtype=kind)[()])
+
+    model = NewColumn({"seed": 1})
+    model.cpu(mode="vectorized").run(steps=1)
+    frame = model.agents_df
+    assert str(frame.schema["c"]) == str(frame.schema["d"]) == DTYPE_NAMES[kind]
+    np.testing.assert_array_equal(frame["c"].to_numpy(), np.full(N, 3, dtype=kind))
 
 
 def test_host_value_leaves_host_values_unchanged():

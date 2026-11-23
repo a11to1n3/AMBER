@@ -249,11 +249,18 @@ def _cast_to_existing(df: pl.DataFrame, series: pl.Series, name: str) -> pl.Seri
     return series
 
 
-def _column_values(value, height: int) -> np.ndarray:
-    """Host array for a committed column; a scalar or 0-d value is repeated for
-    every row, as ``agents.col = scalar`` does."""
+def _column_series(name: str, value, height: int) -> pl.Series:
+    """Host Series for a committed column.
+
+    A scalar or 0-d value (Python, NumPy or CuPy) is repeated for every row.
+    Its dtype is inferred from the value as Polars infers it for a list, so
+    ``None`` gives a Null column, a ``datetime`` a Datetime column and a dict
+    a Struct column; NumPy scalars keep their dtype.
+    """
     arr = np.asarray(host_value(value))
-    return np.full(height, arr[()]) if arr.ndim == 0 else arr
+    if arr.ndim == 0:
+        return pl.Series(name, [arr[()]], strict=False).new_from_index(0, height)
+    return pl.Series(name, arr)
 
 
 def commit_columns(model, **columns) -> None:
@@ -262,8 +269,12 @@ def commit_columns(model, **columns) -> None:
     Updating *existing* columns (rather than adding new ones) keeps the agent
     schema stable across a step -- which is what ``Model.run(contract='check')``
     verifies. Each committed column's existing dtype is preserved, so a column
-    is never silently re-typed. Pre-declare these columns in ``setup`` so the
-    contract certificate stays clean.
+    is never silently re-typed: values are cast to it, which truncates floats
+    written to an integer column (``2.5`` becomes ``2``). Pre-declare these
+    columns in ``setup`` so the contract certificate stays clean.
+
+    A scalar or 0-d value (Python, NumPy or CuPy) is repeated for every row;
+    arrays, lists and Series must have one value per row.
 
     Writes go through ``model._set_frame`` so the snapshot-view contract can
     witness the commit and flag same-step duplicate commits of a column.
@@ -271,7 +282,7 @@ def commit_columns(model, **columns) -> None:
     df = model._agents_frame()
     names = list(columns)
     series = [
-        _cast_to_existing(df, pl.Series(name, _column_values(v, df.height)), name)
+        _cast_to_existing(df, _column_series(name, v, df.height), name)
         for name, v in columns.items()
     ]
     model._set_frame(df.with_columns(series), written_columns=names)
