@@ -30,7 +30,7 @@ from .base import BaseModel
 from .population import Population
 from ._deprecation import warn_deprecated
 from ._id_index import resolve_positions
-from .gpu import DeviceRNG
+from .gpu import DeviceRNG, _is_cupy_array, to_host
 from .contract import (
     ContractCertificate,
     ContractMonitor,
@@ -1153,6 +1153,10 @@ class Model(BaseModel):
 
     def _replay_values_equal(self, left: Any, right: Any) -> bool:
         """Compare leaves and containers without using an array's truth value."""
+        if _is_cupy_array(left):
+            left = to_host(left)
+        if _is_cupy_array(right):
+            right = to_host(right)
         if isinstance(left, np.ndarray) or isinstance(right, np.ndarray):
             if not isinstance(left, np.ndarray) or not isinstance(right, np.ndarray):
                 return False

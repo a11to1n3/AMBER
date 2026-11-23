@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- `ambr.gpu.make_keyed_device_rng` returns a counter-based GPU generator.
+  Each draw is a SplitMix64 function of seed, step, event, agent ID and
+  stream, the rule the SIR infection kernel already uses, so its values do not
+  depend on the CUDA device. The four timed GPU benchmark models draw from it
+  on their fast path. CuPy's `default_rng` sizes its state by the device's
+  multiprocessor count, so the same seed gave different draws on different
+  GPU models.
+- Keyed GPU draws use separate streams for scalar and bulk calls. When a
+  draw uses bound agent keys, the array must contain exactly one key per
+  value drawn. Scalar draws require one key, and `choice(..., replace=False)`
+  requires one key per candidate. `set_agent_keys(None)` clears the binding.
+- Keyed draws support `float32` and `float64` as floating dtypes. A
+  `float32` result that would round up to 1.0 is clamped to the largest
+  `float32` below 1. This applies to `random` and to `uniform` over a
+  positive-width interval ending at 1. The generator uses the original
+  53-bit conversion and reproduces the recorded benchmark draws.
+- Activation replay compares CuPy RNG state arrays by value. CuPy RNG
+  snapshot and restore already worked. The sweep RNG check became
+  inconclusive because it caught an error from `_replay_values_equal`
+  when comparing device arrays.
 - Contract checking treats a read of `model.agents_df`, `Agent.get_data()`, or
   `Agent.get_neighbors(...)` inside an activation as a read of every column,
   so `activation_race` covers these accessors.
