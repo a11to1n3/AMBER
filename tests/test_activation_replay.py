@@ -1161,36 +1161,87 @@ def test_replay_pair_selection_is_linear_in_the_writers_of_a_cell():
     assert elapsed < 1.0
 
 
-def _two_sweep_model(first_sweep, second_sweep):
+def _two_sweep_model(first_sweep, second_sweep, writers=(0,), readers=(1,)):
+    """``first_sweep``/``second_sweep``: None for a sweep over ``model.agents``,
+    or the IDs of a partial ``agents.at[ids].call(...)`` sweep."""
+
     class Agent(am.Agent):
         def write(self):
-            self.model.agents.at[[0]].set(x=self.id + 1)
+            if self.id in writers:
+                self.model.agents.at[[0]].set(x=self.id + 1)
 
         def read(self):
-            self.seen = int(self.model.agents.x[0])
+            if self.id in readers:
+                self.seen = int(self.model.agents.x[0])
 
     class Model(am.Model):
         def setup(self):
             self.add_agents(3, agent_class=Agent, x=0, seen=-1)
 
         def step(self):
-            self.agents.at[first_sweep].call("write")
-            self.agents.at[second_sweep].call("read")
+            for method, ids in (("write", first_sweep), ("read", second_sweep)):
+                if ids is None:
+                    self.agents.call(method)
+                else:
+                    self.agents.at[ids].call(method)
 
     return Model
 
 
-def test_each_sweep_of_a_step_has_its_own_activation_trace():
-    # Agent 0 writes in the first sweep and agent 1 reads in the second: the
-    # read sees an earlier phase's output, which is not a race.
-    result = _two_sweep_model([0], [1])(_params()).run(contract="check")
+def test_consecutive_whole_population_sweeps_have_their_own_activation_traces():
+    # Agent 0 writes in a sweep over all agents and agent 1 reads in the next
+    # one: the read sees an earlier phase's output, which is not a race.
+    result = _two_sweep_model(None, None)(_params()).run(contract="check")
     cert = result["contract"][0]
     assert result.agents.sort("id")["seen"].to_list() == [-1, 1, -1]
     assert cert.clean
 
 
+@pytest.mark.parametrize("first, second", [([0], [1]), (None, [1]), ([0], None)])
+def test_partial_sweeps_stay_in_one_activation_trace(first, second):
+    # The model, not the framework, orders partial sweeps, so a read in one
+    # of them of a cell written in another is checked as a race.
+    result = _two_sweep_model(first, second)(_params()).run(contract="check")
+    cert = result["contract"][0]
+    races = _races(cert)
+    assert any(race.ids == [0, 1] for race in races)
+    assert all(race.divergence_witness is None for race in races)
+    assert all(
+        race.divergence_reason == "replay requires a single recorded activation sweep"
+        for race in races
+    )
+
+
+def test_a_user_shuffled_one_agent_sweep_order_reports_a_race():
+    # One-agent sweeps in an order the model draws: the final x[0] depends
+    # on that order, so the dependence must be reported.
+    class Grab(am.Agent):
+        def step(self):
+            if self.model.agents.x[0] == 0:
+                self.model.agents.at[[0]].set(x=self.id + 1)
+
+    class UserShuffle(am.Model):
+        def setup(self):
+            self.add_agents(3, agent_class=Grab, x=0)
+
+        def step(self):
+            for aid in self.rng.permutation(3).tolist():
+                self.agents.at[[aid]].call("step")
+
+    finals = set()
+    for seed in (1, 2, 3, 4):
+        result = UserShuffle({**_params(), "seed": seed}).run(contract="check")
+        finals.add(result.agents.sort("id")["x"].to_list()[0])
+        cert = result["contract"][0]
+        assert not cert.ok
+        assert _races(cert)
+    assert len(finals) > 1
+
+
 def test_a_race_inside_an_earlier_sweep_is_still_reported():
-    result = _two_sweep_model([0, 1], [2])(_params()).run(contract="check")
+    result = _two_sweep_model(None, None, writers=(0, 1), readers=(2,))(_params()).run(
+        contract="check"
+    )
     race, = _races(result["contract"][0])
     assert race.ids == [0, 1] and race.columns == ["x"]
     assert race.divergence_witness is None

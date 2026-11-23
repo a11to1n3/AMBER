@@ -311,10 +311,14 @@ class ContractMonitor:
         self._current_stage: Optional[str] = None
         self._stage_open: bool = False
         self._stage_violations: List[ContractViolation] = []
-        # Races found in earlier top-level sweeps of the step. Each sweep is
-        # checked on its own: an earlier sweep's writes are a later sweep's
-        # input.
+        # Races found in earlier top-level sweeps of the step. Consecutive
+        # sweeps over the whole agent list are checked on their own: an
+        # earlier sweep's writes are a later sweep's input. Partial sweeps
+        # stay in one trace (see begin_sweep).
         self._sweep_violations: List[ContractViolation] = []
+        # Whether the open trace holds only one sweep over the whole agent
+        # list, so a following whole-list sweep may start a new trace.
+        self._trace_whole: bool = True
         self._current_activation: Any = None
         self._activation_stack: List[Any] = []
         self._staged_activation_count = 0
@@ -377,6 +381,7 @@ class ContractMonitor:
         self._stage_open = False
         self._stage_violations = []
         self._sweep_violations = []
+        self._trace_whole = True
         self._current_activation = None
         self._activation_stack = []
         self._staged_activation_count = 0
@@ -663,11 +668,25 @@ class ContractMonitor:
 
         ``entry_rng`` is the random stream state before the scheduler drew
         the activation order, when the caller drew one.
+
+        A top-level sweep over the whole agent list (``model.agents``) that
+        follows another whole-list sweep starts a new trace: the earlier
+        sweep's races are checked on their own, and its writes are this
+        sweep's input. Any other sweep, for example
+        ``agents.at[ids].call(...)`` or a call on a filtered view, joins the
+        open trace. Its order relative to the other sweeps is chosen by the
+        model, not the framework, so its reads and writes are checked
+        against every activation of the trace.
         """
-        if self._current_activation is None:
-            self._trace_committed = set()
-            if self._activation_order and not self._stage_open:
+        if self._current_activation is None and not self._stage_open:
+            whole = self._covers_population(agents)
+            if not self._activation_order:
+                self._trace_committed = set()
+                self._trace_whole = whole
+            elif whole and self._trace_whole:
                 self._close_sweep_trace()
+            else:
+                self._trace_whole = False
         self._activation_sweeps += 1
         if self._activation_sweeps != 1 or self._stage_open or self._current_activation is not None:
             return
@@ -685,6 +704,18 @@ class ContractMonitor:
         else:
             self._sweep_reason = "Certification requires a single-phase sweep with no method arguments."
 
+    @staticmethod
+    def _covers_population(agents: Any) -> bool:
+        """Whether ``agents`` is the model's root agent list."""
+        try:
+            attrs = object.__getattribute__(agents, "__dict__")
+            model = attrs.get("model")
+            if model is None or "_parent" in attrs:
+                return False
+            return model.__dict__.get("agents") is agents
+        except Exception:
+            return False
+
     def _close_sweep_trace(self) -> None:
         """Check the finished top-level sweep's trace and start an empty one.
 
@@ -699,6 +730,8 @@ class ContractMonitor:
             skipped_reason="replay requires a single recorded activation sweep",
         )
         self._sweep_violations.extend(temp.violations)
+        self._trace_committed = set()
+        self._trace_whole = True
         self._activation_order = []
         self._activation_reads = {}
         self._activation_column_reads = {}
