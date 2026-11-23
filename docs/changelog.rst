@@ -9,6 +9,20 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 -------------
 
+* Keyed GPU draws use separate streams for scalar and bulk calls. When a
+  draw uses bound agent keys, the array must contain exactly one key per
+  value drawn. Scalar draws require one key, and ``choice(..., replace=False)``
+  requires one key per candidate. ``set_agent_keys(None)`` clears the binding.
+* Keyed draws support ``float32`` and ``float64`` as floating dtypes. A
+  ``float32`` result that would round up to 1.0 is clamped to the largest
+  ``float32`` below 1. This applies to ``random`` and to ``uniform`` over a
+  positive-width interval ending at 1. The generator uses the original
+  53-bit conversion and reproduces the recorded benchmark draws.
+* Activation replay compares CuPy RNG state arrays by value. CuPy RNG
+  snapshot and restore already worked. The sweep RNG check became
+  inconclusive because it caught an error from ``_replay_values_equal``
+  when comparing device arrays.
+
 [0.6.0] - 2026-11-18
 --------------------
 
