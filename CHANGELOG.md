@@ -5,12 +5,89 @@
 - Contract checking treats a read of `model.agents_df`, `Agent.get_data()`, or
   `Agent.get_neighbors(...)` inside an activation as a read of every column,
   so `activation_race` covers these accessors.
+- An activation that reads a column committed by an earlier phase of the step
+  (for example `agents.flag = ...` before a sweep, then `get_data()`,
+  `model.agents_df`, or a column view inside the sweep) no longer receives a
+  false `read_after_write` error. Reads of values written by another
+  activation of the same sweep are still reported. Consecutive sweeps over
+  the whole agent list (for example `self.agents.call("write")` then
+  `self.agents.call("read")`) are checked on their own, so the second sweep
+  reading what the first wrote is no longer an `activation_race`. Sweeps over
+  a subset or view (`agents.at[ids].call(...)`) are still checked against
+  each other and against the sweep before them: the model chooses their
+  order, for example by shuffling one-agent sweeps, so a read in one of what
+  another wrote is still reported.
 - Swapped-order replay restores every agent instance attribute, including
   underscore-prefixed ones, so `contract="check"` leaves forward results
   unchanged when a replay sets private agent state. The top-level contents of
   private lists, dicts, sets, and numeric arrays are restored in place.
 - Swapped-order replay starts from the agents' step-entry private attributes,
   so a rule that depends on private state does not report a false divergence.
+- Swapped-order replay also snapshots the model's underscore-prefixed
+  attributes and the state that model and private agent attributes reach,
+  and it saves and restores the global `random` and legacy `numpy.random`
+  streams. The snapshot covers nested lists, deques, dicts (including a
+  `defaultdict`'s `default_factory`), sets, tuples, NumPy arrays (a view is
+  restored through the array that owns its memory, with its shape),
+  dataclass instances, `SimpleNamespace` objects, Polars frames and series,
+  `random.Random` and NumPy generators, functions and classes with their own
+  state, and slot attributes. Immutable values such as enum members, dates
+  and times, `Decimal`, `Fraction`, and paths need no restore. Any other
+  object, for example a `GridEnvironment` or a `Logger`, is kept by
+  identity; for a class written in Python its own attributes are restored
+  too. A replay whose state reaches a container it cannot restore without
+  running user code (a container or array subclass, a `bytearray`, a module)
+  is not run, and `divergence_reason` names the attribute. A model whose
+  activations change only this state gives the same results under
+  `contract="check"` or `"warn"` as under `contract="off"`. A replay runs
+  agent code again and does not undo changes to module-level variables,
+  class attributes outside the model, files, or the inside of objects kept
+  by identity; for a model with such effects, `check` can change the forward
+  run and a witness can be wrong. Private state is part of the
+  swapped-order comparison, so a swap that changes only private state is a
+  witness.
+- Snapshot comparison is exact and type-aware: a value changed from `1` to
+  `True`, from `{1}` to `{True}`, or from `0.0` to `-0.0` is a change, and
+  an untouched NaN (also in either part of a complex number) or NaT is not,
+  so it neither withholds the certificate nor confirms a divergence. The
+  certificate checks the live state against the step-entry snapshot in one
+  pass and builds a second snapshot only when something differs.
+- Monitoring never raises into the model: a written value whose replay key
+  cannot be built (for example `np.longdouble`, which crashed a `check` or
+  `warn` run) counts as unrecorded, and a failed replay or certificate check
+  is reported in the certificate.
+- The race check chooses swapped-order replays by coverage. With three or more
+  writers to one cell, it reports a swap of the last writer with one earlier
+  writer per distinct written value (previously only the first two writers).
+  Activations that use the same mix of reduction operators on a cell now get
+  a cross-activation replay. The five-replay budget goes first to the
+  reported pairs in report order, with one pair per many-writer cell, as
+  before; the other coverage pairs use the replays left over. A two-writer
+  report is therefore replayed unless the reports before it used all five
+  replays, and a reported pair left out by the budget says so in
+  `divergence_reason`. Values written with
+  `agents.at[ids].set(...)` (scalars or lists, up to 64 agents) and scalar
+  reduction operands are recorded, so a lane writer or a reducer whose effect
+  differs gets a replay; writers whose values were not recorded are sampled
+  across the sweep, and an unconfirmed pair says in `divergence_reason` how
+  many of the cell's candidate pairs were replayed. Written values are compared only when
+  they are built-in or NumPy scalars, so the monitor never calls a user
+  `__hash__` or `__eq__`; other values count as unknown.
+- The order-independence certificate is withheld when the step also commits a
+  column or replaces the agent frame outside the verified sweep, or changes
+  model or private agent state (for example `self.agents.other = ...` or
+  `self.total = ...` after `self.agents.step()`), and when that state cannot
+  be compared with step entry; `certification_reason` names the attribute.
+  An object kept by identity does not withhold it, and `cert.assumptions`
+  names each such attribute. It is also withheld for a write through
+  `update_agent_data()`, an in-place edit of the agent frame or a
+  `Population` write (found by comparing the frame at step entry, sweep entry,
+  sweep exit, and step end), a draw from a model random stream before or after
+  the sweep, a `record_model()` value, and a changed agent ID binding. A step
+  that is only a supported sweep is certified as before.
+- `update_agent_data()` inside an activation is attributed to that
+  activation, so a same-sweep read of the written cell is an
+  `activation_race`.
 - `activation_race` violations list their activation IDs in sorted order, and
   the order of reported races does not depend on `PYTHONHASHSEED`.
 

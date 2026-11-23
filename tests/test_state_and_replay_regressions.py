@@ -1,4 +1,5 @@
 import pickle
+from collections import Counter, OrderedDict, defaultdict, deque
 
 import numpy as np
 import polars as pl
@@ -363,3 +364,443 @@ def test_replay_starts_from_step_entry_private_agent_state():
             vars(a).get("_n") for a in plain.agents
         ]
         assert [a._log for a in checked.agents] == [a._log for a in plain.agents]
+
+
+class RingAgent(am.Agent):
+    """Reads its ring neighbour's x and rewrites its own x.
+
+    ``rule="copy"`` keeps x, so every order gives the same state.
+    ``rule="chain"`` writes the neighbour's value plus one, which depends on
+    the order. Each private state variant feeds a public column, so a replay
+    that leaked into the forward run would change the agent frame.
+    """
+
+    def step(self):
+        model = self.model
+        seen = int(model.agents.by_id((self.id + 1) % 3).x)
+        self.x = seen + 1 if model.p.rule == "chain" else self.x
+        state = model.p.state
+        if state == "agent_counter":
+            self._k = getattr(self, "_k", 0) + 1
+            self.y = self._k
+        elif state == "nested_list":
+            self._nested[0].append(seen)
+            self.y = len(self._nested[0])
+        elif state == "defaultdict":
+            self._seen[seen] += 1
+            self.y = sum(self._seen.values())
+        elif state == "containers":
+            self._recent.append(seen)
+            self._counts[seen] += 1
+            self._order[seen] = len(self._order)
+            self._values.add(seen)
+            self.y = sum(self._recent) + sum(self._counts.values()) + len(self._order) + len(self._values)
+
+
+class RingModel(am.Model):
+    def setup(self):
+        self.add_agents(3, agent_class=RingAgent, x=[0, 10, 20], y=0, calls=0)
+        self._steps = 0
+        for agent in self.agents:
+            agent._nested = [[]]
+            agent._seen = defaultdict(int)
+            agent._recent = deque(maxlen=2)
+            agent._counts = Counter()
+            agent._order = OrderedDict()
+            agent._values = set()
+
+    def step_oop(self):
+        self.activate_agents("sequential")
+        if self.p.state == "model_scalar":
+            self._steps += 1
+            self.agents.calls = [self._steps, 0, 0]
+
+
+def _private_state(model):
+    agents = [
+        {key: value for key, value in vars(agent).items()
+         if key.startswith("_") and key != "_ambr_container_cells"}
+        for agent in model.agents
+    ]
+    return model._steps, agents
+
+
+def _race_witnesses(result):
+    return [
+        violation.divergence_witness
+        for cert in result["contract"]
+        for violation in cert.violations
+        if violation.kind == "activation_race"
+    ]
+
+
+@pytest.mark.parametrize("contract", ["check", "warn"])
+@pytest.mark.parametrize("rule", ["copy", "chain"])
+@pytest.mark.parametrize(
+    "state", ["agent_counter", "model_scalar", "nested_list", "defaultdict", "containers"]
+)
+def test_monitored_run_matches_the_unmonitored_run_with_private_state(state, rule, contract):
+    params = {**PARAMETERS, "steps": 3, "state": state, "rule": rule}
+    plain = RingModel(params).cpu(mode="oop")
+    checked = RingModel(params).cpu(mode="oop")
+    forward = plain.run(contract="off")
+    if contract == "warn":
+        with pytest.warns(UserWarning):
+            result = checked.run(contract=contract)
+    else:
+        result = checked.run(contract=contract)
+
+    assert result["agents"].equals(forward["agents"])
+    assert _private_state(checked) == _private_state(plain)
+    found = _race_witnesses(result)
+    assert found
+    if rule == "copy":
+        assert all(witness is False for witness in found)
+    else:
+        assert all(witness is True for witness in found)
+
+
+class OpaqueCounter:
+    def __init__(self):
+        self.n = 0
+
+
+class OpaqueStateAgent(am.Agent):
+    def step(self):
+        target = self.model.agents.by_id(0)
+        self._box.n += 1
+        self.y = self._box.n
+        target.x = self.id + 1
+
+
+def test_an_object_kept_by_identity_has_its_attributes_restored_around_the_replay():
+    class Model(RaceModel):
+        agent_class = OpaqueStateAgent
+
+        def setup(self):
+            self.add_agents(2, agent_class=self.agent_class, x=0, y=0)
+            for agent in self.agents:
+                agent._box = OpaqueCounter()
+
+    params = {**PARAMETERS, "steps": 2}
+    plain = Model(params).cpu(mode="oop")
+    checked = Model(params).cpu(mode="oop")
+    forward = plain.run(contract="off")
+    result = checked.run(contract="check")
+
+    races = [
+        violation
+        for cert in result["contract"]
+        for violation in cert.violations
+        if violation.kind == "activation_race"
+    ]
+    assert races and all(violation.divergence_witness is True for violation in races)
+    assert result["agents"].equals(forward["agents"])
+    assert [agent._box.n for agent in checked.agents] == [2, 2]
+
+
+class _ClearCountingList(list):
+    """A list subclass whose methods a restore must not call."""
+
+    calls = 0
+
+    def clear(self):
+        type(self).calls += 1
+        super().clear()
+
+
+def test_replay_is_skipped_when_private_state_cannot_be_restored():
+    class Model(RaceModel):
+        agent_class = OpaqueStateAgent
+
+        def setup(self):
+            self.add_agents(2, agent_class=self.agent_class, x=0, y=0)
+            for agent in self.agents:
+                agent._box = OpaqueCounter()
+                agent._held = _ClearCountingList([0])
+
+    _ClearCountingList.calls = 0
+    params = {**PARAMETERS, "steps": 2}
+    forward = Model(params).cpu(mode="oop").run(contract="off")
+    checked = Model(params).cpu(mode="oop")
+    result = checked.run(contract="check")
+    races = [
+        violation
+        for cert in result["contract"]
+        for violation in cert.violations
+        if violation.kind == "activation_race"
+    ]
+    assert races and all(violation.divergence_witness is None for violation in races)
+    assert all(
+        "agent 0 attribute '_held' holds a _ClearCountingList object" in violation.divergence_reason
+        and "the swap was not run" in violation.divergence_reason
+        for violation in races
+    )
+    assert _ClearCountingList.calls == 0
+    assert result["agents"].equals(forward["agents"])
+    assert [agent._box.n for agent in checked.agents] == [2, 2]
+
+
+def test_framework_private_model_attributes_are_not_replay_state():
+    class Reporting(RaceModel):
+        model_reporters = {"agents": lambda model: len(model.agents)}
+        agent_reporters = ["x"]
+        record_initial = True
+
+    models = [
+        Reporting(PARAMETERS).cpu(mode="oop"),
+        Reporting(PARAMETERS).cpu(mode="vectorized"),
+        RingModel({**PARAMETERS, "state": "none", "rule": "copy"}).cpu(mode="oop"),
+    ]
+    for model in models:
+        model.run(contract="check")
+        model.run(steps=1, auto_batch=True)
+    for model in models:
+        user = {
+            name for name in vars(model)
+            if name.startswith("_") and model._is_replay_model_attr(name)
+        }
+        assert user <= {"_steps"}
+
+
+class _CountingList(list):
+    """A list subclass whose override changes its own state."""
+
+    def __init__(self):
+        super().__init__([1])
+        self.clears = 0
+
+    def clear(self):
+        self.clears += 1
+        super().clear()
+
+
+class _TaggedArray(np.ndarray):
+    pass
+
+
+class _SameValueRace(am.Agent):
+    """Both activations write 1 to agent 0's x and touch model state."""
+
+    def step(self):
+        self.model.agents.by_id(0).x = 1
+        state = self.model.p.state
+        if state == "factory":
+            self.model._lookup.default_factory = list if self.id == 0 else dict
+        elif state in ("view", "subclass_array"):
+            self.model._array.base[1] += 1
+
+
+class _SameValueModel(am.Model):
+    def setup(self):
+        state = self.p.state
+        if state == "factory":
+            self._lookup = defaultdict(None)
+        elif state == "subclass_list":
+            self._held = _CountingList()
+        elif state == "view":
+            self._array = np.zeros(2, dtype=np.int64)[:1]
+        elif state == "subclass_array":
+            self._array = np.zeros(2, dtype=np.int64).view(_TaggedArray)[:1]
+        self.add_agents(2, agent_class=_SameValueRace, x=0)
+
+    def step_oop(self):
+        self.activate_agents("sequential")
+
+    def observed(self):
+        state = self.p.state
+        if state == "factory":
+            return self._lookup.default_factory
+        if state == "subclass_list":
+            return self._held.clears
+        return self._array.base.tolist()
+
+
+@pytest.mark.parametrize("state, witness, reason", [
+    # The factory is part of a defaultdict's state: the swapped order
+    # leaves the other factory installed, so the forward one must return.
+    ("factory", True, None),
+    # A list subclass can change its own state when the restore calls its
+    # methods, so it is not snapshotted and the swap is not run.
+    ("subclass_list", None, "model attribute '_held' holds a _CountingList object"),
+    # A view is restored through the array that owns its memory.
+    ("view", False, None),
+    ("subclass_array", None, "model attribute '_array' holds a _TaggedArray array subclass"),
+])
+def test_replay_restores_the_full_state_of_supported_containers(state, witness, reason):
+    params = {**PARAMETERS, "state": state}
+    plain = _SameValueModel(params).cpu(mode="oop")
+    plain.run(contract="off")
+    checked = _SameValueModel(params).cpu(mode="oop")
+    result = checked.run(contract="check")
+
+    assert checked.observed() == plain.observed()
+    race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
+    assert race.divergence_witness is witness
+    if reason is None:
+        assert race.divergence_reason is None
+    else:
+        assert reason in race.divergence_reason
+        assert "the swap was not run" in race.divergence_reason
+
+
+def _make_default_hook():
+    # A fresh function per model, with no closure: its mutable default is
+    # the only state it holds.
+    def hook(calls=[]):  # noqa: B006 - the shared default is the state under test
+        calls.append(1)
+        return len(calls)
+
+    return hook
+
+
+def _make_closure_counter():
+    count = 0
+
+    def tick():
+        nonlocal count
+        count += 1
+        return count
+
+    return tick
+
+
+class _CodeStateRace(am.Agent):
+    """Both activations write 1 to agent 0's x and bump state held in code."""
+
+    def step(self):
+        self.model.agents.by_id(0).x = 1
+        state = self.model.p.state
+        model = self.model
+        if state in ("function_default", "closure"):
+            model.hook()
+        elif state in ("class_counter", "module_counter"):
+            model.shared.count += 1
+        elif state == "model_slot":
+            model._slot_count += 1
+        elif state == "agent_slot":
+            agent = model.agents.by_id(0)
+            agent._marks += 1
+
+
+class _SlottedAgent(_CodeStateRace):
+    __slots__ = ("_marks",)
+
+
+class _CodeStateModel(am.Model):
+    __slots__ = ("_slot_count",)
+
+    def setup(self):
+        state = self.p.state
+        if state == "function_default":
+            self.hook = _make_default_hook()
+        elif state == "closure":
+            self.hook = _make_closure_counter()
+        elif state == "class_counter":
+            self.shared = type("Shared", (), {"count": 0})
+        elif state == "module_counter":
+            import types
+
+            self.shared = types.ModuleType("shared_counter")
+            self.shared.count = 0
+        self._slot_count = 0
+        self.add_agents(2, agent_class=_SlottedAgent, x=0)
+        for agent in self.agents:
+            agent._marks = 0
+
+    def step_oop(self):
+        self.activate_agents("sequential")
+
+    def observed(self):
+        state = self.p.state
+        if state == "function_default":
+            return len(self.hook.__defaults__[0])
+        if state == "closure":
+            return self.hook.__closure__[0].cell_contents
+        if state in ("class_counter", "module_counter"):
+            return self.shared.count
+        if state == "model_slot":
+            return self._slot_count
+        return [agent._marks for agent in self.agents]
+
+
+@pytest.mark.parametrize("state, witness, reason", [
+    # A function's defaults, attributes, and closure cells are its own state.
+    ("function_default", False, None),
+    ("closure", False, None),
+    # A class bound in model state is restored with its namespace.
+    ("class_counter", False, None),
+    # A module's globals are not snapshotted, so the swap is not run.
+    ("module_counter", None, "model attribute 'shared' holds a module"),
+    # Slot values are not in the instance __dict__.
+    ("model_slot", False, None),
+    ("agent_slot", False, None),
+])
+def test_replay_restores_state_held_in_code_and_slots_or_skips(state, witness, reason):
+    params = {**PARAMETERS, "state": state}
+    plain = _CodeStateModel(params).cpu(mode="oop")
+    plain.run(contract="off")
+    checked = _CodeStateModel(params).cpu(mode="oop")
+    result = checked.run(contract="check")
+
+    assert checked.observed() == plain.observed()
+    race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
+    assert race.divergence_witness is witness
+    if reason is None:
+        assert race.divergence_reason is None
+    else:
+        assert reason in race.divergence_reason
+        assert "the swap was not run" in race.divergence_reason
+
+
+def test_entry_side_skip_reason_names_the_attribute():
+    class Model(_CodeStateModel):
+        def setup(self):
+            super().setup()
+            self._held = _ClearCountingList([1])
+
+        def step_oop(self):
+            del self._held
+            super().step_oop()
+
+    result = Model({**PARAMETERS, "state": "model_slot"}).cpu(mode="oop").run(contract="check")
+    race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
+    assert race.divergence_witness is None
+    assert "model attribute '_held' holds a _ClearCountingList object" in race.divergence_reason
+    assert "the swap was not run" in race.divergence_reason
+
+
+def test_a_lock_in_model_state_is_kept_by_identity_and_the_swap_runs():
+    import threading
+
+    class Model(_CodeStateModel):
+        def setup(self):
+            super().setup()
+            self._lock = threading.Lock()
+
+    params = {**PARAMETERS, "state": "model_slot"}
+    plain = Model(params).cpu(mode="oop")
+    plain.run(contract="off")
+    checked = Model(params).cpu(mode="oop")
+    lock = None
+    checked._ensure_setup()
+    lock = checked._lock
+    result = checked.run(contract="check")
+    race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
+    assert race.divergence_witness is False
+    assert checked._lock is lock
+    assert checked.observed() == plain.observed()
+
+
+def test_an_untouched_nan_in_private_state_is_not_a_divergence():
+    class Model(_SameValueModel):
+        def setup(self):
+            super().setup()
+            self._nan = float("nan")
+            for agent in self.agents:
+                agent._nan = float("nan")
+
+    result = Model({**PARAMETERS, "state": "none"}).cpu(mode="oop").run(contract="check")
+    race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
+    # Both activations write the same value, so the swap changes nothing.
+    assert race.divergence_witness is False

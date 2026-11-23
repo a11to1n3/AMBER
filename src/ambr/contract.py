@@ -26,7 +26,11 @@ The checks:
   makes the later path win; under simultaneous activation that is still a
   partial-map conflict.
 * **read-after-write (lane path)** -- a column borrowed *after* it was committed
-  in the same step; a snapshot rule must read step-entry state.
+  in the same step; a snapshot rule must read step-entry state. Inside an
+  activation, only a commit made during the current activation sweep or stage
+  counts. A value committed by an earlier phase of the step is input to the
+  sweep; a value written by another activation of the same sweep is still
+  reported as an ``activation_race``.
 * **uncertified mutable borrow** -- ``agents.array(...)`` exposed a mutable
   NumPy/CuPy buffer.  AMBER observes the borrow, but cannot infer whether or how
   user code subsequently mutates or indexes that raw array.
@@ -44,7 +48,11 @@ invisible to the conflict check (``Population.data = ...`` is deprecated and
 warns; prefer ``agents.col = ...`` / ``agents.set`` / ``agents.commit``).
 ``clean`` means no observed violation. The separate conditional guarantee is
 established only when the runtime verifies a supported deterministic activation
-sweep and its observed cell effects agree with the proof.
+sweep, its observed cell effects agree with the proof, and the step changed
+nothing else: no column write or frame change outside the sweep (the frame is
+compared at step entry, sweep entry, sweep exit, and step end), no draw from a
+model random stream or ``record_model()`` value outside it, the same agent
+roster, and model and private agent state equal to step entry.
 
 A conflict closed while a stage is still open is reported as
 ``activation_race`` with ``divergence_witness is None``. Automatic replay
@@ -57,6 +65,8 @@ from __future__ import annotations
 import sys
 from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+
+import numpy as np
 
 SEVERITY_ERROR = "error"
 SEVERITY_WARNING = "warning"
@@ -90,12 +100,73 @@ CONDITIONAL_GUARANTEE_ESTABLISHED = "established"
 
 
 def _ordered(items: Iterable[Any]) -> List[Any]:
-    """Return ``items`` sorted, so reports do not depend on set hash order."""
+    """Return ``items`` sorted, so reports do not depend on set hash order.
+
+    Falls back to sorting by ``repr`` and then to the given order, so an
+    agent ID with a raising comparison or ``repr`` cannot fail the step.
+    """
     items = list(items)
     try:
         return sorted(items)
-    except TypeError:
+    except Exception:
+        pass
+    try:
         return sorted(items, key=repr)
+    except Exception:
+        return items
+
+
+#: Placeholder for a write whose value the monitor did not see.
+_UNSEEN_VALUE = object()
+
+#: Swapped-order replays run per step.
+_MAX_REPLAYS_PER_STEP = 5
+
+
+#: Exact built-in scalar types whose values can key a write as they are.
+_SCALAR_KEY_TYPES = frozenset({type(None), bool, int, str, bytes})
+
+
+def _builtin_value_key(value: Any) -> Any:
+    kind = type(value)
+    if kind in _SCALAR_KEY_TYPES:
+        return (kind, value)
+    if kind is float:
+        return (float, value.hex())
+    if kind is complex:
+        return (complex, value.real.hex(), value.imag.hex())
+    return None
+
+
+def _value_key(value: Any) -> Any:
+    """Return a key that is equal exactly when two written scalars are equal.
+
+    Keys are built only for exact built-in scalars and NumPy scalars, from
+    their type and value, so tracing a write never runs a user ``__hash__``
+    or ``__eq__``. A float is keyed by its exact value, so NaN matches NaN
+    and ``-0.0`` differs from ``0.0``; ``1`` and ``True`` differ. Any other
+    value, an unseen one, and a value whose key cannot be built (for
+    example ``np.longdouble``, whose ``item()`` is not a built-in scalar)
+    get a fresh token that matches nothing: the replay selection then
+    treats the write as unknown. This function never raises.
+    """
+    try:
+        key = _builtin_value_key(value)
+        if key is not None:
+            return key
+        kind = type(value)
+        if (
+            isinstance(value, np.generic)
+            and kind.__module__ == "numpy"
+            and not isinstance(value, (np.void, np.object_))
+        ):
+            inner = _builtin_value_key(value.item())
+            if inner is not None:
+                # The dtype string separates datetime64 units.
+                return (kind, value.dtype.str, inner)
+    except Exception:
+        pass
+    return object()
 
 
 def _ieee_float_domain(domain: str) -> bool:
@@ -224,6 +295,11 @@ class ContractMonitor:
         self._borrowed: Set[str] = set()
         self._mutable_borrows: Set[str] = set()
         self._reduced_cols: Set[str] = set()
+        # Columns committed or reduced by an activation of the current sweep
+        # or stage. Activation reads are checked against this set only.
+        self._trace_committed: Set[str] = set()
+        # Column-level writes made outside any activation in this step.
+        self._unswept_writes: Set[str] = set()
         # (operator, dtype) recorded for each reduced column this step.
         self._reduction_domains: Dict[str, Set[Tuple[str, str]]] = {}
         # Columns touched by both buffered and lane/view paths in this step
@@ -235,6 +311,14 @@ class ContractMonitor:
         self._current_stage: Optional[str] = None
         self._stage_open: bool = False
         self._stage_violations: List[ContractViolation] = []
+        # Races found in earlier top-level sweeps of the step. Consecutive
+        # sweeps over the whole agent list are checked on their own: an
+        # earlier sweep's writes are a later sweep's input. Partial sweeps
+        # stay in one trace (see begin_sweep).
+        self._sweep_violations: List[ContractViolation] = []
+        # Whether the open trace holds only one sweep over the whole agent
+        # list, so a following whole-list sweep may start a new trace.
+        self._trace_whole: bool = True
         self._current_activation: Any = None
         self._activation_stack: List[Any] = []
         self._staged_activation_count = 0
@@ -246,10 +330,19 @@ class ContractMonitor:
         self._trace_gaps: Set[str] = set()
         self._sweep_proof = None
         self._sweep_reason: Optional[str] = None
+        # Model state at the entry and exit of a verified sweep, so the
+        # certificate can check that nothing else changed the step.
+        self._sweep_entry: Any = None
+        self._sweep_exit: Any = None
         self._activation_reads: Dict[Any, Set[Tuple[str, Any]]] = {}
         self._activation_column_reads: Dict[Any, Set[str]] = {}
         self._activation_writes: Dict[Any, Set[Tuple[str, Any]]] = {}
+        # Last value each activation wrote to a cell, as a _value_key.
+        self._activation_write_values: Dict[Any, Dict[Tuple[str, Any], Any]] = {}
         self._activation_reductions: Dict[Any, Set[Tuple[str, Any, str]]] = {}
+        # Each activation's reductions per cell, in order, as
+        # (operator, operand key) pairs. Used to choose replay pairs.
+        self._activation_reduction_ops: Dict[Any, Dict[Tuple[str, Any], List[Tuple[str, Any]]]] = {}
         self._activation_draws: Dict[Any, List[Tuple[int, int, Any, str, int, float]]] = {}
         self._in_replay: bool = False
         self._used_shared_rng = False
@@ -280,11 +373,15 @@ class ContractMonitor:
         self._borrowed = set()
         self._mutable_borrows = set()
         self._reduced_cols = set()
+        self._trace_committed = set()
+        self._unswept_writes = set()
         self._reduction_domains = {}
         self._cross_path_cols = set()
         self._current_stage = None
         self._stage_open = False
         self._stage_violations = []
+        self._sweep_violations = []
+        self._trace_whole = True
         self._current_activation = None
         self._activation_stack = []
         self._staged_activation_count = 0
@@ -295,11 +392,15 @@ class ContractMonitor:
         self._trace_gaps = set()
         self._sweep_proof = None
         self._sweep_reason = None
+        self._sweep_entry = None
+        self._sweep_exit = None
         self._activation_order = []
         self._activation_reads = {}
         self._activation_column_reads = {}
         self._activation_writes = {}
+        self._activation_write_values = {}
         self._activation_reductions = {}
+        self._activation_reduction_ops = {}
         self._activation_draws = {}
         self._used_shared_rng = False
         self._sweep_rng_reason = None
@@ -324,6 +425,8 @@ class ContractMonitor:
         self._check_lane_conflicts(cert)
         self._check_population(cert, exit_ids if isinstance(exit_ids, Counter) else Counter(exit_ids))
         self._check_inexact_reductions(cert)
+        if self._sweep_violations:
+            cert.violations.extend(self._sweep_violations)
         if sys.exc_info()[0] is None:
             allow_replay = not self._stage_open and not self._in_replay
             self._check_activation_races(
@@ -350,8 +453,18 @@ class ContractMonitor:
                 f"Some effects could not be attributed: {', '.join(sorted(self._trace_gaps))}.",
                 severity=SEVERITY_WARNING,
             ))
-        cert.certification_reason = self._certify_step(cert, model)
+        try:
+            cert.certification_reason = self._certify_step(cert, model)
+        except Exception as exc:  # monitoring must not fail the run
+            cert.conditional_guarantee = CONDITIONAL_GUARANTEE_NOT_ESTABLISHED
+            cert.certification = None
+            cert.certification_reason = (
+                f"The certificate check failed ({type(exc).__name__}), so the "
+                f"step was not certified."
+            )
         self._sweep_proof = None
+        self._sweep_entry = None
+        self._sweep_exit = None
         self.certificates.append(cert)
         return cert
 
@@ -364,11 +477,39 @@ class ContractMonitor:
             return "The monitor reported one or more contract violations."
         if self._activation_sweeps != 1 or self._staged_activation_count or self._stage_open:
             return "Certification requires one fully traced single-phase activation sweep."
+        if self._unswept_writes:
+            return (
+                f"The step wrote {', '.join(sorted(self._unswept_writes))} outside "
+                f"the verified activation sweep."
+            )
         proof = self._sweep_proof
         if proof is None:
             return self._sweep_reason or "No supported activation sweep was verified."
         if self._activation_count != len(proof.ids) or not proof.matches(self):
             return "The recorded activation effects did not match the verified sweep."
+        outside = getattr(model, "_step_effects_outside_sweep", None)
+        if not callable(outside):
+            return "Effects outside the verified activation sweep could not be checked."
+        reason = outside(self._sweep_entry, self._sweep_exit)
+        if reason is not None:
+            return reason
+        check = getattr(model, "_step_replay_state_check", None)
+        status, where = check() if callable(check) else ("unknown", None)
+        if status == "unknown":
+            return (
+                "Model and private agent state could not be compared with step "
+                "entry" + (f" ({where})" if where else "") + ", so changes "
+                "outside the verified sweep cannot be ruled out."
+            )
+        if status != "same":
+            return (
+                "The step changed model or private agent state outside the "
+                "verified activation sweep" + (f" ({where})" if where else "") + "."
+            )
+        notes = getattr(model, "_replay_identity_notes", None)
+        notes = notes() if callable(notes) else ()
+        if notes:
+            cert.assumptions = tuple(cert.assumptions) + tuple(notes)
         cert.conditional_guarantee = CONDITIONAL_GUARANTEE_ESTABLISHED
         cert.certification = proof.evidence()
         return None
@@ -386,6 +527,19 @@ class ContractMonitor:
         if column in self._committed or column in self._reduced_cols:
             self._cross_path_cols.add(column)
 
+    def _record_model_buffered_write(self, column: str, agent_id: Any, value: Any) -> None:
+        """Attribute a buffered write made through a model method.
+
+        Inside an activation it is that activation's write, as for an agent
+        attribute assignment. Outside one it is a write outside the sweep.
+        """
+        if not self.active or self._in_replay:
+            return
+        if self._current_activation is None:
+            self._unswept_writes.add(f"column {column!r}")
+        else:
+            self.record_activation_write(column, agent_id, value)
+
     def record_commit(self, columns: Iterable[str], target_ids: Optional[Iterable[Any]] = None) -> None:
         """Record a lane/view commit and any known activation targets."""
         if not self.active:
@@ -396,17 +550,51 @@ class ContractMonitor:
             self._committed.add(c)
             if c in self._buffered_cols or c in self._reduced_cols:
                 self._cross_path_cols.add(c)
-        if self._current_activation is not None:
+        if self._current_activation is None:
+            self._unswept_writes.update(f"column {c!r}" for c in columns)
+        else:
+            self._trace_committed.update(columns)
             if target_ids is None:
                 self._trace_gaps.add("column commit without target IDs")
             else:
-                writes = self._activation_writes.setdefault(self._current_activation, set())
-                writes.update((column, aid) for aid in target_ids for column in columns)
+                act = self._current_activation
+                cells = [(column, aid) for aid in target_ids for column in columns]
+                self._activation_writes.setdefault(act, set()).update(cells)
+                # The committed values are unknown here. _record_commit_values
+                # replaces them when the caller knows them.
+                values = self._activation_write_values.setdefault(act, {})
+                for cell in cells:
+                    values[cell] = object()
+
+    def _record_commit_values(
+        self, columns: Dict[str, Any], target_ids: List[Any], limit: int = 64
+    ) -> None:
+        """Record the values a lane commit by the current activation wrote.
+
+        A scalar is the value of every target. A sequence gives one value
+        per target. Commits to more than ``limit`` targets stay unknown.
+        """
+        act = self._current_activation
+        if not self.active or self._in_replay or act is None or len(target_ids) > limit:
+            return
+        values = self._activation_write_values.setdefault(act, {})
+        for column, value in columns.items():
+            key = _value_key(value)
+            if type(key) is tuple:
+                for aid in target_ids:
+                    values[(column, aid)] = key
+            elif type(value) in (list, tuple) and len(value) == len(target_ids):
+                for aid, item in zip(target_ids, value):
+                    values[(column, aid)] = _value_key(item)
 
     def record_frame_replacement(self) -> None:
         """Mark a frame replacement whose cell effects are outside the trace."""
-        if self.active and self._current_activation is not None:
+        if not self.active:
+            return
+        if self._current_activation is not None:
             self._trace_gaps.add("agent frame replacement")
+        else:
+            self._unswept_writes.add("the agent frame")
 
     def record_reduction(
         self,
@@ -427,6 +615,11 @@ class ContractMonitor:
         if not self.active:
             return
         domains = domains or {}
+        columns = tuple(columns)
+        if self._current_activation is None:
+            self._unswept_writes.update(f"column {c!r}" for c in columns)
+        else:
+            self._trace_committed.update(columns)
         for c in columns:
             self._reduced_cols.add(c)
             self._committed.add(c)
@@ -439,11 +632,18 @@ class ContractMonitor:
                 )
 
     def record_borrow(self, column: str) -> None:
-        """Record a lane borrow of ``column``; flag if already committed."""
+        """Record a lane borrow of ``column``; flag if already committed.
+
+        Outside an activation, any earlier commit in the step counts. Inside
+        an activation, only a commit made during the current sweep or stage
+        counts: an earlier phase's commit is the sweep's input, and reads of
+        values written by other activations are checked as activation races.
+        """
         if not self.active:
             return
         self._borrowed.add(column)
-        if column in self._committed:
+        inside = self._current_activation is not None
+        if column in (self._trace_committed if inside else self._committed):
             self._raw_cols.add(column)
         if not self._in_replay and self._current_activation is not None:
             self._activation_column_reads.setdefault(self._current_activation, set()).add(column)
@@ -469,7 +669,32 @@ class ContractMonitor:
 
     # --- activation trace ---------------------------------------------------
 
-    def begin_sweep(self, agents, method: str, single_phase: bool) -> None:
+    def begin_sweep(
+        self, agents, method: str, single_phase: bool, entry_rng: Any = _UNSEEN_VALUE
+    ) -> None:
+        """Start an activation sweep.
+
+        ``entry_rng`` is the random stream state before the scheduler drew
+        the activation order, when the caller drew one.
+
+        A top-level sweep over the whole agent list (``model.agents``) that
+        follows another whole-list sweep starts a new trace: the earlier
+        sweep's races are checked on their own, and its writes are this
+        sweep's input. Any other sweep, for example
+        ``agents.at[ids].call(...)`` or a call on a filtered view, joins the
+        open trace. Its order relative to the other sweeps is chosen by the
+        model, not the framework, so its reads and writes are checked
+        against every activation of the trace.
+        """
+        if self._current_activation is None and not self._stage_open:
+            whole = self._covers_population(agents)
+            if not self._activation_order:
+                self._trace_committed = set()
+                self._trace_whole = whole
+            elif whole and self._trace_whole:
+                self._close_sweep_trace()
+            else:
+                self._trace_whole = False
         self._activation_sweeps += 1
         if self._activation_sweeps != 1 or self._stage_open or self._current_activation is not None:
             return
@@ -477,8 +702,64 @@ class ContractMonitor:
             from ._certify import verify_sweep
 
             self._sweep_proof, self._sweep_reason = verify_sweep(agents, method)
+            if self._sweep_proof is not None:
+                boundary = getattr(getattr(agents, "model", None), "_sweep_boundary", None)
+                if callable(boundary):
+                    self._sweep_entry = (
+                        boundary() if entry_rng is _UNSEEN_VALUE
+                        else boundary(entry_rng, capture_rng=False)
+                    )
         else:
             self._sweep_reason = "Certification requires a single-phase sweep with no method arguments."
+
+    @staticmethod
+    def _covers_population(agents: Any) -> bool:
+        """Whether ``agents`` is the model's root agent list."""
+        try:
+            attrs = object.__getattribute__(agents, "__dict__")
+            model = attrs.get("model")
+            if model is None or "_parent" in attrs:
+                return False
+            return model.__dict__.get("agents") is agents
+        except Exception:
+            return False
+
+    def _close_sweep_trace(self) -> None:
+        """Check the finished top-level sweep's trace and start an empty one.
+
+        A step with more than one sweep has no replay, so these races keep
+        an inconclusive witness.
+        """
+        temp = ContractCertificate(0)
+        self._check_activation_races(
+            temp,
+            model=None,
+            allow_replay=False,
+            skipped_reason="replay requires a single recorded activation sweep",
+        )
+        self._sweep_violations.extend(temp.violations)
+        self._trace_committed = set()
+        self._trace_whole = True
+        self._activation_order = []
+        self._activation_reads = {}
+        self._activation_column_reads = {}
+        self._activation_writes = {}
+        self._activation_write_values = {}
+        self._activation_reductions = {}
+        self._activation_reduction_ops = {}
+        self._activation_draws = {}
+
+    def _end_sweep(self, model: Any, rng_state: Any) -> None:
+        """Record the state at the exit of the verified sweep."""
+        if (
+            not self.active
+            or self._in_replay
+            or self._sweep_entry is None
+            or self._sweep_exit is not None
+            or self._activation_sweeps != 1
+        ):
+            return
+        self._sweep_exit = model._sweep_boundary(rng_state, capture_rng=False)
 
     def record_sweep_rng_check(self, unchanged: Optional[bool]) -> None:
         """Keep replay inconclusive if the sweep changed a stream or could not be checked."""
@@ -501,6 +782,7 @@ class ContractMonitor:
             return
         if self._activation_order:
             self.end_stage()
+        self._trace_committed = set()
         self._current_stage = stage
         self._stage_open = True
 
@@ -515,6 +797,7 @@ class ContractMonitor:
         if not self.active or self._in_replay:
             return
         self._stage_open = False
+        self._trace_committed = set()
         if not self._activation_order:
             self._current_activation = None
             return
@@ -527,7 +810,9 @@ class ContractMonitor:
         self._activation_reads = {}
         self._activation_column_reads = {}
         self._activation_writes = {}
+        self._activation_write_values = {}
         self._activation_reductions = {}
+        self._activation_reduction_ops = {}
         self._activation_draws = {}
 
     def begin_activation(self, agent_id: Any) -> None:
@@ -562,8 +847,14 @@ class ContractMonitor:
         draws = self._activation_draws.setdefault(self._current_activation, [])
         draws.append((seed, step, agent_id, event, index, value))
 
-    def record_activation_write(self, column: str, agent_id: Any) -> None:
-        """Record an ordinary attribute write by the active activation."""
+    def record_activation_write(
+        self, column: str, agent_id: Any, value: Any = _UNSEEN_VALUE
+    ) -> None:
+        """Record an ordinary attribute write by the active activation.
+
+        ``value`` lets the race check choose one swap per distinct value
+        when three or more activations write the same cell.
+        """
         if not self.active or self._in_replay:
             return
         if self._current_activation is None:
@@ -571,17 +862,31 @@ class ContractMonitor:
             return
         act = self._current_activation
         self._activation_writes.setdefault(act, set()).add((column, agent_id))
+        values = self._activation_write_values.setdefault(act, {})
+        values[(column, agent_id)] = _value_key(value)
 
     def record_activation_reductions(self, columns, ids, operator: str) -> None:
-        """Attribute reduction targets to the activation that issued them."""
+        """Attribute reduction targets to the activation that issued them.
+
+        ``columns`` may map each column to its operand. A scalar operand is
+        recorded with the operator so replay pairs can be chosen by the
+        reductions' effect; other operands are unknown.
+        """
         if not self.active or self._in_replay:
             return
         if self._current_activation is None:
             if ids:
                 self._unattributed_columns.update(columns)
             return
-        reductions = self._activation_reductions.setdefault(self._current_activation, set())
+        act = self._current_activation
+        reductions = self._activation_reductions.setdefault(act, set())
         reductions.update((column, aid, operator) for column in columns for aid in ids)
+        operands = columns if isinstance(columns, dict) else {}
+        ops = self._activation_reduction_ops.setdefault(act, {})
+        for column in columns:
+            key = _value_key(operands[column]) if column in operands else object()
+            for aid in ids:
+                ops.setdefault((column, aid), []).append((operator, key))
 
     # --- internal checks ----------------------------------------------------
 
@@ -746,16 +1051,109 @@ class ContractMonitor:
                 ids=sorted(born | died),
             ))
 
+    def _last_writer_swaps(
+        self, writers: List[Any], cell: Tuple[str, Any], limit: int
+    ) -> Tuple[List[Any], int, int, int, Any]:
+        """Pick writers to swap with the last writer of ``cell``.
+
+        Swapping a writer with the last one makes its value the final one,
+        so one writer per recorded value that differs from the last
+        writer's covers every recorded value; the writer nearest the last
+        one is taken for each. A writer whose value was not recorded could
+        hold any value, so each is a candidate too; they fill the remaining
+        slots spread over the sweep, earliest first. Returns at most
+        ``limit`` writers in activation order, the number of distinct
+        recorded values, the number of unrecorded values, the number of
+        candidates, and the writer to try first (the nearest writer of a
+        different recorded value, else the first sampled one; None when no
+        writer is picked). Runs in one pass and compares no user values.
+        """
+        values = self._activation_write_values
+        empty: Dict[Tuple[str, Any], Any] = {}
+        keys = [values.get(act, empty).get(cell) for act in writers]
+        # Recorded values are tuples of built-in scalars, so set membership
+        # is exact.
+        known = {key for key in keys if type(key) is tuple}
+        unknown = sum(1 for key in keys if type(key) is not tuple)
+        by_value: List[int] = []
+        seen = {keys[-1]} if type(keys[-1]) is tuple else set()
+        for index in range(len(writers) - 2, -1, -1):
+            key = keys[index]
+            if type(key) is tuple and key not in seen:
+                seen.add(key)
+                by_value.append(index)
+        unseen = [index for index in range(len(writers) - 1) if type(keys[index]) is not tuple]
+        candidates = len(by_value) + len(unseen)
+        picked = by_value[:limit]
+        room = limit - len(picked)
+        if room >= len(unseen):
+            picked.extend(unseen)
+        elif room > 0:
+            last = len(unseen) - 1
+            spread = {round(i * last / max(room - 1, 1)) for i in range(room)}
+            picked.extend(unseen[i] for i in sorted(spread))
+        first = writers[picked[0]] if picked else None
+        return [writers[i] for i in sorted(picked)], len(known), unknown, candidates, first
+
+    def _reducer_swaps(
+        self, members: List[Any], cell: Tuple[str, Any], limit: int
+    ) -> Tuple[List[Tuple[Any, Any]], int]:
+        """Pick pairs of reducers with the same mixed operators on ``cell``.
+
+        The first two reducers are always paired. Each later reducer whose
+        recorded reduction sequence differs from those already paired is
+        paired with the first reducer, the nearest first; reducers whose
+        operands were not recorded are candidates too and fill the remaining
+        slots spread over the sweep. Returns at most ``limit`` pairs and the
+        number of candidate pairs. Runs in one pass.
+        """
+        ops = self._activation_reduction_ops
+        empty: Dict[Tuple[str, Any], List[Tuple[str, Any]]] = {}
+
+        def signature(act: Any) -> Any:
+            sequence = ops.get(act, empty).get(cell, ())
+            if sequence and all(type(key) is tuple for _, key in sequence):
+                return tuple(sequence)
+            return None
+
+        first = members[0]
+        pairs = [(first, members[1])]
+        signatures = [signature(act) for act in members]
+        seen = {sig for sig in signatures[:2] if sig is not None}
+        by_sequence: List[int] = []
+        unseen: List[int] = []
+        for index in range(2, len(members)):
+            sig = signatures[index]
+            if sig is None:
+                unseen.append(index)
+            elif sig not in seen:
+                seen.add(sig)
+                by_sequence.append(index)
+        candidates = 1 + len(by_sequence) + len(unseen)
+        picked = by_sequence[:limit - 1]
+        room = limit - 1 - len(picked)
+        if room >= len(unseen):
+            picked.extend(unseen)
+        elif room > 0:
+            last = len(unseen) - 1
+            spread = {round(i * last / max(room - 1, 1)) for i in range(room)}
+            picked.extend(unseen[i] for i in sorted(spread))
+        pairs.extend((first, members[i]) for i in sorted(picked))
+        return pairs, candidates
+
     def _check_activation_races(
         self,
         cert: ContractCertificate,
         model: Optional[Any] = None,
         allow_replay: bool = False,
+        skipped_reason: Optional[str] = None,
     ) -> None:
         """Report overlaps involving activation reads, writes, and reductions.
 
-        ``allow_replay`` is false while a stage is open. The diagnostic is
-        still recorded, and ``divergence_witness`` stays ``None``.
+        ``allow_replay`` is false while a stage is open or for an earlier
+        sweep of the step. The diagnostic is still recorded,
+        ``divergence_witness`` stays ``None``, and ``skipped_reason`` becomes
+        the ``divergence_reason``.
         """
         if self._in_replay or not self._activation_order:
             return
@@ -780,30 +1178,91 @@ class ContractMonitor:
         # (first activation, second activation, target cell, conflict kind).
         hazards: List[Tuple[Any, Any, Tuple[str, Any], str]] = []
         seen_hazards: Set[Tuple[Any, Any, Tuple[str, Any], str]] = set()
+        max_replays = _MAX_REPLAYS_PER_STEP
+        # Reports that are not the first pair of their cell's coverage
+        # (extra last-writer pairs and same-mix reducer pairs). Every other
+        # report is replayed first, in report order, as before coverage
+        # pairs existed; the extra pairs use the replays left over.
+        extra_hazards: Set[Tuple[Any, Any, Tuple[str, Any], str]] = set()
+        # Extra pairs in the order they are tried, with their cell.
+        priority: List[Tuple[Any, Any, Tuple[str, Any]]] = []
+        # Cells with three or more writers: (writer count, distinct recorded
+        # values, unrecorded values, candidate writers, writers swapped).
+        write_groups: Dict[Tuple[str, Any], Tuple[int, int, int, int, int]] = {}
+        # Candidate pairs left out of a cell's coverage, by cell and kind.
+        uncovered: Dict[Tuple[Tuple[str, Any], str], Tuple[int, int]] = {}
 
-        def add_hazard(first: Any, second: Any, cell: Tuple[str, Any], kind: str) -> None:
+        def add_hazard(
+            first: Any, second: Any, cell: Tuple[str, Any], kind: str, extra: bool = False
+        ) -> None:
             key = (first, second, cell, kind)
             if key in seen_hazards:
                 return
             seen_hazards.add(key)
             hazards.append(key)
+            if extra:
+                extra_hazards.add(key)
 
         for cell in dict.fromkeys((*writers_by_cell, *reducers_by_cell)):
             writers = writers_by_cell.get(cell, ())
             reducers = reducers_by_cell.get(cell, {})
-            if len(writers) >= 2:
+            if len(writers) == 2:
                 add_hazard(writers[0], writers[1], cell, "write")
+            elif len(writers) > 2:
+                chosen, distinct, unknown, candidates, preferred = self._last_writer_swaps(
+                    writers, cell, max_replays
+                )
+                write_groups[cell] = (len(writers), distinct, unknown, candidates, chosen)
+                if len(chosen) < candidates:
+                    uncovered[(cell, "write")] = (len(chosen), candidates)
+                for first in chosen:
+                    add_hazard(first, writers[-1], cell, "write", extra=first is not preferred)
+                    if first is not preferred:
+                        priority.append((first, writers[-1], cell))
+                if not chosen:
+                    add_hazard(writers[0], writers[1], cell, "write")
             for writer in writers:
                 for reducer in reducers:
                     add_hazard(writer, reducer, cell, "set_reduce")
             if reducers and len(set.union(*reducers.values())) > 1:
                 reducer_order = list(reducers)
-                for index, first in enumerate(reducer_order):
-                    if len(reducers[first]) > 1:
-                        add_hazard(first, first, cell, "mixed_reductions")
-                    for second in reducer_order[index + 1:]:
-                        if reducers[first] != reducers[second]:
+                operator_sets = {act: frozenset(reducers[act]) for act in reducer_order}
+                for act in reducer_order:
+                    if len(operator_sets[act]) > 1:
+                        add_hazard(act, act, cell, "mixed_reductions")
+                if len(set(operator_sets.values())) > 1:
+                    # Differing operator sets: every pair is reported, and
+                    # one pair per combination is replayed first.
+                    sampled: Set[Any] = set()
+                    for index, first in enumerate(reducer_order):
+                        for second in reducer_order[index + 1:]:
+                            pair_sets = (operator_sets[first], operator_sets[second])
+                            if pair_sets[0] == pair_sets[1] or len(pair_sets[0] | pair_sets[1]) < 2:
+                                continue
+                            # Reported (and replayed in report order) as
+                            # before coverage pairs existed.
                             add_hazard(first, second, cell, "mixed_reductions")
+                            operators = frozenset(pair_sets)
+                            if operators not in sampled:
+                                sampled.add(operators)
+                                priority.append((first, second, cell))
+                # Equal mixed operator sets do not commute either. Pairs are
+                # chosen by the recorded reduction sequences (operators and
+                # operands), so reducers with the same effect are not
+                # spent on each other.
+                groups: Dict[frozenset, List[Any]] = {}
+                for act in reducer_order:
+                    if len(operator_sets[act]) > 1:
+                        groups.setdefault(operator_sets[act], []).append(act)
+                for members in groups.values():
+                    if len(members) < 2:
+                        continue
+                    pairs, candidates = self._reducer_swaps(members, cell, max_replays)
+                    if len(pairs) < candidates:
+                        uncovered[(cell, "mixed_reductions")] = (len(pairs), candidates)
+                    for pair in pairs:
+                        add_hazard(pair[0], pair[1], cell, "mixed_reductions", extra=True)
+                        priority.append((pair[0], pair[1], cell))
             readers = (*readers_by_cell.get(cell, ()), *readers_by_column.get(cell[0], ()))
             if readers:
                 for modifier in dict.fromkeys((*writers, *reducers)):
@@ -817,30 +1276,74 @@ class ContractMonitor:
             getattr(model, "replay_activation_swap", None) if allow_replay else None
         )
         witnesses: Dict[Tuple[Any, Any], Tuple[Optional[bool], Optional[str]]] = {}
+        # Pairs whose swapped-order replay actually ran.
+        ran: Set[Tuple[Any, Any]] = set()
         replayed = 0
-        max_replays = 5
 
-        def witness_for(first: Any, second: Any) -> Tuple[Optional[bool], Optional[str]]:
+        def ordered_pair(first: Any, second: Any) -> Tuple[Any, Any]:
+            if position.get(first, 0) > position.get(second, 0):
+                return second, first
+            return first, second
+
+        def witness_for(
+            first: Any, second: Any, budget_reason: str
+        ) -> Tuple[Optional[bool], Optional[str]]:
             nonlocal replayed
             if first == second:
                 return None, None
-            left, right = (first, second)
-            if position.get(left, 0) > position.get(right, 0):
-                left, right = right, left
-            pair = (left, right)
+            pair = ordered_pair(first, second)
             if pair in witnesses:
                 return witnesses[pair]
             witness = None
-            reason = None
-            if allow_replay and callable(replay_fn) and replayed < max_replays:
-                witness, reason = replay_fn(left, right)
-                replayed += 1
+            reason = None if allow_replay else skipped_reason
+            if allow_replay and callable(replay_fn):
+                if replayed < max_replays:
+                    replayed += 1
+                    ran.add(pair)
+                    try:
+                        witness, reason = replay_fn(*pair)
+                    except Exception as exc:  # monitoring must not fail the run
+                        witness = None
+                        reason = f"the swapped-order replay failed: {type(exc).__name__}"
+                else:
+                    reason = budget_reason
             witnesses[pair] = (witness, reason)
             return witnesses[pair]
 
+        earlier = (
+            f"This pair was not replayed: the step's {max_replays} swapped-order "
+            f"replays were used by earlier reports."
+        )
+        # First, every report's own pair in report order, as before the
+        # coverage pairs existed, so a two-writer report keeps its replay.
+        for key in hazards:
+            if key not in extra_hazards:
+                witness_for(key[0], key[1], earlier)
+        # Then the extra coverage pairs, with the replays left over.
+        leftover = (
+            f"This pair was not replayed: the step's {max_replays} swapped-order "
+            f"replays were used by the reports' own pairs and earlier coverage pairs."
+        )
+        for first, second, _cell in priority:
+            witness_for(first, second, leftover)
+
+        # Replays that ran per partially covered cell and conflict kind.
+        checked_by_group: Counter[Tuple[Tuple[str, Any], str]] = Counter(
+            (cell, kind) for first, second, cell, kind in hazards
+            if (cell, kind) in uncovered and ordered_pair(first, second) in ran
+        )
+
         for first, second, cell, kind in hazards:
             col, _aid = cell
-            witness, reason = witness_for(first, second)
+            witness, reason = witness_for(first, second, earlier)
+            gap = uncovered.get((cell, kind))
+            if gap is not None and witness is False:
+                _planned, candidates = gap
+                checked = checked_by_group[(cell, kind)]
+                reason = (
+                    f"Only {checked} of the {candidates} candidate pairs for this cell "
+                    f"were replayed; orders from the other pairs were not checked."
+                )
             if witness is True:
                 note = (
                     " Witness replay under swapped order confirmed "
@@ -861,8 +1364,31 @@ class ContractMonitor:
             if kind == "write":
                 detail = (
                     f"Distinct activations {first} and {second} wrote the "
-                    f"same cell {cell}.{note}"
+                    f"same cell {cell}."
                 )
+                if cell in write_groups:
+                    count, distinct, unknown, candidates, chosen = write_groups[cell]
+                    swapped = len(chosen)
+                    if not candidates:
+                        detail += (
+                            f" {count} activations wrote this cell, all with the "
+                            f"same value; the replay swaps the first two writers."
+                        )
+                    elif unknown or swapped < candidates:
+                        detail += (
+                            f" {count} activations wrote this cell: {distinct} "
+                            f"distinct recorded value(s) and {unknown} unrecorded "
+                            f"value(s). The replay swaps {swapped} of the "
+                            f"{candidates} earlier writers that could change the "
+                            f"final value with the last writer."
+                        )
+                    else:
+                        detail += (
+                            f" {count} activations wrote this cell with {distinct} "
+                            f"distinct value(s); the replay swaps one writer per "
+                            f"value with the last writer {second}."
+                        )
+                detail += note
             elif kind == "read":
                 direction = "read-after-write" if position[first] < position[second] else "write-after-read"
                 detail = (
@@ -871,8 +1397,13 @@ class ContractMonitor:
                 )
             elif kind == "set_reduce":
                 detail = f"Activation {first} wrote cell {cell} and activation {second} reduced into it.{note}"
+            elif first == second:
+                detail = f"Activation {first} used incompatible reduction operators on cell {cell}.{note}"
             else:
-                detail = f"Activations used incompatible reduction operators on cell {cell}.{note}"
+                detail = (
+                    f"Activations {first} and {second} used incompatible reduction "
+                    f"operators on cell {cell}.{note}"
+                )
             cert.add(ContractViolation(
                 "activation_race",
                 detail,

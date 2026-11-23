@@ -6,7 +6,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ambr.contract import ContractCertificate, ContractViolation
+from ambr.contract import ContractCertificate, ContractViolation, ContractViolationError
 from ambr.results import RunResults
 
 import ambr as am
@@ -187,6 +187,72 @@ def test_frame_level_reads_are_attributed_to_the_active_agent(path, sweep):
             assert all(v.divergence_witness is True for v in races)
 
 
+_PHASE_READS = {
+    "model.agents_df": lambda agent: agent.model.agents_df.filter(pl.col("id") == agent.id)["flag"][0],
+    "Agent.get_data": lambda agent: agent.get_data()["flag"][0],
+    "column view": lambda agent: agent.model.agents.flag.to_list()[agent.id],
+}
+
+
+@pytest.mark.parametrize("contract", ["check", "raise"])
+@pytest.mark.parametrize("path", sorted(_PHASE_READS))
+def test_activation_reads_of_an_earlier_phase_commit_are_not_hazards(path, contract):
+    read = _PHASE_READS[path]
+
+    class Agent(am.Agent):
+        def step(self):
+            self.model.seen.append(int(read(self)))
+
+    class Model(am.Model):
+        def setup(self):
+            self.seen = []
+            self.add_agents(2, agent_class=Agent, flag=0)
+
+        def step_oop(self):
+            self.agents.flag = [1, 1]
+            self.activate_agents("sequential")
+
+    model = Model(_params()).cpu(mode="oop")
+    result = model.run(contract=contract)
+    cert = result["contract"][0]
+    assert model.seen == [1, 1]
+    # A whole-frame read inside the sweep sees the earlier commit as input.
+    assert cert.clean
+
+
+@pytest.mark.parametrize("write", ["buffered", "commit"])
+@pytest.mark.parametrize("path", sorted(_PHASE_READS))
+def test_activation_reads_of_a_same_sweep_write_are_still_flagged(path, write):
+    read = _PHASE_READS[path]
+
+    class Agent(am.Agent):
+        def step(self):
+            if self.id == 0:
+                if write == "buffered":
+                    self.flag = 1
+                else:
+                    self.model.agents.at[[0]].set(flag=1)
+            else:
+                self.seen = int(read(self.model.agents.by_id(0)))
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, flag=0, seen=-1)
+
+        def step_oop(self):
+            self.agents.flag = [0, 0]
+            self.activate_agents("sequential")
+
+    result = Model(_params()).cpu(mode="oop").run(contract="check")
+    cert = result["contract"][0]
+    assert result.agents.sort("id")["seen"].to_list() == [-1, 1]
+    assert not cert.ok
+    races = [v for v in _races(cert) if v.columns == ["flag"]]
+    assert races and all(set(v.ids) == {0, 1} for v in races)
+    with pytest.raises(ContractViolationError):
+        Model(_params()).cpu(mode="oop").run(contract="raise")
+
+
 def test_mixed_reduction_operators_on_one_cell_report_a_divergent_witness():
     class Agent(am.Agent):
         def step(self):
@@ -208,6 +274,156 @@ def test_mixed_reduction_operators_on_one_cell_report_a_divergent_witness():
     assert race.ids == [0, 1]
     assert race.divergence_witness is True
     assert result.agents["x"].to_list() == [5, 0]
+
+
+def _write_race_model(values, n=None):
+    class Agent(am.Agent):
+        def step(self):
+            self.model.agents.by_id(0).x = values[self.id]
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(n or len(values), agent_class=Agent, x=-1)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    return Model
+
+
+@pytest.mark.parametrize(
+    "values, pairs, expected",
+    [
+        # Swapping 0 and 1 changes nothing; putting a 1 last does.
+        ((1, 1, 2), [[1, 2]], [True]),
+        # One swap per value that differs from the last writer's.
+        ((1, 2, 3, 3), [[0, 3], [1, 3]], [True, True]),
+        # All writers agree: the pair reported before stays, with no divergence.
+        ((4, 4, 4), [[0, 1]], [False]),
+    ],
+)
+def test_three_or_more_writers_replay_one_swap_per_written_value(values, pairs, expected):
+    result = _write_race_model(values)(_params()).run(contract="check")
+    races = _races(result["contract"][0])
+    assert [race.ids for race in races] == pairs
+    assert [race.divergence_witness for race in races] == expected
+    if len(set(values)) > 1:
+        assert f"{len(values)} activations wrote this cell" in races[0].detail
+    assert result.agents.sort("id")["x"].to_list()[0] == values[-1]
+
+
+def test_two_writer_race_report_is_unchanged():
+    for values, witness in (((1, 2), True), ((3, 3), False)):
+        result = _write_race_model(values)(_params()).run(contract="check")
+        race, = _races(result["contract"][0])
+        assert race.ids == [0, 1]
+        assert race.divergence_witness is witness
+        assert race.detail.startswith("Distinct activations 0 and 1 wrote the same cell ('x', 0).")
+        assert "activations wrote this cell" not in race.detail
+
+
+def test_equal_mixed_reduction_operator_sets_get_a_cross_activation_replay():
+    class Agent(am.Agent):
+        def step(self):
+            add, top = (1, 10) if self.id == 0 else (5, 2)
+            self.model.agents.at[[0]].scatter_add(x=add)
+            self.model.agents.at[[0]].scatter_max(x=top)
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, x=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    result = Model(_params()).run(contract="check")
+    races = _races(result["contract"][0])
+    cross = [race for race in races if race.ids == [0, 1]]
+    assert len(cross) == 1 and cross[0].divergence_witness is True
+    assert {tuple(race.ids) for race in races} == {(0,), (1,), (0, 1)}
+    # Order (0, 1) gives max(1 + 0, 10) + 5 = 15, then max(15, 2) = 15.
+    assert result.agents.sort("id")["x"].to_list()[0] == 15
+
+
+def test_report_pairs_are_replayed_in_report_order_before_coverage_pairs():
+    n = 9
+
+    class Agent(am.Agent):
+        def step(self):
+            _ = self.model.agents.by_id((self.id + 1) % n).x
+            self.x = self.x
+            if self.id >= n - 3:
+                self.model.agents.by_id(0).y = 1 if self.id < n - 1 else 2
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(n, agent_class=Agent, x=0, y=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    result = Model(_params()).run(contract="check")
+    races = _races(result["contract"][0])
+    # The ring of reads is reported before the write to y, so its pairs use
+    # the five replays first, in report order, as they did before coverage
+    # pairs existed.
+    pairs = []
+    for race in races:
+        if tuple(race.ids) not in pairs:
+            pairs.append(tuple(race.ids))
+    replayed = [pair for pair in pairs if any(
+        tuple(race.ids) == pair and race.divergence_witness is not None for race in races
+    )]
+    assert replayed == pairs[:5]
+    write, = [race for race in races if race.columns == ["y"]]
+    assert write.ids == [n - 2, n - 1]
+    assert write.divergence_witness is None
+    assert "used by earlier reports" in write.divergence_reason
+    skipped = [race for race in races if race.divergence_witness is None]
+    assert skipped
+    assert all("not replayed" in race.divergence_reason for race in skipped)
+
+
+def _starved_pair_model(multi_first):
+    """Two writers race on x[0]; seven writers write distinct values to y[1]."""
+    n = 9
+    pair = (7, 8) if multi_first else (0, 1)
+
+    class Agent(am.Agent):
+        def step(self):
+            if self.id in pair:
+                self.model.agents.by_id(0).x = self.id
+            else:
+                self.model.agents.by_id(1).y = self.id
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(n, agent_class=Agent, x=0, y=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    return Model, list(pair)
+
+
+@pytest.mark.parametrize("multi_first", [False, True])
+def test_a_two_writer_report_keeps_its_replay_next_to_a_many_writer_cell(multi_first):
+    # The seven-writer cell offers five coverage pairs. They used to take the
+    # whole budget before the two-writer report; now each report's own pair
+    # is replayed first and the coverage pairs use the rest.
+    Model, pair = _starved_pair_model(multi_first)
+    result = Model(_params()).run(contract="check")
+    races = _races(result["contract"][0])
+    two, = [race for race in races if race.columns == ["x"]]
+    assert two.ids == pair
+    assert two.divergence_witness is True
+    assert two.divergence_reason is None
+    many = [race for race in races if race.columns == ["y"]]
+    assert len(many) == 5
+    assert sum(race.divergence_witness is True for race in many) == 4
+    left, = [race for race in many if race.divergence_witness is None]
+    assert "not replayed" in left.divergence_reason
+    assert "earlier coverage pairs" in left.divergence_reason
 
 
 def test_staged_conflict_does_not_recurse_and_witness_is_inconclusive():
@@ -640,14 +856,15 @@ def test_external_list_alias_keeps_identity_and_forward_contents():
     assert res["agents"].sort("id")["wealth"].to_list() == [1, 0]
 
 
-def test_custom_model_object_skips_the_swap():
+def test_custom_model_object_is_kept_by_identity_with_its_attributes_restored():
     model = _BoxModel(_params())
     model._ensure_setup()
     box = model.box
     res = model.run(contract="check")
     races = _races(res["contract"][0])
     assert len(races) == 1
-    assert races[0].divergence_witness is None
+    # The box's own attribute is restored around the replay, so the swap runs.
+    assert races[0].divergence_witness is True
     assert model.box is box
     assert model.box.n == 2
     assert res["agents"].sort("id")["wealth"].to_list() == [1, 0]
@@ -795,13 +1012,17 @@ class _DropAdapterModel(am.Model):
 class _FailPostRngRestore(_DropAdapterModel):
     """The cleanup restore reports failure without touching the streams."""
 
+    # Counted on the class: private model attributes are replay state and
+    # would be rewound with the step-entry snapshot.
+    rng_restores = 0
+
     def __init__(self, parameters):
         super().__init__(parameters)
-        self._rng_restores = 0
+        type(self).rng_restores = 0
 
     def _restore_rng_state(self, saved):
-        self._rng_restores += 1
-        if self._rng_restores >= 2:
+        type(self).rng_restores += 1
+        if type(self).rng_restores >= 2:
             return False
         return super()._restore_rng_state(saved)
 
@@ -842,7 +1063,7 @@ def test_failed_rng_restore_still_restores_forward_model_state():
         and "forward random streams could not be restored" in v.divergence_reason
         for v in races
     )
-    assert model._rng_restores >= 2
+    assert type(model).rng_restores >= 2
     assert model.nprandom is None
     assert model.events is events
     assert events == [0, 1]
@@ -912,3 +1133,236 @@ def test_replay_withholds_witness_when_only_the_swapped_branch_uses_a_cached_dra
     races = _races(cert)
     assert races and all(v.divergence_witness is None for v in races)
     assert all("shared random stream state changed" in v.divergence_reason for v in races)
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_a_legacy_model_write_inside_an_activation_is_attributed():
+    class Agent(am.Agent):
+        def step(self):
+            if self.id == 0:
+                self.model.update_agent_data(0, {"x": 1})
+            else:
+                self.seen = int(self.model.agents_df["x"][0])
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, x=0, seen=-1)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    result = Model(_params()).run(contract="check")
+    assert result.agents.sort("id")["seen"].to_list() == [-1, 1]
+    race, = _races(result["contract"][0])
+    assert race.ids == [0, 1] and race.columns == ["x"]
+    assert race.divergence_witness is True
+
+
+def _raise_on_compare(*_args):
+    raise RuntimeError("the monitor must not compare user values")
+
+
+class _HashRaises(int):
+    __hash__ = _raise_on_compare
+
+
+class _EqRaises(int):
+    __eq__ = _raise_on_compare
+    __hash__ = int.__hash__
+
+
+@pytest.mark.parametrize("value_type", [_HashRaises, _EqRaises])
+@pytest.mark.parametrize("target", ["own", "shared"])
+def test_tracing_never_hashes_or_compares_written_user_values(value_type, target):
+    class Agent(am.Agent):
+        def step(self):
+            row = self if target == "own" else self.model.agents.by_id(0)
+            row.x = value_type(self.id + 1)
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(3, agent_class=Agent, x=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    forward = Model(_params()).run(contract="off")
+    result = Model(_params()).run(contract="check")
+    assert result.agents.sort("id")["x"].to_list() == forward.agents.sort("id")["x"].to_list()
+    races = _races(result["contract"][0])
+    if target == "own":
+        assert not races
+    else:
+        assert races and all(set(race.ids) <= {0, 1, 2} for race in races)
+
+
+def test_replay_pair_selection_is_linear_in_the_writers_of_a_cell():
+    from time import perf_counter
+
+    from ambr.contract import ContractMonitor
+
+    monitor = ContractMonitor()
+    cell = ("x", 0)
+    n = 20_000
+    monitor._activation_write_values = {act: {cell: (int, act)} for act in range(n)}
+    start = perf_counter()
+    chosen, distinct, *_ = monitor._last_writer_swaps(list(range(n)), cell, 5)
+    elapsed = perf_counter() - start
+    assert distinct == n
+    assert chosen == list(range(n - 6, n - 1))
+    # A pairwise scan takes about 20 s here; one pass takes milliseconds.
+    assert elapsed < 1.0
+
+
+def _two_sweep_model(first_sweep, second_sweep, writers=(0,), readers=(1,)):
+    """``first_sweep``/``second_sweep``: None for a sweep over ``model.agents``,
+    or the IDs of a partial ``agents.at[ids].call(...)`` sweep."""
+
+    class Agent(am.Agent):
+        def write(self):
+            if self.id in writers:
+                self.model.agents.at[[0]].set(x=self.id + 1)
+
+        def read(self):
+            if self.id in readers:
+                self.seen = int(self.model.agents.x[0])
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(3, agent_class=Agent, x=0, seen=-1)
+
+        def step(self):
+            for method, ids in (("write", first_sweep), ("read", second_sweep)):
+                if ids is None:
+                    self.agents.call(method)
+                else:
+                    self.agents.at[ids].call(method)
+
+    return Model
+
+
+def test_consecutive_whole_population_sweeps_have_their_own_activation_traces():
+    # Agent 0 writes in a sweep over all agents and agent 1 reads in the next
+    # one: the read sees an earlier phase's output, which is not a race.
+    result = _two_sweep_model(None, None)(_params()).run(contract="check")
+    cert = result["contract"][0]
+    assert result.agents.sort("id")["seen"].to_list() == [-1, 1, -1]
+    assert cert.clean
+
+
+@pytest.mark.parametrize("first, second", [([0], [1]), (None, [1]), ([0], None)])
+def test_partial_sweeps_stay_in_one_activation_trace(first, second):
+    # The model, not the framework, orders partial sweeps, so a read in one
+    # of them of a cell written in another is checked as a race.
+    result = _two_sweep_model(first, second)(_params()).run(contract="check")
+    cert = result["contract"][0]
+    races = _races(cert)
+    assert any(race.ids == [0, 1] for race in races)
+    assert all(race.divergence_witness is None for race in races)
+    assert all(
+        race.divergence_reason == "replay requires a single recorded activation sweep"
+        for race in races
+    )
+
+
+def test_a_user_shuffled_one_agent_sweep_order_reports_a_race():
+    # One-agent sweeps in an order the model draws: the final x[0] depends
+    # on that order, so the dependence must be reported.
+    class Grab(am.Agent):
+        def step(self):
+            if self.model.agents.x[0] == 0:
+                self.model.agents.at[[0]].set(x=self.id + 1)
+
+    class UserShuffle(am.Model):
+        def setup(self):
+            self.add_agents(3, agent_class=Grab, x=0)
+
+        def step(self):
+            for aid in self.rng.permutation(3).tolist():
+                self.agents.at[[aid]].call("step")
+
+    finals = set()
+    for seed in (1, 2, 3, 4):
+        result = UserShuffle({**_params(), "seed": seed}).run(contract="check")
+        finals.add(result.agents.sort("id")["x"].to_list()[0])
+        cert = result["contract"][0]
+        assert not cert.ok
+        assert _races(cert)
+    assert len(finals) > 1
+
+
+def test_a_race_inside_an_earlier_sweep_is_still_reported():
+    result = _two_sweep_model(None, None, writers=(0, 1), readers=(2,))(_params()).run(
+        contract="check"
+    )
+    race, = _races(result["contract"][0])
+    assert race.ids == [0, 1] and race.columns == ["x"]
+    assert race.divergence_witness is None
+    assert race.divergence_reason == "replay requires a single recorded activation sweep"
+
+
+def _lane_writer_model(values, wrap):
+    class Agent(am.Agent):
+        def step(self):
+            self.model.agents.at[[0]].set(x=wrap(values[self.id]))
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(len(values), agent_class=Agent, x=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    return Model
+
+
+@pytest.mark.parametrize("recorded", [True, False])
+def test_lane_writes_cover_an_early_writer_whose_value_differs(recorded):
+    # Only swapping the first writer with the last changes the final x.
+    values = [2, 1, 1, 1, 1, 1, 1]
+    wrap = (lambda v: v) if recorded else (lambda v: np.array([v]))
+    result = _lane_writer_model(values, wrap)(_params()).run(contract="check")
+    races = _races(result["contract"][0])
+    assert result.agents.sort("id")["x"].to_list()[0] == 1
+    by_pair = {tuple(race.ids): race for race in races}
+    assert by_pair[(0, 6)].divergence_witness is True
+    if recorded:
+        assert set(by_pair) == {(0, 6)}
+        assert "with 2 distinct value(s)" in by_pair[(0, 6)].detail
+    else:
+        # Six earlier writers, five replays: the report says so.
+        assert len(by_pair) == 5
+        assert "7 unrecorded value(s)" in by_pair[(0, 6)].detail
+        assert "swaps 5 of the 6 earlier writers" in by_pair[(0, 6)].detail
+        unconfirmed = [race for race in races if race.divergence_witness is False]
+        assert unconfirmed and all(
+            "Only 5 of the 6 candidate pairs" in race.divergence_reason for race in unconfirmed
+        )
+
+
+def test_equal_mixed_reducers_are_paired_by_their_operands():
+    class Agent(am.Agent):
+        def step(self):
+            add, top = (1, 10) if self.id < 2 else (5, 2)
+            self.model.agents.at[[0]].scatter_add(x=add)
+            self.model.agents.at[[0]].scatter_max(x=top)
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(3, agent_class=Agent, x=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    result = Model(_params()).run(contract="check")
+    cross = {tuple(race.ids): race.divergence_witness for race in _races(result["contract"][0])
+             if len(race.ids) == 2}
+    # Agents 0 and 1 reduce identically; agent 2 does not.
+    assert cross == {(0, 1): False, (0, 2): True}
+
+
+def test_all_equal_writes_say_which_pair_is_replayed():
+    result = _write_race_model((4, 4, 4))(_params()).run(contract="check")
+    race, = _races(result["contract"][0])
+    assert race.ids == [0, 1]
+    assert "all with the same value; the replay swaps the first two writers" in race.detail

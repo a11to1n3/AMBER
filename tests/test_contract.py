@@ -698,3 +698,200 @@ def test_activation_race_report_does_not_depend_on_the_hash_seed():
         assert all(race.startswith("['wealth'] [0, 1] ") for race in races)
         reports.add(proc.stdout)
     assert len(reports) == 1
+
+
+class _Earner(am.Agent):
+    def step(self):
+        if self.draw("earn") < 0.25:
+            self.wealth += 1
+
+
+class _OpaqueBox:
+    pass
+
+
+def _scoped_model(extra):
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(50, agent_class=_Earner, wealth=1, other=0)
+            self.history = []
+            if extra in ("opaque_attribute", "opaque_changed"):
+                self.box = _OpaqueBox()
+            elif extra == "opaque_lock":
+                import threading
+
+                self.lock = threading.Lock()
+
+        def step(self):
+            self.agents.step()
+            if extra == "column":
+                self.agents.other = np.cumsum(self.agents.wealth.to_numpy())
+            elif extra == "frame":
+                self.agents_df = self.agents_df.with_columns(pl.col("other") + 1)
+            elif extra == "model_attribute":
+                self.total = int(self.agents.wealth.sum())
+            elif extra == "model_in_place":
+                self.history.append(int(self.agents.wealth.sum()))
+            elif extra == "agent_private":
+                self.agents.by_id(0)._last_step = self.t
+            elif extra == "opaque_changed":
+                self.box.n = self.t
+
+    return Model
+
+
+@pytest.mark.parametrize("extra, reason", [
+    ("none", None),
+    ("column", "wrote column 'other' outside the verified activation sweep"),
+    ("frame", "wrote the agent frame outside the verified activation sweep"),
+    ("model_attribute", "changed model or private agent state outside the verified activation sweep (model attribute 'total')"),
+    ("model_in_place", "changed model or private agent state outside the verified activation sweep (model attribute 'history')"),
+    ("agent_private", "changed model or private agent state outside"),
+    # An object kept by identity does not withhold the certificate; a change
+    # to its own attributes does, and the reason names the attribute.
+    ("opaque_attribute", None),
+    ("opaque_lock", None),
+    ("opaque_changed", "outside the verified activation sweep (model attribute 'box')"),
+])
+def test_certificate_covers_only_a_step_that_is_the_verified_sweep(extra, reason, monkeypatch):
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+    certs = _scoped_model(extra)({"steps": 3, "seed": 7}).run(contract="check")["contract"]
+    for cert in certs:
+        assert cert.clean
+        if reason is None:
+            assert cert.conditional_guarantee == "established"
+            assert cert.certification_reason is None
+            if extra == "opaque_attribute":
+                assert any(
+                    "Model attribute 'box' holds a _OpaqueBox kept by identity" in note
+                    for note in cert.assumptions
+                )
+            elif extra == "opaque_lock":
+                assert any(
+                    "Model attribute 'lock'" in note and "internal state" in note
+                    for note in cert.assumptions
+                )
+        else:
+            assert cert.conditional_guarantee == "not_established"
+            assert cert.certification is None
+            assert reason in cert.certification_reason
+
+
+def test_column_write_before_the_sweep_also_withholds_the_certificate(monkeypatch):
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+
+    class Model(_scoped_model("none")):
+        def step(self):
+            self.agents.other = self.agents.wealth.to_numpy()
+            self.agents.step()
+
+    cert = Model({"steps": 1, "seed": 7}).run(contract="check")["contract"][0]
+    assert cert.clean
+    assert cert.conditional_guarantee == "not_established"
+    assert "column 'other'" in cert.certification_reason
+
+
+class _SlotEarner(_Earner):
+    __slots__ = ("_marker",)
+
+
+def _effects_model(extra, activation="broadcast"):
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(50, agent_class=_SlotEarner, wealth=1, other=0)
+            for agent in self.agents:
+                agent._marker = 0
+
+        def step(self):
+            if extra == "draw_before":
+                self.rng.integers(0, 10)
+            if activation == "random":
+                self.activate_agents("random")
+            else:
+                self.agents.step()
+            if extra == "legacy_write":
+                self.update_agent_data(0, {"other": self.t + 8})
+            elif extra == "in_place_frame":
+                frame = self.agents_df
+                frame.replace_column(
+                    frame.get_column_index("other"),
+                    pl.Series("other", [self.t + 8] * frame.height),
+                )
+            elif extra == "population_write":
+                self.population.set_agent_value(0, "other", self.t + 8)
+            elif extra == "record":
+                self.record_model("extra", 42)
+            elif extra == "draw_after":
+                self.rng.integers(0, 10)
+            elif extra == "agent_slot":
+                self.agents.by_id(0)._marker += 1
+
+    return Model
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+@pytest.mark.parametrize("extra, activation, reason", [
+    ("none", "broadcast", None),
+    # The scheduler's shuffle is part of the sweep.
+    ("none", "random", None),
+    ("legacy_write", "broadcast", "wrote column 'other' outside the verified activation sweep"),
+    ("in_place_frame", "broadcast", "agent frame changed outside the verified activation sweep"),
+    ("population_write", "broadcast", "agent frame changed outside the verified activation sweep"),
+    ("record", "broadcast", "recorded model output (extra) outside the verified activation sweep"),
+    ("draw_before", "random", "random stream changed outside the verified activation sweep"),
+    ("draw_after", "broadcast", "random stream changed outside the verified activation sweep"),
+    ("agent_slot", "broadcast", "changed model or private agent state outside"),
+])
+def test_certificate_is_withheld_for_effects_outside_the_sweep(extra, activation, reason, monkeypatch):
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+    params = {"steps": 2, "seed": 7, "show_progress": False}
+    certs = _effects_model(extra, activation)(params).run(contract="check")["contract"]
+    for cert in certs:
+        assert cert.clean
+        if reason is None:
+            assert cert.conditional_guarantee == "established"
+        else:
+            assert cert.conditional_guarantee == "not_established"
+            assert reason in cert.certification_reason
+
+
+def test_certificate_is_withheld_when_an_agent_id_binding_changes(monkeypatch):
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+
+    class Model(_effects_model("none")):
+        def step(self):
+            super().step()
+            agent = self.agents.by_id(0)
+            agent.id = 999
+            agent.id = 0
+            object.__setattr__(self.agents.by_id(1), "id", 998)
+
+    cert = Model({"steps": 1, "seed": 7, "show_progress": False}).run(contract="check")["contract"][0]
+    assert cert.conditional_guarantee == "not_established"
+    assert "ID binding changed" in cert.certification_reason
+
+
+@pytest.mark.parametrize("marker, change, established", [
+    (1, True, False),          # 1 -> True is a change of type and must be found
+    (float("nan"), None, True),  # an untouched NaN is unchanged
+    (np.float64("nan"), None, True),
+    (1.0, 1, False),           # 1.0 -> 1 changes the type
+])
+def test_certificate_state_comparison_is_type_aware_and_nan_safe(marker, change, established, monkeypatch):
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+
+    class Model(_effects_model("none")):
+        def setup(self):
+            super().setup()
+            self.marker = marker
+
+        def step(self):
+            super().step()
+            if change is not None:
+                self.marker = change
+
+    cert = Model({"steps": 1, "seed": 7, "show_progress": False}).run(contract="check")["contract"][0]
+    assert cert.clean
+    assert (cert.conditional_guarantee == "established") is established
+    if not established:
+        assert "changed model or private agent state" in cert.certification_reason

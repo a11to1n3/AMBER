@@ -640,7 +640,12 @@ print(cert.certification)
 violation. `raise` stops on the first error. Mode `off` disables the monitor.
 The proof covers supported integer updates and exact, fixed-target integer
 reductions for one sequential or shuffled CPU sweep at its observed entry
-state. `self.draw("earn")` gives a uniform value in `[0, 1)` keyed by the model
+state. A step that also writes or edits the agent frame, draws from a model
+random stream, records model output, or changes model or private agent state
+outside that sweep is not certified, and neither is a step whose state holds
+a container the replay snapshot cannot represent. The reason names the
+attribute.
+`self.draw("earn")` gives a uniform value in `[0, 1)` keyed by the model
 seed, step, agent ID, event, and draw index. Reusing the key repeats the value.
 Use distinct events or indices for separate draws.
 Other rules and GPU runs receive `"not_established"` with a
@@ -655,6 +660,15 @@ For supported CPU and GPU sweeps, swapped-order replay can confirm a divergence
 and restore the forward model state. A witness is inconclusive when a replay
 cannot isolate the sweep or verify its random streams. A cached draw from
 a model-owned shared stream can make the witness inconclusive too.
+A replay runs agent code again. It puts back the agent frame, the model's and
+the global `random` and `numpy.random` streams, and the state held on the
+model and its agents (see the [contract API](docs/api/contract.rst) for the
+exact list), so `check` gives the same results as `off` for such models. It
+does not undo changes to module-level variables, class attributes outside the
+model, files, or other external state, or changes inside objects it keeps by
+identity; a model whose activations have such effects should not rely on
+replay, because `check` can then change its forward run and a witness can be
+wrong.
 
 The monitor watches **two write paths** (and combinations):
 
