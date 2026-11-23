@@ -258,9 +258,10 @@ class KeyedDeviceRNG(DeviceRNG):
     Element ``i`` of a bulk draw is keyed by ``(seed, step, event, key_i,
     partner, stream)``, where ``key_i`` is the agent identity bound by
     :meth:`set_agent_keys` (or ``i`` when no identity is bound) and ``stream``
-    counts the bulk draws made since :meth:`begin_step`, so ``dx`` and ``dy``
-    drawn back to back are independent.  Integer and choice draws reduce the
-    64-bit value modulo the range, as the counter tape does.
+    advances for each bulk call and each run of scalar draws. Scalar draws
+    within a run use successive positions in their reserved stream. Integer
+    and choice draws reduce the 64-bit value modulo the range, as the counter
+    tape does.
 
     With ``xp=numpy`` the same draws are computed on the host; tests use that
     as the reference for the CUDA kernels.
@@ -276,6 +277,7 @@ class KeyedDeviceRNG(DeviceRNG):
         self.step = 0
         self._event = EVT_INIT
         self._stream = 0
+        self._scalar_stream = None
         self._cursor = 0
         self._keys = None
 
@@ -289,12 +291,14 @@ class KeyedDeviceRNG(DeviceRNG):
         self.step = int(step)
         self._event = int(event)
         self._stream = 0
+        self._scalar_stream = None
         self._cursor = 0
         self._keys = None
 
     def set_agent_keys(self, agent_ids, event=None) -> None:
         """Key the next bulk draws by ``agent_ids`` instead of position."""
         self._keys = self._xp.asarray(agent_ids, dtype=self._xp.int64).ravel()
+        self._scalar_stream = None
         self._cursor = 0
         if event is not None:
             self._event = int(event)
@@ -313,6 +317,14 @@ class KeyedDeviceRNG(DeviceRNG):
         if self._keys is not None and i < int(self._keys.size):
             return int(self._keys[i])
         return i
+
+    def _next_scalar_counter(self) -> tuple[int, int]:
+        key = self._key_at(self._cursor)
+        if self._scalar_stream is None:
+            self._scalar_stream = self._stream
+            self._stream += 1
+        self._cursor += 1
+        return key, self._scalar_stream
 
     def _launch(self, kind, shape, dtype, *, event=None, keys=None, partner=0, extra=()):
         """Draw ``shape`` keyed values of ``kind`` from the current stream."""
@@ -348,17 +360,15 @@ class KeyedDeviceRNG(DeviceRNG):
     def _advance(self, n: int) -> None:
         self._cursor += n
         self._stream += 1
+        self._scalar_stream = None
 
     # --- generator surface -------------------------------------------------
 
     def random(self, size=None, dtype=None):
         dtype = _np.dtype(_np.float64 if dtype is None else dtype)
         if size is None:
-            v = keyed_u01(
-                self.global_seed, self.step, self._event,
-                self._key_at(self._cursor), 0, self._stream,
-            )
-            self._cursor += 1
+            key, stream = self._next_scalar_counter()
+            v = keyed_u01(self.global_seed, self.step, self._event, key, 0, stream)
             return dtype.type(v)
         shape = _size_tuple(size)
         out = self._launch("u01", shape, dtype)
@@ -384,11 +394,8 @@ class KeyedDeviceRNG(DeviceRNG):
             raise ValueError("high must be greater than low")
         span = high - low
         if size is None:
-            r = keyed_rng64(
-                self.global_seed, self.step, self._event,
-                self._key_at(self._cursor), 0, self._stream,
-            )
-            self._cursor += 1
+            key, stream = self._next_scalar_counter()
+            r = keyed_rng64(self.global_seed, self.step, self._event, key, 0, stream)
             return low + r % span
         shape = _size_tuple(size)
         out = self._launch("int", shape, _np.int64, extra=(low, _np.uint64(span)))
@@ -416,7 +423,7 @@ class KeyedDeviceRNG(DeviceRNG):
         """Permutation keyed by position under :data:`EVT_PRIORITY`."""
         m = int(x) if isinstance(x, (int, _np.integer)) else int(len(x))
         u = self._launch("u01", (m,), _np.float64, event=EVT_PRIORITY)
-        self._stream += 1
+        self._advance(0)
         order = self._xp.argsort(u)
         if isinstance(x, (int, _np.integer)):
             return order
@@ -426,10 +433,10 @@ class KeyedDeviceRNG(DeviceRNG):
 
     def _snapshot_state(self):
         keys = None if self._keys is None else self._keys.copy()
-        return (self.step, self._event, self._stream, self._cursor, keys)
+        return (self.step, self._event, self._stream, self._scalar_stream, self._cursor, keys)
 
     def _restore_state(self, snapshot):
-        self.step, self._event, self._stream, self._cursor, keys = snapshot
+        self.step, self._event, self._stream, self._scalar_stream, self._cursor, keys = snapshot
         self._keys = None if keys is None else keys.copy()
 
 

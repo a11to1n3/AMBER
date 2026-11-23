@@ -25,6 +25,16 @@ from ambr.gpu import (
 )
 
 SEED = 42
+gpu = pytest.mark.skipif(not GPU_AVAILABLE, reason="requires CuPy and a CUDA device")
+
+
+@pytest.fixture(params=["numpy", pytest.param("cupy", marks=gpu)])
+def xp(request):
+    if request.param == "cupy":
+        import cupy
+
+        return cupy
+    return np
 
 
 def host(seed=SEED):
@@ -133,13 +143,31 @@ def test_permutation_is_keyed_and_complete():
     assert sorted(shuffled.tolist()) == list(range(100, 120))
 
 
-def test_scalar_draws_advance_cursor_not_stream():
+def test_scalar_draws_use_successive_positions_in_one_stream():
     rng = host()
     rng.begin_step(1, 3)
     a, b = rng.random(), rng.random()
     assert (a, b) == (keyed_u01(SEED, 1, 3, 0), keyed_u01(SEED, 1, 3, 1))
     assert rng.uniform(2.0, 4.0) == 2.0 + 2.0 * keyed_u01(SEED, 1, 3, 2)
     assert rng.random(dtype=np.float32).dtype == np.float32
+
+
+@pytest.mark.parametrize("method, args", [("random", ()), ("uniform", ()), ("integers", (1 << 62,))])
+@pytest.mark.parametrize("first_bulk", [None, 5])
+def test_scalar_followed_by_bulk_uses_distinct_counters(xp, method, args, first_bulk):
+    rng = make_keyed_device_rng(7, xp=xp)
+    draw = getattr(rng, method)
+    prior = [] if first_bulk is None else draw(*args, size=first_bulk).tolist()
+    values = prior + [draw(*args)] + draw(*args, size=8).tolist()
+    assert len(set(values)) == len(values)
+
+
+def test_rebinding_keys_after_a_scalar_reserves_its_stream(xp):
+    rng = make_keyed_device_rng(7, xp=xp)
+    rng.set_agent_keys([5])
+    scalar = rng.random()
+    rng.set_agent_keys([5])
+    assert rng.random() != scalar
 
 
 def test_2d_draws_are_keyed_by_flat_index():
@@ -174,9 +202,6 @@ def test_timed_models_use_keyed_draws():
     src = (Path(__file__).resolve().parents[1] / "benchmarks" / "models" / "amber_models.py").read_text(encoding="utf-8")
     assert src.count("rng = make_keyed_device_rng(self.p.get('seed'))") == 4
     assert "make_device_rng(" not in src
-
-
-gpu = pytest.mark.skipif(not GPU_AVAILABLE, reason="requires CuPy and a CUDA device")
 
 
 @gpu
