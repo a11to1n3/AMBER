@@ -849,3 +849,29 @@ def test_certificate_is_withheld_when_an_agent_id_binding_changes(monkeypatch):
     cert = Model({"steps": 1, "seed": 7, "show_progress": False}).run(contract="check")["contract"][0]
     assert cert.conditional_guarantee == "not_established"
     assert "ID binding changed" in cert.certification_reason
+
+
+@pytest.mark.parametrize("marker, change, established", [
+    (1, True, False),          # 1 -> True is a change of type and must be found
+    (float("nan"), None, True),  # an untouched NaN is unchanged
+    (np.float64("nan"), None, True),
+    (1.0, 1, False),           # 1.0 -> 1 changes the type
+])
+def test_certificate_state_comparison_is_type_aware_and_nan_safe(marker, change, established, monkeypatch):
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+
+    class Model(_effects_model("none")):
+        def setup(self):
+            super().setup()
+            self.marker = marker
+
+        def step(self):
+            super().step()
+            if change is not None:
+                self.marker = change
+
+    cert = Model({"steps": 1, "seed": 7, "show_progress": False}).run(contract="check")["contract"][0]
+    assert cert.clean
+    assert (cert.conditional_guarantee == "established") is established
+    if not established:
+        assert "changed model or private agent state" in cert.certification_reason

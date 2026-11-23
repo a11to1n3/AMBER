@@ -34,6 +34,14 @@
   state (a function's defaults, attributes, and closure cells; a class's
   namespace), slot attributes are included, and a stored module skips the
   swap.
+- Snapshot comparison is type-aware and NaN-safe: an untouched NaN in model
+  or private agent state no longer withholds the certificate or confirms a
+  divergence, and a value changed from `1` to `True` is a change. The
+  certificate checks the live state against the step-entry snapshot in one
+  pass and builds a second snapshot only when something differs. With
+  100,000 agents each holding a small private list, a checked step of an
+  integer increment took 2.1 s (3.2 s before this change; 1.35 s without the
+  private-state snapshot).
 - The race check chooses swapped-order replays by coverage. With three or more
   writers to one cell, it swaps the last writer with one earlier writer per
   distinct written value (previously only the first two writers). Activations

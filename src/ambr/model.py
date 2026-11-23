@@ -87,6 +87,9 @@ class _ReplayUnsupported(Exception):
 _TPFLAGS_IMMUTABLETYPE = 1 << 8
 _TPFLAGS_HEAPTYPE = 1 << 9
 
+# Scalar types whose == is exact for snapshot comparison (no NaN).
+_REPLAY_EXACT_EQUAL = frozenset({type(None), bool, int, str, bytes})
+
 
 def _replay_failure_reason(exc: BaseException) -> str:
     text = f"swapped execution raised {type(exc).__name__}: {exc}"
@@ -965,6 +968,8 @@ class Model(BaseModel):
         entry = getattr(self, "_pre_step_world", None)
         if entry is None:
             return None
+        if self._replay_world_matches_live(entry):
+            return False
         current = self._capture_replay_world(self._replay_world_objects(entry))
         if current is None:
             return None
@@ -973,6 +978,129 @@ class Model(BaseModel):
         except _ReplayAliasMismatch:
             return True
         return None if same is None else not same
+
+    def _replay_world_matches_live(self, world: Any) -> bool:
+        """True when the live state still matches ``world`` exactly.
+
+        Checks that every binding and every snapshotted container holds the
+        same objects, and scalars of the same type and value, as recorded.
+        This proves the state unchanged in one pass, without building a
+        second snapshot. False means "not proven": the caller then compares
+        a fresh snapshot, which also accepts an equal state built from new
+        objects.
+        """
+        try:
+            bindings, nodes, owners = world
+            live_owners = self._agent_objects()
+            if len(live_owners) != len(owners) or any(
+                a is not b for a, b in zip(live_owners, owners)
+            ):
+                return False
+            exact = _REPLAY_EXACT_EQUAL
+            values_equal = self._replay_values_equal
+
+            def matches(value: Any, ref: Tuple[str, Any]) -> bool:
+                kind = ref[0]
+                if kind == "node":
+                    return value is nodes[ref[1]][1]
+                if kind == "anchor":
+                    return value is ref[1]
+                recorded = ref[1]
+                if type(value) is not type(recorded):
+                    return False
+                if type(value) in exact:
+                    return value == recorded
+                return values_equal(value, recorded)
+
+            refs = dict(bindings)
+            found = 0
+            slots_of = Model._replay_slots
+            for index, owner in enumerate((self, *owners), start=-1):
+                attrs = object.__getattribute__(owner, "__dict__")
+                owned = self._is_replay_model_attr if index < 0 else Model._is_replay_agent_attr
+                for name, value in attrs.items():
+                    if owned(name):
+                        ref = refs.get((index, "dict", name))
+                        if ref is None or not matches(value, ref):
+                            return False
+                        found += 1
+                for name, descriptor in slots_of(type(owner)):
+                    if owned(name):
+                        try:
+                            value = descriptor.__get__(owner, type(owner))
+                        except AttributeError:
+                            continue
+                        ref = refs.get((index, "slot", name))
+                        if ref is None or not matches(value, ref):
+                            return False
+                        found += 1
+            if found != len(refs):
+                return False
+            for kind, obj, payload in nodes.values():
+                if kind == "list":
+                    if len(obj) != len(payload) or not all(
+                        map(matches, obj, payload)
+                    ):
+                        return False
+                elif kind == "dict":
+                    pairs, factory = payload
+                    if len(obj) != len(pairs):
+                        return False
+                    for (key, value), (recorded, ref) in zip(obj.items(), pairs):
+                        if type(key) is not type(recorded) or not values_equal(key, recorded):
+                            return False
+                        if not matches(value, ref):
+                            return False
+                    if factory is not None and not matches(obj.default_factory, factory):
+                        return False
+                elif kind == "set":
+                    if len(obj) != len(payload) or {(type(x), x) for x in obj} != {
+                        (type(x), x) for x in payload
+                    }:
+                        return False
+                elif kind == "ndarray":
+                    if (
+                        obj.flags.writeable != payload.flags.writeable
+                        or not values_equal(obj, payload)
+                    ):
+                        return False
+                elif kind == "view":
+                    if obj.flags.writeable != payload[1]:
+                        return False
+                elif kind == "function":
+                    if not all(
+                        matches(getattr(obj, name), ref)
+                        for name, ref in zip(self._REPLAY_FUNCTION_FIELDS, payload)
+                    ):
+                        return False
+                elif kind == "cell":
+                    try:
+                        contents = obj.cell_contents
+                    except ValueError:
+                        if payload is not None:
+                            return False
+                    else:
+                        if payload is None or not matches(contents, payload):
+                            return False
+                elif kind == "class":
+                    namespace, bases, name, qualname = payload
+                    current = list(obj.__dict__.items())
+                    if (
+                        obj.__name__ != name
+                        or obj.__qualname__ != qualname
+                        or not matches(obj.__bases__, bases)
+                        or len(current) != len(namespace)
+                        or any(
+                            key != recorded or not matches(value, ref)
+                            for (key, value), (recorded, ref) in zip(current, namespace)
+                        )
+                    ):
+                        return False
+                # Tuples, methods, and descriptor wrappers cannot change;
+                # their mutable children are nodes of their own.
+            return True
+        except Exception:
+            return False
 
     def _snapshot_replay_roster(self):
         from .sequences import AgentList
@@ -1230,24 +1358,32 @@ class Model(BaseModel):
         """
         nodes: Dict[int, Any] = {}
         anchors = self._replay_anchors()
+        # Locals, not attribute lookups: this runs for every private value of
+        # every agent, and the model's __getattribute__ is not free.
+        scalar_types = Model._REPLAY_SCALAR_TYPES
+        is_leaf = Model._is_replay_leaf
+        is_code = Model._is_replay_code
 
         def capture(value: Any) -> Tuple[str, Any]:
-            if self._is_replay_leaf(value) or self._is_replay_code(value):
+            kind = type(value)
+            if kind in scalar_types or is_leaf(value) or is_code(value):
                 return ("leaf", value)
             oid = id(value)
             if oid in anchors:
                 return ("anchor", value)
             if oid in nodes:
                 return ("node", oid)
-            kind = type(value)
             # Containers are matched by exact type: a subclass can hold state
             # outside its items or override the methods a restore would call.
-            if self._is_replay_tuple(value):
+            if kind is list or kind is deque:
+                nodes[oid] = ("list", value, ())
+                nodes[oid] = ("list", value, tuple([
+                    ("leaf", item) if type(item) in scalar_types else capture(item)
+                    for item in value
+                ]))
+            elif Model._is_replay_tuple(value):
                 nodes[oid] = ("tuple", value, ())
                 nodes[oid] = ("tuple", value, tuple(capture(item) for item in value))
-            elif kind is list or kind is deque:
-                nodes[oid] = ("list", value, ())
-                nodes[oid] = ("list", value, tuple(capture(item) for item in value))
             elif kind in self._REPLAY_DICT_TYPES:
                 if kind is AttrDict and object.__getattribute__(value, "__dict__"):
                     raise _ReplayUnsupported("an AttrDict with instance attributes")
@@ -1331,21 +1467,29 @@ class Model(BaseModel):
         bindings: List[Tuple[Tuple[int, str, str], Tuple[str, Any]]] = []
 
         def bind(key: Tuple[int, str, str], where: str, value: Any) -> None:
+            if type(value) in scalar_types:
+                bindings.append((key, ("leaf", value)))
+                return
             try:
                 bindings.append((key, capture(value)))
             except _ReplayUnsupported as exc:
                 raise _ReplayUnsupported(f"{where} attribute {key[2]!r} holds {exc}") from None
 
         owners = tuple(self._agent_objects())
+        slots_of = Model._replay_slots
         try:
             for index, owner in enumerate((self, *owners), start=-1):
                 attrs = object.__getattribute__(owner, "__dict__")
-                where = "model" if index < 0 else f"agent {attrs.get('id')!r}"
-                owned = self._is_replay_model_attr if index < 0 else self._is_replay_agent_attr
+                if index < 0:
+                    owned = self._is_replay_model_attr
+                    where = "model"
+                else:
+                    owned = Model._is_replay_agent_attr
+                    where = None
                 for name, value in list(attrs.items()):
                     if owned(name):
-                        bind((index, "dict", name), where, value)
-                for name, descriptor in self._replay_slots(type(owner)):
+                        bind((index, "dict", name), where or f"agent {attrs.get('id')!r}", value)
+                for name, descriptor in slots_of(type(owner)):
                     if owned(name):
                         try:
                             value = descriptor.__get__(owner, type(owner))
@@ -1561,6 +1705,15 @@ class Model(BaseModel):
                 self._replay_values_equal(item, other)
                 for item, other in zip(left, right)
             )
+        # Scalars are equal only with the same type, so 1 -> True is a
+        # change, and a NaN equals a NaN, so an untouched NaN is not.
+        if type(left) is not type(right):
+            return False
+        if type(left) is float or type(left) is complex or self._is_numpy_scalar(left):
+            return bool(np.array_equal(
+                np.asarray(left), np.asarray(right),
+                equal_nan=np.issubdtype(np.asarray(left).dtype, np.inexact),
+            ))
         compared = left == right
         if isinstance(compared, np.ndarray):
             return bool(np.array_equal(left, right, equal_nan=True))
@@ -1609,7 +1762,11 @@ class Model(BaseModel):
         if left[0] == "anchor" or right[0] == "anchor":
             return left[0] == right[0] and left[1] is right[1]
         if left[0] == "leaf" and right[0] == "leaf":
-            return self._replay_values_equal(left[1], right[1])
+            left_value, right_value = left[1], right[1]
+            kind = type(left_value)
+            if kind is type(right_value) and kind in _REPLAY_EXACT_EQUAL:
+                return left_value == right_value
+            return self._replay_values_equal(left_value, right_value)
         if left[0] != "node" or right[0] != "node":
             return False
         left_id = left[1]

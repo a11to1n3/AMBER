@@ -732,3 +732,17 @@ def test_entry_side_skip_reason_names_the_attribute():
     race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
     assert race.divergence_witness is None
     assert "model attribute '_lock' holds a lock object" in race.divergence_reason
+
+
+def test_an_untouched_nan_in_private_state_is_not_a_divergence():
+    class Model(_SameValueModel):
+        def setup(self):
+            super().setup()
+            self._nan = float("nan")
+            for agent in self.agents:
+                agent._nan = float("nan")
+
+    result = Model({**PARAMETERS, "state": "none"}).cpu(mode="oop").run(contract="check")
+    race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
+    # Both activations write the same value, so the swap changes nothing.
+    assert race.divergence_witness is False
