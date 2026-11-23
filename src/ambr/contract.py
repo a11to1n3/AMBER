@@ -66,6 +66,8 @@ import sys
 from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
+import numpy as np
+
 SEVERITY_ERROR = "error"
 SEVERITY_WARNING = "warning"
 
@@ -113,25 +115,39 @@ _UNSEEN_VALUE = object()
 MAX_REPLAYS_PER_STEP = 5
 
 
-def _value_key(value: Any) -> Any:
-    """Return a key that is equal for equal written scalars.
+#: Exact built-in scalar types whose values can key a write as they are.
+_SCALAR_KEY_TYPES = frozenset({type(None), bool, int, str, bytes})
 
-    Unhashable or unseen values get a fresh token, so they never match.
+
+def _value_key(value: Any) -> Any:
+    """Return a key that is equal exactly when two written scalars are equal.
+
+    Keys are built only for exact built-in scalars and NumPy scalars, from
+    their type and value, so tracing a write never runs a user ``__hash__``
+    or ``__eq__``. A float is keyed by its exact value, so NaN matches NaN
+    and ``-0.0`` differs from ``0.0``; ``1`` and ``True`` differ. Any other
+    value, and an unseen one, gets a fresh token that matches nothing.
     """
-    if value is _UNSEEN_VALUE:
-        return object()
-    try:
-        hash(value)
-    except TypeError:
-        return object()
-    return (type(value), value)
+    kind = type(value)
+    if kind in _SCALAR_KEY_TYPES:
+        return (kind, value)
+    if kind is float:
+        return (float, value.hex())
+    if kind is complex:
+        return (complex, value.real.hex(), value.imag.hex())
+    if (
+        isinstance(value, np.generic)
+        and kind.__module__ == "numpy"
+        and not isinstance(value, (np.void, np.object_))
+    ):
+        inner = _value_key(value.item())
+        if type(inner) is tuple:
+            return (kind, inner)
+    return object()
 
 
 def _same_key(left: Any, right: Any) -> bool:
-    try:
-        return bool(left == right)
-    except Exception:
-        return False
+    return bool(left == right)
 
 
 def _ieee_float_domain(domain: str) -> bool:

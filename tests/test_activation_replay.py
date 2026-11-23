@@ -1103,3 +1103,41 @@ def test_a_legacy_model_write_inside_an_activation_is_attributed():
     race, = _races(result["contract"][0])
     assert race.ids == [0, 1] and race.columns == ["x"]
     assert race.divergence_witness is True
+
+
+def _raise_on_compare(*_args):
+    raise RuntimeError("the monitor must not compare user values")
+
+
+class _HashRaises(int):
+    __hash__ = _raise_on_compare
+
+
+class _EqRaises(int):
+    __eq__ = _raise_on_compare
+    __hash__ = int.__hash__
+
+
+@pytest.mark.parametrize("value_type", [_HashRaises, _EqRaises])
+@pytest.mark.parametrize("target", ["own", "shared"])
+def test_tracing_never_hashes_or_compares_written_user_values(value_type, target):
+    class Agent(am.Agent):
+        def step(self):
+            row = self if target == "own" else self.model.agents.by_id(0)
+            row.x = value_type(self.id + 1)
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(3, agent_class=Agent, x=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    forward = Model(_params()).run(contract="off")
+    result = Model(_params()).run(contract="check")
+    assert result.agents.sort("id")["x"].to_list() == forward.agents.sort("id")["x"].to_list()
+    races = _races(result["contract"][0])
+    if target == "own":
+        assert not races
+    else:
+        assert races and all(set(race.ids) <= {0, 1, 2} for race in races)
