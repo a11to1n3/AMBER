@@ -1081,7 +1081,10 @@ class AgentList(_BaseView):
         """Atomically write back derived columns (the tensor-lane commit path).
 
         ``agents.commit(x=nx, y=ny)``. Routes through ``commit_columns`` so the
-        snapshot-view contract observes the writes.
+        snapshot-view contract observes the writes. Each value is an array,
+        list or Series with one value per agent, or a scalar or 0-d value that
+        is repeated for every agent. Values written to an existing column are
+        cast to that column's dtype.
         """
         from .tensor_lane import commit_columns
         commit_columns(self.model, **columns)

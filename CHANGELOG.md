@@ -7,9 +7,12 @@
   `agents.commit(...)`, `add_agents(...)` attribute arrays, and 0-d device scalars
   previously stored the whole array in every row (an Object column) or raised;
   they now write one value per agent. `agents.commit(c=value)` repeats a scalar
-  or 0-d value for every row, as `agents.c = value` does.
-  `TensorLane.commit` and `write_result` accept device arrays, and a 0-d device
-  value written through an agent object keeps the column dtype.
+  or 0-d value (Python, NumPy or CuPy) for every row. For an existing column the
+  value is cast to the column dtype, as for arrays (`2.5` committed to an Int64
+  column stores `2`); for a new column the dtype is inferred from the value.
+  `TensorLane.commit` and `write_result` accept device arrays. A 0-d device
+  value written with `agents.c = value` or through an agent object gives the
+  column dtype that the same NumPy value gives under `cpu()`.
 - Contract checking treats a read of `model.agents_df`, `Agent.get_data()`, or
   `Agent.get_neighbors(...)` inside an activation as a read of every column,
   so `activation_race` covers these accessors.
