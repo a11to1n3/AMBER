@@ -288,6 +288,10 @@ class ContractMonitor:
         self._current_stage: Optional[str] = None
         self._stage_open: bool = False
         self._stage_violations: List[ContractViolation] = []
+        # Races found in earlier top-level sweeps of the step. Each sweep is
+        # checked on its own: an earlier sweep's writes are a later sweep's
+        # input.
+        self._sweep_violations: List[ContractViolation] = []
         self._current_activation: Any = None
         self._activation_stack: List[Any] = []
         self._staged_activation_count = 0
@@ -346,6 +350,7 @@ class ContractMonitor:
         self._current_stage = None
         self._stage_open = False
         self._stage_violations = []
+        self._sweep_violations = []
         self._current_activation = None
         self._activation_stack = []
         self._staged_activation_count = 0
@@ -388,6 +393,8 @@ class ContractMonitor:
         self._check_lane_conflicts(cert)
         self._check_population(cert, exit_ids if isinstance(exit_ids, Counter) else Counter(exit_ids))
         self._check_inexact_reductions(cert)
+        if self._sweep_violations:
+            cert.violations.extend(self._sweep_violations)
         if sys.exc_info()[0] is None:
             allow_replay = not self._stage_open and not self._in_replay
             self._check_activation_races(
@@ -597,6 +604,8 @@ class ContractMonitor:
         """
         if self._current_activation is None:
             self._trace_committed = set()
+            if self._activation_order and not self._stage_open:
+                self._close_sweep_trace()
         self._activation_sweeps += 1
         if self._activation_sweeps != 1 or self._stage_open or self._current_activation is not None:
             return
@@ -613,6 +622,28 @@ class ContractMonitor:
                     )
         else:
             self._sweep_reason = "Certification requires a single-phase sweep with no method arguments."
+
+    def _close_sweep_trace(self) -> None:
+        """Check the finished top-level sweep's trace and start an empty one.
+
+        A step with more than one sweep has no replay, so these races keep
+        an inconclusive witness.
+        """
+        temp = ContractCertificate(0)
+        self._check_activation_races(
+            temp,
+            model=None,
+            allow_replay=False,
+            skipped_reason="replay requires a single recorded activation sweep",
+        )
+        self._sweep_violations.extend(temp.violations)
+        self._activation_order = []
+        self._activation_reads = {}
+        self._activation_column_reads = {}
+        self._activation_writes = {}
+        self._activation_write_values = {}
+        self._activation_reductions = {}
+        self._activation_draws = {}
 
     def end_sweep(self, model: Any, rng_state: Any) -> None:
         """Record the state at the exit of the verified sweep."""
@@ -940,11 +971,14 @@ class ContractMonitor:
         cert: ContractCertificate,
         model: Optional[Any] = None,
         allow_replay: bool = False,
+        skipped_reason: Optional[str] = None,
     ) -> None:
         """Report overlaps involving activation reads, writes, and reductions.
 
-        ``allow_replay`` is false while a stage is open. The diagnostic is
-        still recorded, and ``divergence_witness`` stays ``None``.
+        ``allow_replay`` is false while a stage is open or for an earlier
+        sweep of the step. The diagnostic is still recorded,
+        ``divergence_witness`` stays ``None``, and ``skipped_reason`` becomes
+        the ``divergence_reason``.
         """
         if self._in_replay or not self._activation_order:
             return
@@ -1046,7 +1080,7 @@ class ContractMonitor:
             if pair in witnesses:
                 return witnesses[pair]
             witness = None
-            reason = None
+            reason = None if allow_replay else skipped_reason
             if allow_replay and callable(replay_fn):
                 if replayed < max_replays:
                     witness, reason = replay_fn(left, right)

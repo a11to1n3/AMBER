@@ -9,7 +9,10 @@
   (for example `agents.flag = ...` before a sweep, then `get_data()`,
   `model.agents_df`, or a column view inside the sweep) no longer receives a
   false `read_after_write` error. Reads of values written by another
-  activation of the same sweep are still reported.
+  activation of the same sweep are still reported. Each top-level sweep of a
+  step is checked on its own, so a sweep that reads what an earlier sweep
+  wrote (for example `agents.at[[0]].call("write")` then
+  `agents.at[[1]].call("read")`) no longer gets an `activation_race`.
 - Swapped-order replay restores every agent instance attribute, including
   underscore-prefixed ones, so `contract="check"` leaves forward results
   unchanged when a replay sets private agent state. The top-level contents of

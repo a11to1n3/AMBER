@@ -1159,3 +1159,39 @@ def test_replay_pair_selection_is_linear_in_the_writers_of_a_cell():
     assert chosen == list(range(n - 6, n - 1))
     # A pairwise scan takes about 20 s here; one pass takes milliseconds.
     assert elapsed < 1.0
+
+
+def _two_sweep_model(first_sweep, second_sweep):
+    class Agent(am.Agent):
+        def write(self):
+            self.model.agents.at[[0]].set(x=self.id + 1)
+
+        def read(self):
+            self.seen = int(self.model.agents.x[0])
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(3, agent_class=Agent, x=0, seen=-1)
+
+        def step(self):
+            self.agents.at[first_sweep].call("write")
+            self.agents.at[second_sweep].call("read")
+
+    return Model
+
+
+def test_each_sweep_of_a_step_has_its_own_activation_trace():
+    # Agent 0 writes in the first sweep and agent 1 reads in the second: the
+    # read sees an earlier phase's output, which is not a race.
+    result = _two_sweep_model([0], [1])(_params()).run(contract="check")
+    cert = result["contract"][0]
+    assert result.agents.sort("id")["seen"].to_list() == [-1, 1, -1]
+    assert cert.clean
+
+
+def test_a_race_inside_an_earlier_sweep_is_still_reported():
+    result = _two_sweep_model([0, 1], [2])(_params()).run(contract="check")
+    race, = _races(result["contract"][0])
+    assert race.ids == [0, 1] and race.columns == ["x"]
+    assert race.divergence_witness is None
+    assert race.divergence_reason == "replay requires a single recorded activation sweep"

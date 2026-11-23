@@ -140,7 +140,11 @@ Write paths the monitor sees
   a borrow is checked only against commits made during the same sweep or
   stage. A value committed by an earlier phase of the step is the sweep's
   input; a value written by another activation of the sweep is reported as
-  ``activation_race``.
+  ``activation_race``. Each top-level sweep of a step has its own activation
+  trace, so a later sweep that reads an earlier sweep's writes is not a
+  race. A step with more than one sweep is not replayed, and its races give
+  ``divergence_reason`` ``"replay requires a single recorded activation
+  sweep"``.
 * **Mutable raw arrays** -- ``agents.array(...)`` records
   ``uncertified_mutable_borrow`` because later indexing and in-place mutations
   cannot be reconstructed reliably.
