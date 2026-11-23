@@ -345,7 +345,7 @@ def test_equal_mixed_reduction_operator_sets_get_a_cross_activation_replay():
     assert result.agents.sort("id")["x"].to_list()[0] == 15
 
 
-def test_value_coverage_is_replayed_before_other_pairs_and_skips_are_reported():
+def test_report_pairs_are_replayed_in_report_order_before_coverage_pairs():
     n = 9
 
     class Agent(am.Agent):
@@ -364,14 +364,66 @@ def test_value_coverage_is_replayed_before_other_pairs_and_skips_are_reported():
 
     result = Model(_params()).run(contract="check")
     races = _races(result["contract"][0])
+    # The ring of reads is reported before the write to y, so its pairs use
+    # the five replays first, in report order, as they did before coverage
+    # pairs existed.
+    pairs = []
+    for race in races:
+        if tuple(race.ids) not in pairs:
+            pairs.append(tuple(race.ids))
+    replayed = [pair for pair in pairs if any(
+        tuple(race.ids) == pair and race.divergence_witness is not None for race in races
+    )]
+    assert replayed == pairs[:5]
     write, = [race for race in races if race.columns == ["y"]]
     assert write.ids == [n - 2, n - 1]
-    assert write.divergence_witness is True
+    assert write.divergence_witness is None
+    assert "used by earlier reports" in write.divergence_reason
     skipped = [race for race in races if race.divergence_witness is None]
     assert skipped
     assert all("not replayed" in race.divergence_reason for race in skipped)
-    replayed = {tuple(race.ids) for race in races if race.divergence_witness is not None}
-    assert len(replayed) == 5
+
+
+def _starved_pair_model(multi_first):
+    """Two writers race on x[0]; seven writers write distinct values to y[1]."""
+    n = 9
+    pair = (7, 8) if multi_first else (0, 1)
+
+    class Agent(am.Agent):
+        def step(self):
+            if self.id in pair:
+                self.model.agents.by_id(0).x = self.id
+            else:
+                self.model.agents.by_id(1).y = self.id
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(n, agent_class=Agent, x=0, y=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    return Model, list(pair)
+
+
+@pytest.mark.parametrize("multi_first", [False, True])
+def test_a_two_writer_report_keeps_its_replay_next_to_a_many_writer_cell(multi_first):
+    # The seven-writer cell offers five coverage pairs. They used to take the
+    # whole budget before the two-writer report; now each report's own pair
+    # is replayed first and the coverage pairs use the rest.
+    Model, pair = _starved_pair_model(multi_first)
+    result = Model(_params()).run(contract="check")
+    races = _races(result["contract"][0])
+    two, = [race for race in races if race.columns == ["x"]]
+    assert two.ids == pair
+    assert two.divergence_witness is True
+    assert two.divergence_reason is None
+    many = [race for race in races if race.columns == ["y"]]
+    assert len(many) == 5
+    assert sum(race.divergence_witness is True for race in many) == 4
+    left, = [race for race in many if race.divergence_witness is None]
+    assert "not replayed" in left.divergence_reason
+    assert "earlier coverage pairs" in left.divergence_reason
 
 
 def test_staged_conflict_does_not_recurse_and_witness_is_inconclusive():

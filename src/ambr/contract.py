@@ -1045,7 +1045,7 @@ class ContractMonitor:
 
     def _last_writer_swaps(
         self, writers: List[Any], cell: Tuple[str, Any], limit: int
-    ) -> Tuple[List[Any], int, int, int]:
+    ) -> Tuple[List[Any], int, int, int, Any]:
         """Pick writers to swap with the last writer of ``cell``.
 
         Swapping a writer with the last one makes its value the final one,
@@ -1055,8 +1055,10 @@ class ContractMonitor:
         hold any value, so each is a candidate too; they fill the remaining
         slots spread over the sweep, earliest first. Returns at most
         ``limit`` writers in activation order, the number of distinct
-        recorded values, the number of unrecorded values, and the number of
-        candidates. Runs in one pass and compares no user values.
+        recorded values, the number of unrecorded values, the number of
+        candidates, and the writer to try first (the nearest writer of a
+        different recorded value, else the first sampled one; None when no
+        writer is picked). Runs in one pass and compares no user values.
         """
         values = self._activation_write_values
         empty: Dict[Tuple[str, Any], Any] = {}
@@ -1082,7 +1084,8 @@ class ContractMonitor:
             last = len(unseen) - 1
             spread = {round(i * last / max(room - 1, 1)) for i in range(room)}
             picked.extend(unseen[i] for i in sorted(spread))
-        return [writers[i] for i in sorted(picked)], len(known), unknown, candidates
+        first = writers[picked[0]] if picked else None
+        return [writers[i] for i in sorted(picked)], len(known), unknown, candidates, first
 
     def _reducer_swaps(
         self, members: List[Any], cell: Tuple[str, Any], limit: int
@@ -1168,21 +1171,29 @@ class ContractMonitor:
         hazards: List[Tuple[Any, Any, Tuple[str, Any], str]] = []
         seen_hazards: Set[Tuple[Any, Any, Tuple[str, Any], str]] = set()
         max_replays = MAX_REPLAYS_PER_STEP
-        # Pairs replayed before the others, so each distinct written value
-        # and each combination of reduction operators gets a swap.
-        priority: List[Tuple[Any, Any]] = []
+        # Reports that are not the first pair of their cell's coverage
+        # (extra last-writer pairs and same-mix reducer pairs). Every other
+        # report is replayed first, in report order, as before coverage
+        # pairs existed; the extra pairs use the replays left over.
+        extra_hazards: Set[Tuple[Any, Any, Tuple[str, Any], str]] = set()
+        # Extra pairs in the order they are tried, with their cell.
+        priority: List[Tuple[Any, Any, Tuple[str, Any]]] = []
         # Cells with three or more writers: (writer count, distinct recorded
         # values, unrecorded values, candidate writers, writers swapped).
         write_groups: Dict[Tuple[str, Any], Tuple[int, int, int, int, int]] = {}
         # Candidate pairs left out of a cell's coverage, by cell and kind.
         uncovered: Dict[Tuple[Tuple[str, Any], str], Tuple[int, int]] = {}
 
-        def add_hazard(first: Any, second: Any, cell: Tuple[str, Any], kind: str) -> None:
+        def add_hazard(
+            first: Any, second: Any, cell: Tuple[str, Any], kind: str, extra: bool = False
+        ) -> None:
             key = (first, second, cell, kind)
             if key in seen_hazards:
                 return
             seen_hazards.add(key)
             hazards.append(key)
+            if extra:
+                extra_hazards.add(key)
 
         for cell in dict.fromkeys((*writers_by_cell, *reducers_by_cell)):
             writers = writers_by_cell.get(cell, ())
@@ -1190,15 +1201,16 @@ class ContractMonitor:
             if len(writers) == 2:
                 add_hazard(writers[0], writers[1], cell, "write")
             elif len(writers) > 2:
-                chosen, distinct, unknown, candidates = self._last_writer_swaps(
+                chosen, distinct, unknown, candidates, preferred = self._last_writer_swaps(
                     writers, cell, max_replays
                 )
-                write_groups[cell] = (len(writers), distinct, unknown, candidates, len(chosen))
+                write_groups[cell] = (len(writers), distinct, unknown, candidates, chosen)
                 if len(chosen) < candidates:
                     uncovered[(cell, "write")] = (len(chosen), candidates)
                 for first in chosen:
-                    add_hazard(first, writers[-1], cell, "write")
-                    priority.append((first, writers[-1]))
+                    add_hazard(first, writers[-1], cell, "write", extra=first is not preferred)
+                    if first is not preferred:
+                        priority.append((first, writers[-1], cell))
                 if not chosen:
                     add_hazard(writers[0], writers[1], cell, "write")
             for writer in writers:
@@ -1219,11 +1231,13 @@ class ContractMonitor:
                             pair_sets = (operator_sets[first], operator_sets[second])
                             if pair_sets[0] == pair_sets[1] or len(pair_sets[0] | pair_sets[1]) < 2:
                                 continue
+                            # Reported (and replayed in report order) as
+                            # before coverage pairs existed.
                             add_hazard(first, second, cell, "mixed_reductions")
                             operators = frozenset(pair_sets)
                             if operators not in sampled:
                                 sampled.add(operators)
-                                priority.append((first, second))
+                                priority.append((first, second, cell))
                 # Equal mixed operator sets do not commute either. Pairs are
                 # chosen by the recorded reduction sequences (operators and
                 # operands), so reducers with the same effect are not
@@ -1239,8 +1253,8 @@ class ContractMonitor:
                     if len(pairs) < candidates:
                         uncovered[(cell, "mixed_reductions")] = (len(pairs), candidates)
                     for pair in pairs:
-                        add_hazard(pair[0], pair[1], cell, "mixed_reductions")
-                        priority.append(pair)
+                        add_hazard(pair[0], pair[1], cell, "mixed_reductions", extra=True)
+                        priority.append((pair[0], pair[1], cell))
             readers = (*readers_by_cell.get(cell, ()), *readers_by_column.get(cell[0], ()))
             if readers:
                 for modifier in dict.fromkeys((*writers, *reducers)):
@@ -1254,16 +1268,22 @@ class ContractMonitor:
             getattr(model, "replay_activation_swap", None) if allow_replay else None
         )
         witnesses: Dict[Tuple[Any, Any], Tuple[Optional[bool], Optional[str]]] = {}
+        # Pairs whose swapped-order replay actually ran.
+        ran: Set[Tuple[Any, Any]] = set()
         replayed = 0
 
-        def witness_for(first: Any, second: Any) -> Tuple[Optional[bool], Optional[str]]:
+        def ordered_pair(first: Any, second: Any) -> Tuple[Any, Any]:
+            if position.get(first, 0) > position.get(second, 0):
+                return second, first
+            return first, second
+
+        def witness_for(
+            first: Any, second: Any, budget_reason: str
+        ) -> Tuple[Optional[bool], Optional[str]]:
             nonlocal replayed
             if first == second:
                 return None, None
-            left, right = (first, second)
-            if position.get(left, 0) > position.get(right, 0):
-                left, right = right, left
-            pair = (left, right)
+            pair = ordered_pair(first, second)
             if pair in witnesses:
                 return witnesses[pair]
             witness = None
@@ -1271,30 +1291,49 @@ class ContractMonitor:
             if allow_replay and callable(replay_fn):
                 if replayed < max_replays:
                     replayed += 1
+                    ran.add(pair)
                     try:
-                        witness, reason = replay_fn(left, right)
+                        witness, reason = replay_fn(*pair)
                     except Exception as exc:  # monitoring must not fail the run
                         witness = None
                         reason = f"the swapped-order replay failed: {type(exc).__name__}"
                 else:
-                    reason = (
-                        f"This pair was not replayed: the step's {max_replays} "
-                        f"swapped-order replays were used by other pairs."
-                    )
+                    reason = budget_reason
             witnesses[pair] = (witness, reason)
             return witnesses[pair]
 
-        for first, second in priority:
-            witness_for(first, second)
+        earlier = (
+            f"This pair was not replayed: the step's {max_replays} swapped-order "
+            f"replays were used by earlier reports."
+        )
+        # First, every report's own pair in report order, as before the
+        # coverage pairs existed, so a two-writer report keeps its replay.
+        for key in hazards:
+            if key not in extra_hazards:
+                witness_for(key[0], key[1], earlier)
+        # Then the extra coverage pairs, with the replays left over.
+        leftover = (
+            f"This pair was not replayed: the step's {max_replays} swapped-order "
+            f"replays were used by the reports' own pairs and earlier coverage pairs."
+        )
+        for first, second, _cell in priority:
+            witness_for(first, second, leftover)
+
+        # Replays that ran per partially covered cell and conflict kind.
+        checked_by_group: Counter[Tuple[Tuple[str, Any], str]] = Counter(
+            (cell, kind) for first, second, cell, kind in hazards
+            if (cell, kind) in uncovered and ordered_pair(first, second) in ran
+        )
 
         for first, second, cell, kind in hazards:
             col, _aid = cell
-            witness, reason = witness_for(first, second)
+            witness, reason = witness_for(first, second, earlier)
             gap = uncovered.get((cell, kind))
             if gap is not None and witness is False:
-                swapped, candidates = gap
+                _planned, candidates = gap
+                checked = checked_by_group[(cell, kind)]
                 reason = (
-                    f"Only {swapped} of the {candidates} candidate pairs for this cell "
+                    f"Only {checked} of the {candidates} candidate pairs for this cell "
                     f"were replayed; orders from the other pairs were not checked."
                 )
             if witness is True:
@@ -1320,7 +1359,8 @@ class ContractMonitor:
                     f"same cell {cell}."
                 )
                 if cell in write_groups:
-                    count, distinct, unknown, candidates, swapped = write_groups[cell]
+                    count, distinct, unknown, candidates, chosen = write_groups[cell]
+                    swapped = len(chosen)
                     if not candidates:
                         detail += (
                             f" {count} activations wrote this cell, all with the "
