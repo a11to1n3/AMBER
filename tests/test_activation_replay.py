@@ -6,7 +6,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ambr.contract import ContractCertificate, ContractViolation
+from ambr.contract import ContractCertificate, ContractViolation, ContractViolationError
 from ambr.results import RunResults
 
 import ambr as am
@@ -185,6 +185,72 @@ def test_frame_level_reads_are_attributed_to_the_active_agent(path, sweep):
         assert races and all(set(v.ids) == {0, 1} for v in races)
         if sweep == "activate_agents":
             assert all(v.divergence_witness is True for v in races)
+
+
+_PHASE_READS = {
+    "model.agents_df": lambda agent: agent.model.agents_df.filter(pl.col("id") == agent.id)["flag"][0],
+    "Agent.get_data": lambda agent: agent.get_data()["flag"][0],
+    "column view": lambda agent: agent.model.agents.flag.to_list()[agent.id],
+}
+
+
+@pytest.mark.parametrize("contract", ["check", "raise"])
+@pytest.mark.parametrize("path", sorted(_PHASE_READS))
+def test_activation_reads_of_an_earlier_phase_commit_are_not_hazards(path, contract):
+    read = _PHASE_READS[path]
+
+    class Agent(am.Agent):
+        def step(self):
+            self.model.seen.append(int(read(self)))
+
+    class Model(am.Model):
+        def setup(self):
+            self.seen = []
+            self.add_agents(2, agent_class=Agent, flag=0)
+
+        def step_oop(self):
+            self.agents.flag = [1, 1]
+            self.activate_agents("sequential")
+
+    model = Model(_params()).cpu(mode="oop")
+    result = model.run(contract=contract)
+    cert = result["contract"][0]
+    assert model.seen == [1, 1]
+    # A whole-frame read inside the sweep sees the earlier commit as input.
+    assert cert.clean
+
+
+@pytest.mark.parametrize("write", ["buffered", "commit"])
+@pytest.mark.parametrize("path", sorted(_PHASE_READS))
+def test_activation_reads_of_a_same_sweep_write_are_still_flagged(path, write):
+    read = _PHASE_READS[path]
+
+    class Agent(am.Agent):
+        def step(self):
+            if self.id == 0:
+                if write == "buffered":
+                    self.flag = 1
+                else:
+                    self.model.agents.at[[0]].set(flag=1)
+            else:
+                self.seen = int(read(self.model.agents.by_id(0)))
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, flag=0, seen=-1)
+
+        def step_oop(self):
+            self.agents.flag = [0, 0]
+            self.activate_agents("sequential")
+
+    result = Model(_params()).cpu(mode="oop").run(contract="check")
+    cert = result["contract"][0]
+    assert result.agents.sort("id")["seen"].to_list() == [-1, 1]
+    assert not cert.ok
+    races = [v for v in _races(cert) if v.columns == ["flag"]]
+    assert races and all(set(v.ids) == {0, 1} for v in races)
+    with pytest.raises(ContractViolationError):
+        Model(_params()).cpu(mode="oop").run(contract="raise")
 
 
 def test_mixed_reduction_operators_on_one_cell_report_a_divergent_witness():

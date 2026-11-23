@@ -26,7 +26,11 @@ The checks:
   makes the later path win; under simultaneous activation that is still a
   partial-map conflict.
 * **read-after-write (lane path)** -- a column borrowed *after* it was committed
-  in the same step; a snapshot rule must read step-entry state.
+  in the same step; a snapshot rule must read step-entry state. Inside an
+  activation, only a commit made during the current activation sweep or stage
+  counts. A value committed by an earlier phase of the step is input to the
+  sweep; a value written by another activation of the same sweep is still
+  reported as an ``activation_race``.
 * **uncertified mutable borrow** -- ``agents.array(...)`` exposed a mutable
   NumPy/CuPy buffer.  AMBER observes the borrow, but cannot infer whether or how
   user code subsequently mutates or indexes that raw array.
@@ -224,6 +228,9 @@ class ContractMonitor:
         self._borrowed: Set[str] = set()
         self._mutable_borrows: Set[str] = set()
         self._reduced_cols: Set[str] = set()
+        # Columns committed or reduced by an activation of the current sweep
+        # or stage. Activation reads are checked against this set only.
+        self._trace_committed: Set[str] = set()
         # (operator, dtype) recorded for each reduced column this step.
         self._reduction_domains: Dict[str, Set[Tuple[str, str]]] = {}
         # Columns touched by both buffered and lane/view paths in this step
@@ -280,6 +287,7 @@ class ContractMonitor:
         self._borrowed = set()
         self._mutable_borrows = set()
         self._reduced_cols = set()
+        self._trace_committed = set()
         self._reduction_domains = {}
         self._cross_path_cols = set()
         self._current_stage = None
@@ -397,6 +405,7 @@ class ContractMonitor:
             if c in self._buffered_cols or c in self._reduced_cols:
                 self._cross_path_cols.add(c)
         if self._current_activation is not None:
+            self._trace_committed.update(columns)
             if target_ids is None:
                 self._trace_gaps.add("column commit without target IDs")
             else:
@@ -427,6 +436,9 @@ class ContractMonitor:
         if not self.active:
             return
         domains = domains or {}
+        columns = tuple(columns)
+        if self._current_activation is not None:
+            self._trace_committed.update(columns)
         for c in columns:
             self._reduced_cols.add(c)
             self._committed.add(c)
@@ -439,11 +451,18 @@ class ContractMonitor:
                 )
 
     def record_borrow(self, column: str) -> None:
-        """Record a lane borrow of ``column``; flag if already committed."""
+        """Record a lane borrow of ``column``; flag if already committed.
+
+        Outside an activation, any earlier commit in the step counts. Inside
+        an activation, only a commit made during the current sweep or stage
+        counts: an earlier phase's commit is the sweep's input, and reads of
+        values written by other activations are checked as activation races.
+        """
         if not self.active:
             return
         self._borrowed.add(column)
-        if column in self._committed:
+        inside = self._current_activation is not None
+        if column in (self._trace_committed if inside else self._committed):
             self._raw_cols.add(column)
         if not self._in_replay and self._current_activation is not None:
             self._activation_column_reads.setdefault(self._current_activation, set()).add(column)
@@ -470,6 +489,8 @@ class ContractMonitor:
     # --- activation trace ---------------------------------------------------
 
     def begin_sweep(self, agents, method: str, single_phase: bool) -> None:
+        if self._current_activation is None:
+            self._trace_committed = set()
         self._activation_sweeps += 1
         if self._activation_sweeps != 1 or self._stage_open or self._current_activation is not None:
             return
@@ -501,6 +522,7 @@ class ContractMonitor:
             return
         if self._activation_order:
             self.end_stage()
+        self._trace_committed = set()
         self._current_stage = stage
         self._stage_open = True
 
@@ -515,6 +537,7 @@ class ContractMonitor:
         if not self.active or self._in_replay:
             return
         self._stage_open = False
+        self._trace_committed = set()
         if not self._activation_order:
             self._current_activation = None
             return

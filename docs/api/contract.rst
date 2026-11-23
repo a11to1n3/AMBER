@@ -98,7 +98,11 @@ Write paths the monitor sees
   column.
 * **Lane / view** -- ``agents.col = ...``, ``agents.set(...)``,
   ``agents.commit(...)``, and :class:`~ambr.tensor_lane.TensorLane` commits
-  (per-column commit counting + borrow-after-commit).
+  (per-column commit counting + borrow-after-commit). Inside an activation,
+  a borrow is checked only against commits made during the same sweep or
+  stage. A value committed by an earlier phase of the step is the sweep's
+  input; a value written by another activation of the sweep is reported as
+  ``activation_race``.
 * **Mutable raw arrays** -- ``agents.array(...)`` records
   ``uncertified_mutable_borrow`` because later indexing and in-place mutations
   cannot be reconstructed reliably.
