@@ -179,10 +179,7 @@ def _mix64_np(z):
 
 def _keyed64_np(size: int, keys, prefix: int, partner: int, draw: int):
     """NumPy reference of the device kernel: uint64 draws for indices 0..size-1."""
-    k = _np.arange(size, dtype=_np.uint64)
-    if keys is not None and keys.size:
-        m = min(size, int(keys.size))
-        k[:m] = _np.asarray(keys[:m], dtype=_np.int64).view(_np.uint64)
+    k = _np.arange(size, dtype=_np.uint64) if keys is None else keys.view(_np.uint64)
     with _np.errstate(over="ignore"):
         x = _mix64_np(_np.uint64(prefix) ^ k)
         x = _mix64_np(x ^ _np.uint64(partner & _MASK64))
@@ -206,10 +203,9 @@ __device__ __forceinline__ unsigned long long ambr_keyed64(
     return ambr_mix64(x);
 }
 """
-# The key of element i is keys[i] while i < nkeys, else i itself.
-_KEYED_INPUTS = "raw int64 keys, int64 nkeys, uint64 prefix, uint64 partner, uint64 draw"
+_KEYED_INPUTS = "raw int64 keys, bool has_keys, uint64 prefix, uint64 partner, uint64 draw"
 _KEYED_KEY = (
-    "unsigned long long k = i < nkeys ? (unsigned long long)keys[i] "
+    "unsigned long long k = has_keys ? (unsigned long long)keys[i] "
     ": (unsigned long long)i; "
     "unsigned long long r = ambr_keyed64(k, prefix, partner, draw); "
 )
@@ -258,10 +254,10 @@ class KeyedDeviceRNG(DeviceRNG):
     Element ``i`` of a bulk draw is keyed by ``(seed, step, event, key_i,
     partner, stream)``, where ``key_i`` is the agent identity bound by
     :meth:`set_agent_keys` (or ``i`` when no identity is bound) and ``stream``
-    advances for each bulk call and each run of scalar draws. Scalar draws
-    within a run use successive positions in their reserved stream. Integer
-    and choice draws reduce the 64-bit value modulo the range, as the counter
-    tape does.
+    advances for each bulk call, keyed scalar call, and run of unkeyed scalar
+    draws. Unkeyed scalar draws within a run use successive positions in
+    their reserved stream. Integer and choice draws reduce the 64-bit value
+    modulo the range, as the counter tape does.
 
     With ``xp=numpy`` the same draws are computed on the host; tests use that
     as the reference for the CUDA kernels.
@@ -296,8 +292,15 @@ class KeyedDeviceRNG(DeviceRNG):
         self._keys = None
 
     def set_agent_keys(self, agent_ids, event=None) -> None:
-        """Key the next bulk draws by ``agent_ids`` instead of position."""
-        self._keys = self._xp.asarray(agent_ids, dtype=self._xp.int64).ravel()
+        """Bind one agent ID per draw position until the next binding or step.
+
+        Draws raise ``ValueError`` if the number of bound IDs differs from the
+        number of values drawn, including a single value for a scalar draw.
+        Pass ``None`` to clear the binding and use positional keys.
+        """
+        self._keys = (
+            None if agent_ids is None else self._xp.asarray(agent_ids, dtype=self._xp.int64).ravel()
+        )
         self._scalar_stream = None
         self._cursor = 0
         if event is not None:
@@ -313,16 +316,21 @@ class KeyedDeviceRNG(DeviceRNG):
             self.global_seed, self.step, self._event if event is None else event
         )
 
-    def _key_at(self, i: int) -> int:
-        if self._keys is not None and i < int(self._keys.size):
-            return int(self._keys[i])
-        return i
+    @staticmethod
+    def _require_key_count(keys, size: int) -> None:
+        if keys is not None and keys.size != size:
+            raise ValueError(f"expected {size} agent keys for draw size {size}, got {keys.size}")
 
     def _next_scalar_counter(self) -> tuple[int, int]:
-        key = self._key_at(self._cursor)
+        if self._keys is not None:
+            self._require_key_count(self._keys, 1)
+            key, stream = int(self._keys[0]), self._stream
+            self._advance(1)
+            return key, stream
         if self._scalar_stream is None:
             self._scalar_stream = self._stream
             self._stream += 1
+        key = self._cursor
         self._cursor += 1
         return key, self._scalar_stream
 
@@ -334,14 +342,12 @@ class KeyedDeviceRNG(DeviceRNG):
         n = 1
         for s in shape:
             n *= s
+        self._require_key_count(keys, n)
         if self._on_device():
             out = _cp.empty(shape, dtype=dtype)
-            if keys is None or not keys.size:
-                keys_arg, nkeys = _cp.zeros(1, dtype=_cp.int64), 0
-            else:
-                keys_arg, nkeys = keys, int(keys.size)
+            keys_arg = _cp.zeros(1, dtype=_cp.int64) if keys is None else keys
             _keyed_kernel(kind)(
-                keys_arg, nkeys, _np.uint64(prefix), _np.uint64(partner),
+                keys_arg, keys is not None, _np.uint64(prefix), _np.uint64(partner),
                 _np.uint64(draw), *extra, out,
             )
             return out
@@ -403,6 +409,11 @@ class KeyedDeviceRNG(DeviceRNG):
         return out if dtype is None else out.astype(dtype, copy=False)
 
     def choice(self, a, size=None, replace=True, p=None):
+        """Sample from ``a`` using one key per draw or candidate.
+
+        Sampling without replacement ranks the entire pool, so it needs one
+        key per candidate when agent keys are bound.
+        """
         if p is not None:
             raise NotImplementedError("weighted choice is not supported for keyed draws")
         pool = self._xp.asarray(a)

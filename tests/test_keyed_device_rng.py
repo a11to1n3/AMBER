@@ -80,10 +80,27 @@ def test_agent_keys_make_draws_follow_identity_not_position():
     rng.set_agent_keys([30, 10, 20])
     shuffled = rng.random(3)
     np.testing.assert_array_equal(shuffled, forward[[2, 0, 1]])
-    # Positions beyond the bound keys fall back to the position index.
-    rng.begin_step(1, 1)
-    rng.set_agent_keys([10])
-    assert rng.random(2).tolist() == [keyed_u01(SEED, 1, 1, 10), keyed_u01(SEED, 1, 1, 1)]
+
+
+@pytest.mark.parametrize("keys", [[], [5], [0, 1, 2, 3, 4, 5, 6]])
+def test_bulk_key_count_must_match_draw_size(xp, keys):
+    rng = make_keyed_device_rng(7, xp=xp)
+    rng.set_agent_keys(keys)
+    for draw in (rng.random, rng.uniform, lambda size: rng.integers(10, size=size)):
+        with pytest.raises(ValueError, match="agent keys.*draw size"):
+            draw(size=(2, 3))
+    rng.set_agent_keys(None)
+    np.testing.assert_array_equal(rng.random(6).tolist(), host(7).random(6))
+
+
+def test_scalar_draws_require_one_key_when_bound(xp):
+    rng = make_keyed_device_rng(7, xp=xp)
+    rng.set_agent_keys([5, 6])
+    with pytest.raises(ValueError, match="agent keys.*draw size"):
+        rng.random()
+    rng.set_agent_keys([5])
+    assert rng.random() == keyed_u01(7, 0, EVT_INIT, 5, draw=0)
+    assert rng.random() == keyed_u01(7, 0, EVT_INIT, 5, draw=1)
 
 
 def test_uniform_is_affine_map_of_u01():
@@ -113,6 +130,7 @@ def test_integers_and_choice_reduce_modulo_range():
     rng.set_agent_keys([3, 1, 4, 1, 5])
     pool = np.arange(100, 110)
     np.testing.assert_array_equal(rng.choice(pool, size=5), pool[got])
+    rng.set_agent_keys(None)
     assert 0 <= rng.integers(7) < 7
     assert rng.integers(2, 3, size=4).tolist() == [2, 2, 2, 2]
     assert rng.integers(2, 2, size=3, endpoint=True).tolist() == [2, 2, 2]
@@ -184,6 +202,7 @@ def test_snapshot_restore_replays_draws():
     rng.random(3)
     snap = rng._snapshot_state()
     first = rng.random(3)
+    rng.set_agent_keys(None)
     rng.random(9)
     rng._restore_state(snap)
     np.testing.assert_array_equal(rng.random(3), first)
@@ -205,16 +224,16 @@ def test_timed_models_use_keyed_draws():
 
 
 @gpu
-@pytest.mark.parametrize("keys", [None, [7, 3, 11, 2, 9]])
-def test_device_kernels_match_host_reference(keys):
+@pytest.mark.parametrize("keyed", [False, True])
+def test_device_kernels_match_host_reference(keyed):
     import cupy as cp
 
     dev = make_keyed_device_rng(SEED)
     ref = host()
     for rng in (dev, ref):
         rng.begin_step(12, 1)
-        if keys is not None:
-            rng.set_agent_keys(keys)
+        if keyed:
+            rng.set_agent_keys(np.arange(1000)[::-1])
 
     def same(a, b):
         np.testing.assert_array_equal(cp.asnumpy(a), b)
@@ -226,7 +245,7 @@ def test_device_kernels_match_host_reference(keys):
     same(dev.uniform(0.0, 100.0, 1000, dtype=cp.float32),
          ref.uniform(0.0, 100.0, 1000, dtype=np.float32))
     same(dev.integers(-5, 1_000_003, size=1000), ref.integers(-5, 1_000_003, size=1000))
-    same(dev.choice(cp.arange(10**6), size=500), ref.choice(np.arange(10**6), size=500))
+    same(dev.choice(cp.arange(10**6), size=1000), ref.choice(np.arange(10**6), size=1000))
     same(dev.random((40, 25)), ref.random((40, 25)))
     same(dev.permutation(300), ref.permutation(300))
 
