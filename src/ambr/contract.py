@@ -100,12 +100,20 @@ CONDITIONAL_GUARANTEE_ESTABLISHED = "established"
 
 
 def _ordered(items: Iterable[Any]) -> List[Any]:
-    """Return ``items`` sorted, so reports do not depend on set hash order."""
+    """Return ``items`` sorted, so reports do not depend on set hash order.
+
+    Falls back to sorting by ``repr`` and then to the given order, so an
+    agent ID with a raising comparison or ``repr`` cannot fail the step.
+    """
     items = list(items)
     try:
         return sorted(items)
-    except TypeError:
+    except Exception:
+        pass
+    try:
         return sorted(items, key=repr)
+    except Exception:
+        return items
 
 
 #: Placeholder for a write whose value the monitor did not see.
@@ -119,15 +127,7 @@ MAX_REPLAYS_PER_STEP = 5
 _SCALAR_KEY_TYPES = frozenset({type(None), bool, int, str, bytes})
 
 
-def _value_key(value: Any) -> Any:
-    """Return a key that is equal exactly when two written scalars are equal.
-
-    Keys are built only for exact built-in scalars and NumPy scalars, from
-    their type and value, so tracing a write never runs a user ``__hash__``
-    or ``__eq__``. A float is keyed by its exact value, so NaN matches NaN
-    and ``-0.0`` differs from ``0.0``; ``1`` and ``True`` differ. Any other
-    value, and an unseen one, gets a fresh token that matches nothing.
-    """
+def _builtin_value_key(value: Any) -> Any:
     kind = type(value)
     if kind in _SCALAR_KEY_TYPES:
         return (kind, value)
@@ -135,14 +135,37 @@ def _value_key(value: Any) -> Any:
         return (float, value.hex())
     if kind is complex:
         return (complex, value.real.hex(), value.imag.hex())
-    if (
-        isinstance(value, np.generic)
-        and kind.__module__ == "numpy"
-        and not isinstance(value, (np.void, np.object_))
-    ):
-        inner = _value_key(value.item())
-        if type(inner) is tuple:
-            return (kind, inner)
+    return None
+
+
+def _value_key(value: Any) -> Any:
+    """Return a key that is equal exactly when two written scalars are equal.
+
+    Keys are built only for exact built-in scalars and NumPy scalars, from
+    their type and value, so tracing a write never runs a user ``__hash__``
+    or ``__eq__``. A float is keyed by its exact value, so NaN matches NaN
+    and ``-0.0`` differs from ``0.0``; ``1`` and ``True`` differ. Any other
+    value, an unseen one, and a value whose key cannot be built (for
+    example ``np.longdouble``, whose ``item()`` is not a built-in scalar)
+    get a fresh token that matches nothing: the replay selection then
+    treats the write as unknown. This function never raises.
+    """
+    try:
+        key = _builtin_value_key(value)
+        if key is not None:
+            return key
+        kind = type(value)
+        if (
+            isinstance(value, np.generic)
+            and kind.__module__ == "numpy"
+            and not isinstance(value, (np.void, np.object_))
+        ):
+            inner = _builtin_value_key(value.item())
+            if inner is not None:
+                # The dtype string separates datetime64 units.
+                return (kind, value.dtype.str, inner)
+    except Exception:
+        pass
     return object()
 
 
@@ -425,7 +448,15 @@ class ContractMonitor:
                 f"Some effects could not be attributed: {', '.join(sorted(self._trace_gaps))}.",
                 severity=SEVERITY_WARNING,
             ))
-        cert.certification_reason = self._certify_step(cert, model)
+        try:
+            cert.certification_reason = self._certify_step(cert, model)
+        except Exception as exc:  # monitoring must not fail the run
+            cert.conditional_guarantee = CONDITIONAL_GUARANTEE_NOT_ESTABLISHED
+            cert.certification = None
+            cert.certification_reason = (
+                f"The certificate check failed ({type(exc).__name__}), so the "
+                f"step was not certified."
+            )
         self._sweep_proof = None
         self._sweep_entry = None
         self._sweep_exit = None
@@ -1206,8 +1237,12 @@ class ContractMonitor:
             reason = None if allow_replay else skipped_reason
             if allow_replay and callable(replay_fn):
                 if replayed < max_replays:
-                    witness, reason = replay_fn(left, right)
                     replayed += 1
+                    try:
+                        witness, reason = replay_fn(left, right)
+                    except Exception as exc:  # monitoring must not fail the run
+                        witness = None
+                        reason = f"the swapped-order replay failed: {type(exc).__name__}"
                 else:
                     reason = (
                         f"This pair was not replayed: the step's {max_replays} "
