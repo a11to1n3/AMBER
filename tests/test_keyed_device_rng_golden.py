@@ -11,6 +11,14 @@ ROUNDING_SEED = 5042506492838628837
 SIZES = (1, 7, 1000, 100000)
 DTYPES = (np.float64, np.float32, np.int64)
 
+# (Call index, element index) for every unit-interval float32 value that
+# rounded to 1.0 on the base. The constructed seed repeats its first draw
+# at each size because the cases start with the same step, event and key.
+ROUNDED_TO_ONE = {
+    (1, 100000, False): (2, 45720),
+    **{(ROUNDING_SEED, size, False): (0, 0) for size in SIZES},
+}
+
 # Each row holds float64, float32 and int64 hashes, in that order.
 GOLDEN = {
     (1, 1, False): (
@@ -157,10 +165,18 @@ def bulk_sequence(seed, size, keyed, dtype, xp):
 @pytest.mark.parametrize("keyed", [False, True])
 @pytest.mark.parametrize("dtype", DTYPES)
 def test_bulk_only_output_matches_base(seed, size, keyed, dtype):
-    draws = [out for _, out in bulk_sequence(seed, size, keyed, dtype, np)]
-    assert sha256(np.concatenate(draws).tobytes()).hexdigest() == GOLDEN[seed, size, keyed][
-        DTYPES.index(dtype)
-    ]
+    case = (seed, size, keyed)
+    draws = []
+    for unit_interval, out in bulk_sequence(*case, dtype, np):
+        if unit_interval and dtype is np.float32:
+            assert np.all(out < 1)
+        draws.append(out)
+    if dtype is np.float32 and case in ROUNDED_TO_ONE:
+        call, index = ROUNDED_TO_ONE[case]
+        assert draws[call][index] == np.nextafter(np.float32(1), np.float32(0))
+        # Restore only the recorded endpoint before checking all baseline bytes.
+        draws[call][index] = np.float32(1)
+    assert sha256(np.concatenate(draws).tobytes()).hexdigest() == GOLDEN[case][DTYPES.index(dtype)]
 
 
 @pytest.mark.skipif(not GPU_AVAILABLE, reason="requires CuPy and a CUDA device")

@@ -120,6 +120,23 @@ def test_float32_is_rounded_float64_draw():
     np.testing.assert_array_equal(a, rng2.random(5).astype(np.float32))
 
 
+@pytest.mark.parametrize("size", [None, 1])
+@pytest.mark.parametrize("method, args", [("random", ()), ("uniform", ()), ("uniform", (0.5, 1))])
+def test_float32_clamps_rounded_unit_endpoint(xp, size, method, args):
+    rng = make_keyed_device_rng(5042506492838628837, xp=xp)
+    actual = getattr(rng, method)(*args, size=size, dtype=xp.float32)
+    expected = np.nextafter(np.float32(1), np.float32(0))
+    assert actual.dtype == np.float32
+    np.testing.assert_array_equal(actual.tolist(), expected if size is None else [expected])
+
+
+def test_float32_clamp_preserves_numpy_byte_order():
+    dtype = np.dtype(np.float32).newbyteorder("S")
+    actual = host(5042506492838628837).random(1, dtype=dtype)
+    assert actual.dtype == dtype
+    assert actual[0] == np.nextafter(np.float32(1), np.float32(0))
+
+
 def test_integers_and_choice_reduce_modulo_range():
     rng = host()
     rng.begin_step(4, 1)

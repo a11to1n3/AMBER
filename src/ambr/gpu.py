@@ -137,6 +137,7 @@ _SPLITMIX_GOLDEN = 0x9E3779B97F4A7C15
 _SPLITMIX_M1 = 0xBF58476D1CE4E5B9
 _SPLITMIX_M2 = 0x94D049BB133111EB
 _TWO_POW_M53 = 1.0 / (1 << 53)
+_FLOAT32_BELOW_ONE = _np.nextafter(_np.float32(1), _np.float32(0))
 
 #: Event tag of draws made before the first :meth:`KeyedDeviceRNG.begin_step`.
 EVT_INIT = 8
@@ -213,13 +214,15 @@ _KEYED_U = "double u = (double)(r >> 11) * (1.0 / 9007199254740992.0); "
 _keyed_kernels: dict = {}
 
 
-def _keyed_kernel(kind: str):
-    kernel = _keyed_kernels.get(kind)
+def _keyed_kernel(kind: str, clamp_float32: bool):
+    cache_key = (kind, clamp_float32)
+    kernel = _keyed_kernels.get(cache_key)
     if kernel is not None:
         return kernel
+    clamp = "if (out >= 1.0f) out = nextafterf(1.0f, 0.0f);" if clamp_float32 else ""
     if kind == "u01":
         kernel = _cp.ElementwiseKernel(
-            _KEYED_INPUTS, "T out", _KEYED_KEY + _KEYED_U + "out = (T)u;",
+            _KEYED_INPUTS, "T out", _KEYED_KEY + _KEYED_U + "out = (T)u; " + clamp,
             "ambr_keyed_u01", preamble=_KEYED_PREAMBLE,
         )
     elif kind == "uniform":
@@ -227,7 +230,7 @@ def _keyed_kernel(kind: str):
         # equals NumPy's low + span * u bit for bit.
         kernel = _cp.ElementwiseKernel(
             _KEYED_INPUTS + ", float64 low, float64 span", "T out",
-            _KEYED_KEY + _KEYED_U + "out = (T)__dadd_rn(low, __dmul_rn(span, u));",
+            _KEYED_KEY + _KEYED_U + "out = (T)__dadd_rn(low, __dmul_rn(span, u)); " + clamp,
             "ambr_keyed_uniform", preamble=_KEYED_PREAMBLE,
         )
     elif kind == "int":
@@ -238,7 +241,7 @@ def _keyed_kernel(kind: str):
         )
     else:  # pragma: no cover - internal misuse
         raise ValueError(kind)
-    _keyed_kernels[kind] = kernel
+    _keyed_kernels[cache_key] = kernel
     return kernel
 
 
@@ -334,7 +337,8 @@ class KeyedDeviceRNG(DeviceRNG):
         self._cursor += 1
         return key, self._scalar_stream
 
-    def _launch(self, kind, shape, dtype, *, event=None, keys=None, partner=0, extra=()):
+    def _launch(self, kind, shape, dtype, *, event=None, keys=None, partner=0, extra=(),
+                clamp_float32=False):
         """Draw ``shape`` keyed values of ``kind`` from the current stream."""
         keys = self._keys if keys is None and event is None else keys
         prefix = self._prefix(event)
@@ -346,7 +350,7 @@ class KeyedDeviceRNG(DeviceRNG):
         if self._on_device():
             out = _cp.empty(shape, dtype=dtype)
             keys_arg = _cp.zeros(1, dtype=_cp.int64) if keys is None else keys
-            _keyed_kernel(kind)(
+            _keyed_kernel(kind, clamp_float32)(
                 keys_arg, keys is not None, _np.uint64(prefix), _np.uint64(partner),
                 _np.uint64(draw), *extra, out,
             )
@@ -361,7 +365,10 @@ class KeyedDeviceRNG(DeviceRNG):
                 low, span = extra
                 u = low + span * u
             out = u
-        return out.astype(dtype, copy=False).reshape(shape)
+        out = out.astype(dtype, copy=False)
+        if clamp_float32:
+            _np.minimum(out, _FLOAT32_BELOW_ONE, out=out)
+        return out.reshape(shape)
 
     def _advance(self, n: int) -> None:
         self._cursor += n
@@ -372,23 +379,28 @@ class KeyedDeviceRNG(DeviceRNG):
 
     def random(self, size=None, dtype=None):
         dtype = _np.dtype(_np.float64 if dtype is None else dtype)
+        clamp_float32 = dtype.type is _np.float32
         if size is None:
             key, stream = self._next_scalar_counter()
-            v = keyed_u01(self.global_seed, self.step, self._event, key, 0, stream)
-            return dtype.type(v)
+            out = dtype.type(keyed_u01(self.global_seed, self.step, self._event, key, 0, stream))
+            return min(out, _FLOAT32_BELOW_ONE) if clamp_float32 else out
         shape = _size_tuple(size)
-        out = self._launch("u01", shape, dtype)
+        out = self._launch("u01", shape, dtype, clamp_float32=clamp_float32)
         self._advance(out.size)
         return out
 
     def uniform(self, low=0.0, high=1.0, size=None, dtype=None):
         dtype = _np.dtype(_np.float64 if dtype is None else dtype)
         span = float(high - low)
+        clamp_float32 = dtype.type is _np.float32 and high == 1.0 and span > 0.0
         if size is None:
             u = self.random()
-            return dtype.type(float(low) + span * float(u))
+            out = dtype.type(float(low) + span * float(u))
+            return min(out, _FLOAT32_BELOW_ONE) if clamp_float32 else out
         shape = _size_tuple(size)
-        out = self._launch("uniform", shape, dtype, extra=(float(low), span))
+        out = self._launch(
+            "uniform", shape, dtype, extra=(float(low), span), clamp_float32=clamp_float32,
+        )
         self._advance(out.size)
         return out
 
