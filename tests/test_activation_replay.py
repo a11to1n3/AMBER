@@ -861,13 +861,17 @@ class _DropAdapterModel(am.Model):
 class _FailPostRngRestore(_DropAdapterModel):
     """The cleanup restore reports failure without touching the streams."""
 
+    # Counted on the class: private model attributes are replay state and
+    # would be rewound with the step-entry snapshot.
+    rng_restores = 0
+
     def __init__(self, parameters):
         super().__init__(parameters)
-        self._rng_restores = 0
+        type(self).rng_restores = 0
 
     def _restore_rng_state(self, saved):
-        self._rng_restores += 1
-        if self._rng_restores >= 2:
+        type(self).rng_restores += 1
+        if type(self).rng_restores >= 2:
             return False
         return super()._restore_rng_state(saved)
 
@@ -908,7 +912,7 @@ def test_failed_rng_restore_still_restores_forward_model_state():
         and "forward random streams could not be restored" in v.divergence_reason
         for v in races
     )
-    assert model._rng_restores >= 2
+    assert type(model).rng_restores >= 2
     assert model.nprandom is None
     assert model.events is events
     assert events == [0, 1]

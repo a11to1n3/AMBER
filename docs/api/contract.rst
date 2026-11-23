@@ -77,13 +77,20 @@ immediately before and after the sweep. A stream change can reveal draws
 through a cached method. Replay leaves the witness inconclusive when a
 stream changes or its state cannot be verified. The scheduler's shuffle
 occurs before this check. External random sources remain outside this trace.
-The comparison includes the final agent frame, supported public model state,
-and values recorded with ``record_model()`` during the step. The swapped
-replay starts from each agent's private attributes as they were at step
-entry. After the replay, each agent's instance attributes, including
-underscore-prefixed ones, are restored to their forward bindings. Private
-lists, dicts, sets, and numeric arrays also get their top-level contents back
-in place; nested containers inside them are not copied.
+The comparison includes the final agent frame, the model's public and
+underscore-prefixed attributes, each agent's underscore-prefixed attributes,
+and values recorded with ``record_model()`` during the step. Framework-owned
+model attributes are excluded. The swapped replay starts from that state as
+it was at step entry, and the forward state is put back afterwards, so a
+monitored run gives the same results as ``contract="off"``. Restoration
+follows nested lists, deques, dicts (including ``defaultdict``, ``Counter``,
+and ``OrderedDict``), sets, tuples, numeric NumPy arrays, and bound methods,
+mutating them in place so aliases are kept. The model, its agents, and its
+random streams are kept by identity. When this state reaches any other
+object, for example a custom class instance, a generator other than the
+model's streams, or a Polars frame, the swap is not run: the witness is
+``None`` and ``divergence_reason`` names the attribute. Module globals and
+class attributes are outside this snapshot.
 
 Write paths the monitor sees
 ----------------------------

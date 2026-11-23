@@ -16,10 +16,11 @@ but filled by :mod:`ambr._id_index`; :meth:`_bump_id_version` invalidates them.
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, NamedTuple, Type, Optional, Tuple, TYPE_CHECKING
-from collections import Counter
+from collections import Counter, deque
 from contextlib import contextmanager
 import copy
 import random
+import types
 from secrets import randbits
 import polars as pl
 import warnings
@@ -73,6 +74,10 @@ class _ReplayOutcome(NamedTuple):
 
 class _ReplayAliasMismatch(Exception):
     """The two state graphs do not have a one-to-one node mapping."""
+
+
+class _ReplayUnsupported(Exception):
+    """A reachable value cannot be restored, so the swap cannot be isolated."""
 
 
 def _replay_failure_reason(exc: BaseException) -> str:
@@ -130,7 +135,6 @@ class Model(BaseModel):
         self._pre_step_rng = None
         self._pre_step_world = None
         self._pre_step_roster = None
-        self._pre_step_agents = None
         self._activation_override_order = None
 
         super().__init__(parameters)  # sets self.random / self.rng / self.nprandom
@@ -747,7 +751,6 @@ class Model(BaseModel):
                     self._pre_step_rng = self._capture_rng_state()
                     self._pre_step_world = self._capture_replay_world()
                     self._pre_step_roster = self._snapshot_replay_roster()
-                    self._pre_step_agents = self._snapshot_private_agent_state()
                     step_fn()
                     step_finished = True
                 finally:
@@ -759,7 +762,6 @@ class Model(BaseModel):
                     self._pre_step_rng = None
                     self._pre_step_world = None
                     self._pre_step_roster = None
-                    self._pre_step_agents = None
 
                 if mon.mode == "warn":
                     for v in cert.violations:
@@ -778,7 +780,6 @@ class Model(BaseModel):
             self._pre_step_rng = None
             self._pre_step_world = None
             self._pre_step_roster = None
-            self._pre_step_agents = None
             raise
 
     def replay_activation_swap(self, a: Any, b: Any) -> _ReplayOutcome:
@@ -787,8 +788,11 @@ class Model(BaseModel):
         ``value`` is True when the agent frame or restored model state
         diverges, False when both match, and None when the swap is not a
         sound witness. ``reason`` explains an inconclusive result. The replay
-        restores the step-entry random streams, supported attribute graph, and
-        private agent attributes, then puts the forward objects back. Stream restoration and model-state
+        restores the step-entry random streams and the supported graph of
+        model attributes and private agent attributes, then puts the forward
+        objects back. When that graph reaches a value the replay cannot
+        restore, the swap is not run and the witness is None, so monitoring
+        cannot change the forward run. Stream restoration and model-state
         restoration are attempted separately, so one failure does not skip the
         other. An exception from the swapped execution is caught here. The
         forward frame, pending writes, per-agent attribute cache, activation
@@ -821,12 +825,15 @@ class Model(BaseModel):
         ):
             return _ReplayOutcome(None, None)
         entry_world = getattr(self, "_pre_step_world", None)
+        reasons: List[str] = []
         post_world = self._capture_replay_world(
-            self._replay_world_objects(entry_world)
+            self._replay_world_objects(entry_world), reasons
         )
-        entry_agents = getattr(self, "_pre_step_agents", None)
-        if entry_world is None or post_world is None or entry_agents is None:
-            return _ReplayOutcome(None, None)
+        if entry_world is None or post_world is None:
+            return _ReplayOutcome(None, reasons[0] if reasons else (
+                "step-entry model or agent state could not be captured; "
+                "the swap was not run"
+            ))
 
         original_post = self._agents_frame().clone()
         saved_attrs = self._snapshot_agent_attrs()
@@ -861,13 +868,10 @@ class Model(BaseModel):
         try:
             entry_rng_ok = self._restore_rng_state(entry_rng)
             entry_world_ok = self._restore_replay_world(entry_world)
-            entry_agents_ok = self._restore_private_agent_state(entry_agents)
             if not entry_rng_ok:
                 reason = "step-entry random streams could not be restored"
             elif not entry_world_ok:
-                reason = "step-entry model state could not be restored"
-            elif not entry_agents_ok:
-                reason = "step-entry agent state could not be restored"
+                reason = "step-entry model or agent state could not be restored"
             else:
                 self._set_frame(pre.clone())
                 self._pending_writes = {}
@@ -969,6 +973,84 @@ class Model(BaseModel):
         "agents_df",
     })
 
+    # Private model attributes owned by the framework. Every other private
+    # model attribute is user state, which a replay snapshots like public
+    # state.
+    _REPLAY_FRAMEWORK_PRIVATE = frozenset({
+        "_activation",
+        "_activation_override_order",
+        "_agent_vars",
+        "_auto_batch_enabled",
+        "_auto_batched_agent_calls",
+        "_auto_batches",
+        "_contract",
+        "_current_step_data",
+        "_device",
+        "_execution",
+        "_execution_mode",
+        "_exposed_agents_frame_id",
+        "_fast_path_approval",
+        "_host_rng",
+        "_id_pos_cache",
+        "_id_version",
+        "_ids_arange_cache",
+        "_keyed_seed",
+        "_last_progress_time",
+        "_model_data",
+        "_pending_writes",
+        "_pre_step_rng",
+        "_pre_step_roster",
+        "_pre_step_state",
+        "_pre_step_world",
+        "_setup_done",
+        "_show_progress",
+        "_start_time",
+    })
+
+    def _is_replay_model_attr(self, name: str) -> bool:
+        """True for a model attribute that holds user state."""
+        return (
+            name not in self._REPLAY_FRAMEWORK_ATTRS
+            and name not in self._REPLAY_FRAMEWORK_PRIVATE
+        )
+
+    @staticmethod
+    def _is_replay_agent_attr(name: str) -> bool:
+        """True for a private agent attribute. Public ones live in the frame."""
+        return name.startswith("_") and name != "_ambr_container_cells"
+
+    def _replay_anchors(self) -> Dict[int, Any]:
+        """Objects the replay snapshot keeps by identity and does not copy.
+
+        The model and its agents are restored through their attribute
+        bindings and the agent frame, and the random streams through
+        :meth:`_capture_rng_state`.
+        """
+        objects = [self, self.__dict__.get("agents"), self.__dict__.get("population")]
+        objects.extend(self._agent_objects())
+        execution = self.__dict__.get("_execution")
+        for stream in (
+            self.__dict__.get("random"),
+            self.__dict__.get("_host_rng"),
+            self.__dict__.get("nprandom"),
+            getattr(execution, "device_rng", None) if execution is not None else None,
+        ):
+            objects.append(stream)
+            objects.append(getattr(stream, "_rng", None))
+        return {id(obj): obj for obj in objects if obj is not None}
+
+    @staticmethod
+    def _is_replay_code(value: Any) -> bool:
+        """True for classes, modules, and functions that capture no state."""
+        if isinstance(value, (type, types.ModuleType)):
+            return True
+        if isinstance(value, types.FunctionType):
+            return value.__closure__ is None
+        if isinstance(value, types.BuiltinFunctionType):
+            owner = value.__self__
+            return owner is None or isinstance(owner, types.ModuleType)
+        return False
+
     @staticmethod
     def _is_replay_leaf(value: Any) -> bool:
         """True when ``value`` can be restored by rebinding, not by mutation."""
@@ -992,68 +1074,93 @@ class Model(BaseModel):
         )
 
     def _capture_replay_world(
-        self, remembered: Optional[Dict[int, Any]] = None
-    ) -> Optional[Tuple[Tuple[Tuple[str, Tuple[str, Any]], ...], Dict[int, Any]]]:
-        """Snapshot public bindings and the supported objects they reach.
+        self,
+        remembered: Optional[Dict[int, Any]] = None,
+        reasons: Optional[List[str]] = None,
+    ) -> Optional[Tuple[Tuple[Tuple[Tuple[int, str], Tuple[str, Any]], ...], Dict[int, Any], Tuple[Any, ...]]]:
+        """Snapshot the user state a swapped replay can change.
 
-        Containers are recorded as the live objects plus their child
-        structure, so a later restore can mutate them in place. Returns None
-        when any reachable value cannot be put back safely.
+        The snapshot covers the model's public and user-owned private
+        attributes and the private attributes of every tracked agent (public
+        agent attributes live in the frame), with the supported objects they
+        reach. Containers are recorded as the live objects plus their child
+        structure, so a later restore can mutate them in place and keep
+        aliases. The model, its agents, and its random streams are kept by
+        identity. Returns None when any reachable value cannot be put back
+        safely, and appends the cause to ``reasons``.
         """
         nodes: Dict[int, Any] = {}
+        anchors = self._replay_anchors()
 
         def capture(value: Any) -> Tuple[str, Any]:
-            if self._is_replay_leaf(value):
+            if self._is_replay_leaf(value) or self._is_replay_code(value):
                 return ("leaf", value)
+            oid = id(value)
+            if oid in anchors:
+                return ("anchor", value)
+            if oid in nodes:
+                return ("node", oid)
             if isinstance(value, tuple):
-                oid = id(value)
-                if oid in nodes:
-                    return ("node", oid)
                 nodes[oid] = ("tuple", value, ())
-                children = tuple(capture(item) for item in value)
-                nodes[oid] = ("tuple", value, children)
-                return ("node", oid)
-            if isinstance(value, list):
-                oid = id(value)
-                if oid in nodes:
-                    return ("node", oid)
+                nodes[oid] = ("tuple", value, tuple(capture(item) for item in value))
+            elif isinstance(value, (list, deque)):
                 nodes[oid] = ("list", value, ())
-                children = tuple(capture(item) for item in value)
-                nodes[oid] = ("list", value, children)
-                return ("node", oid)
-            if isinstance(value, dict):
-                oid = id(value)
-                if oid in nodes:
-                    return ("node", oid)
+                nodes[oid] = ("list", value, tuple(capture(item) for item in value))
+            elif isinstance(value, dict):
                 nodes[oid] = ("dict", value, ())
                 pairs = []
                 for key, item in value.items():
                     if not self._is_replay_leaf(key):
-                        raise TypeError("replay dict key is not a leaf")
+                        raise _ReplayUnsupported("a dict key that is not a scalar")
                     pairs.append((key, capture(item)))
                 nodes[oid] = ("dict", value, tuple(pairs))
-                return ("node", oid)
-            if isinstance(value, np.ndarray):
+            elif isinstance(value, set):
+                nodes[oid] = ("set", value, frozenset(value))
+                for item in value:
+                    capture(item)
+            elif isinstance(value, np.ndarray):
                 if not self._ndarray_replay_supported(value):
-                    raise TypeError("replay ndarray cannot be restored in place")
-                oid = id(value)
-                if oid in nodes:
-                    return ("node", oid)
+                    raise _ReplayUnsupported(f"a {value.dtype} array")
                 nodes[oid] = ("ndarray", value, self._array_snapshot(value))
-                return ("node", oid)
-            raise TypeError("replay value cannot be restored")
+            elif isinstance(value, (types.MethodType, types.BuiltinMethodType)):
+                func = getattr(value, "__func__", None)
+                key = func if func is not None else (type(value.__self__), value.__name__)
+                nodes[oid] = ("method", value, ())
+                nodes[oid] = ("method", value, (capture(value.__self__), ("leaf", key)))
+            else:
+                raise _ReplayUnsupported(f"a {type(value).__name__} object")
+            return ("node", oid)
 
+        bindings: List[Tuple[Tuple[int, str], Tuple[str, Any]]] = []
+
+        def bind(key: Tuple[int, str], where: str, value: Any) -> None:
+            try:
+                bindings.append((key, capture(value)))
+            except _ReplayUnsupported as exc:
+                raise _ReplayUnsupported(f"{where} attribute {key[1]!r} holds {exc}") from None
+
+        owners = tuple(self._agent_objects())
         try:
-            bindings = []
             for name, value in list(self.__dict__.items()):
-                if name.startswith("_") or name in self._REPLAY_FRAMEWORK_ATTRS:
-                    continue
-                bindings.append((name, capture(value)))
+                if self._is_replay_model_attr(name):
+                    bind((-1, name), "model", value)
+            for index, agent in enumerate(owners):
+                attrs = object.__getattribute__(agent, "__dict__")
+                for name, value in list(attrs.items()):
+                    if self._is_replay_agent_attr(name):
+                        bind((index, name), f"agent {attrs.get('id')!r}", value)
             if remembered:
                 for oid, obj in remembered.items():
                     if oid not in nodes:
-                        capture(obj)
-            return (tuple(sorted(bindings, key=lambda item: item[0])), nodes)
+                        try:
+                            capture(obj)
+                        except _ReplayUnsupported as exc:
+                            raise _ReplayUnsupported(f"a step-entry value holds {exc}") from None
+            return (tuple(sorted(bindings, key=lambda item: item[0])), nodes, owners)
+        except _ReplayUnsupported as exc:
+            if reasons is not None:
+                reasons.append(f"{exc}, which replay cannot restore; the swap was not run")
+            return None
         except Exception:
             return None
 
@@ -1066,7 +1173,7 @@ class Model(BaseModel):
     @staticmethod
     def _replay_resolve(ref: Tuple[str, Any], nodes: Dict[int, Any]) -> Any:
         kind, payload = ref
-        if kind == "leaf":
+        if kind in ("leaf", "anchor"):
             return payload
         return nodes[payload][1]
 
@@ -1077,7 +1184,7 @@ class Model(BaseModel):
         """
         if world is None:
             return False
-        bindings, nodes = world
+        bindings, nodes, owners = world
         resolved: Dict[int, Any] = {}
         try:
             for oid, node in nodes.items():
@@ -1103,25 +1210,38 @@ class Model(BaseModel):
                     obj.extend(resolved[oid])
                 elif kind == "dict":
                     obj.clear()
-                    obj.update(resolved[oid])
+                    if isinstance(obj, Counter):
+                        # Counter.update adds counts instead of replacing them.
+                        dict.update(obj, resolved[oid])
+                    else:
+                        obj.update(resolved[oid])
+                elif kind == "set":
+                    obj.clear()
+                    obj.update(payload)
                 elif kind == "ndarray":
                     if not self._restore_array_in_place(obj, payload):
                         ok = False
-                elif kind != "tuple":
+                elif kind not in ("tuple", "method"):
                     ok = False
             except Exception:
                 ok = False
         try:
             desired = {
-                name: self._replay_resolve(ref, nodes) for name, ref in bindings
+                key: self._replay_resolve(ref, nodes) for key, ref in bindings
             }
-            for name in list(self.__dict__):
-                if name.startswith("_") or name in self._REPLAY_FRAMEWORK_ATTRS:
-                    continue
-                if name not in desired:
-                    del self.__dict__[name]
-            for name, value in desired.items():
-                self.__dict__[name] = value
+            targets = [(self.__dict__, self._is_replay_model_attr)]
+            targets.extend(
+                (object.__getattribute__(agent, "__dict__"), self._is_replay_agent_attr)
+                for agent in owners
+            )
+            for index, (live, owned) in enumerate(targets, start=-1):
+                for name in [
+                    name for name in live
+                    if owned(name) and (index, name) not in desired
+                ]:
+                    del live[name]
+            for (index, name), value in desired.items():
+                targets[index + 1][0][name] = value
         except Exception:
             return False
         return ok
@@ -1219,6 +1339,8 @@ class Model(BaseModel):
         forward: Dict[int, int],
         inverse: Dict[int, int],
     ) -> bool:
+        if left[0] == "anchor" or right[0] == "anchor":
+            return left[0] == right[0] and left[1] is right[1]
         if left[0] == "leaf" and right[0] == "leaf":
             return self._replay_values_equal(left[1], right[1])
         if left[0] != "node" or right[0] != "node":
@@ -1236,14 +1358,16 @@ class Model(BaseModel):
         inverse[right_id] = left_id
         left_node = left_nodes[left_id]
         right_node = right_nodes[right_id]
-        if left_node[0] != right_node[0]:
+        if left_node[0] != right_node[0] or type(left_node[1]) is not type(right_node[1]):
             return False
         kind = left_node[0]
         if kind == "ndarray":
             left_array, right_array = left_node[2], right_node[2]
             return (left_array.flags.writeable == right_array.flags.writeable
                     and self._replay_values_equal(left_array, right_array))
-        if kind in ("list", "tuple"):
+        if kind == "set":
+            return left_node[2] == right_node[2]
+        if kind in ("list", "tuple", "method"):
             left_children = left_node[2]
             right_children = right_node[2]
             if len(left_children) != len(right_children):
@@ -1265,6 +1389,10 @@ class Model(BaseModel):
 
     def _replay_worlds_equal(self, left: Any, right: Any) -> Optional[bool]:
         try:
+            if len(left[2]) != len(right[2]) or any(
+                a is not b for a, b in zip(left[2], right[2])
+            ):
+                return None
             left_bindings = dict(left[0])
             right_bindings = dict(right[0])
             if set(left_bindings) != set(right_bindings):
@@ -1345,47 +1473,6 @@ class Model(BaseModel):
         for agent, attrs, contents in saved:
             live = object.__getattribute__(agent, "__dict__")
             live.clear()
-            live.update(attrs)
-            ok = self._write_back_contents(contents) and ok
-        return ok
-
-    def _snapshot_private_agent_state(
-        self,
-    ) -> List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]]:
-        """Save each agent's private attributes at step entry.
-
-        Records the bindings and the top-level contents of private lists,
-        dicts, sets, and numeric arrays, so a replay can start from the state
-        the forward sweep started from.
-        """
-        saved: List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]] = []
-        for agent in self._agent_objects():
-            attrs: Dict[str, Any] = {}
-            contents: List[Tuple[Any, Any]] = []
-            for key, value in object.__getattribute__(agent, "__dict__").items():
-                if not key.startswith("_") or key == "_ambr_container_cells":
-                    continue
-                attrs[key] = value
-                self._keep_private_contents(value, contents)
-            saved.append((agent, attrs, contents))
-        return saved
-
-    def _restore_private_agent_state(
-        self, saved: List[Tuple[Any, Dict[str, Any], List[Tuple[Any, Any]]]]
-    ) -> bool:
-        """Put private agent attributes back to a :meth:`_snapshot_private_agent_state`.
-
-        Public attributes are left to the agent cache refresh. Returns False
-        when a private array could not be written back.
-        """
-        ok = True
-        for agent, attrs, contents in saved:
-            live = object.__getattribute__(agent, "__dict__")
-            for key in [
-                key for key in live
-                if key.startswith("_") and key != "_ambr_container_cells" and key not in attrs
-            ]:
-                del live[key]
             live.update(attrs)
             ok = self._write_back_contents(contents) and ok
         return ok

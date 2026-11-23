@@ -16,6 +16,13 @@
   private lists, dicts, sets, and numeric arrays are restored in place.
 - Swapped-order replay starts from the agents' step-entry private attributes,
   so a rule that depends on private state does not report a false divergence.
+- Swapped-order replay also snapshots the model's underscore-prefixed
+  attributes and nested agent-private containers (`defaultdict`, nested
+  lists, sets and dicts), so `contract="check"` and `"warn"` give the same
+  trajectory as `contract="off"`. A replay whose state reaches an object it
+  cannot restore is not run and reports the attribute in
+  `divergence_reason`. Private state is now part of the swapped-order
+  comparison, so a swap that changes only private state is a witness.
 - `activation_race` violations list their activation IDs in sorted order, and
   the order of reported races does not depend on `PYTHONHASHSEED`.
 

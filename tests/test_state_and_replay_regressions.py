@@ -1,4 +1,5 @@
 import pickle
+from collections import Counter, OrderedDict, defaultdict, deque
 
 import numpy as np
 import polars as pl
@@ -363,3 +364,163 @@ def test_replay_starts_from_step_entry_private_agent_state():
             vars(a).get("_n") for a in plain.agents
         ]
         assert [a._log for a in checked.agents] == [a._log for a in plain.agents]
+
+
+class RingAgent(am.Agent):
+    """Reads its ring neighbour's x and rewrites its own x.
+
+    ``rule="copy"`` keeps x, so every order gives the same state.
+    ``rule="chain"`` writes the neighbour's value plus one, which depends on
+    the order. Each private state variant feeds a public column, so a replay
+    that leaked into the forward run would change the agent frame.
+    """
+
+    def step(self):
+        model = self.model
+        seen = int(model.agents.by_id((self.id + 1) % 3).x)
+        self.x = seen + 1 if model.p.rule == "chain" else self.x
+        state = model.p.state
+        if state == "agent_counter":
+            self._k = getattr(self, "_k", 0) + 1
+            self.y = self._k
+        elif state == "nested_list":
+            self._nested[0].append(seen)
+            self.y = len(self._nested[0])
+        elif state == "defaultdict":
+            self._seen[seen] += 1
+            self.y = sum(self._seen.values())
+        elif state == "containers":
+            self._recent.append(seen)
+            self._counts[seen] += 1
+            self._order[seen] = len(self._order)
+            self._values.add(seen)
+            self.y = sum(self._recent) + sum(self._counts.values()) + len(self._order) + len(self._values)
+
+
+class RingModel(am.Model):
+    def setup(self):
+        self.add_agents(3, agent_class=RingAgent, x=[0, 10, 20], y=0, calls=0)
+        self._steps = 0
+        for agent in self.agents:
+            agent._nested = [[]]
+            agent._seen = defaultdict(int)
+            agent._recent = deque(maxlen=2)
+            agent._counts = Counter()
+            agent._order = OrderedDict()
+            agent._values = set()
+
+    def step_oop(self):
+        self.activate_agents("sequential")
+        if self.p.state == "model_scalar":
+            self._steps += 1
+            self.agents.calls = [self._steps, 0, 0]
+
+
+def _private_state(model):
+    agents = [
+        {key: value for key, value in vars(agent).items()
+         if key.startswith("_") and key != "_ambr_container_cells"}
+        for agent in model.agents
+    ]
+    return model._steps, agents
+
+
+def _race_witnesses(result):
+    return [
+        violation.divergence_witness
+        for cert in result["contract"]
+        for violation in cert.violations
+        if violation.kind == "activation_race"
+    ]
+
+
+@pytest.mark.parametrize("contract", ["check", "warn"])
+@pytest.mark.parametrize("rule", ["copy", "chain"])
+@pytest.mark.parametrize(
+    "state", ["agent_counter", "model_scalar", "nested_list", "defaultdict", "containers"]
+)
+def test_monitored_run_matches_the_unmonitored_run_with_private_state(state, rule, contract):
+    params = {**PARAMETERS, "steps": 3, "state": state, "rule": rule}
+    plain = RingModel(params).cpu(mode="oop")
+    checked = RingModel(params).cpu(mode="oop")
+    forward = plain.run(contract="off")
+    if contract == "warn":
+        with pytest.warns(UserWarning):
+            result = checked.run(contract=contract)
+    else:
+        result = checked.run(contract=contract)
+
+    assert result["agents"].equals(forward["agents"])
+    assert _private_state(checked) == _private_state(plain)
+    found = _race_witnesses(result)
+    assert found
+    if rule == "copy":
+        assert all(witness is False for witness in found)
+    else:
+        assert all(witness is True for witness in found)
+
+
+class OpaqueCounter:
+    def __init__(self):
+        self.n = 0
+
+
+class OpaqueStateAgent(am.Agent):
+    def step(self):
+        target = self.model.agents.by_id(0)
+        self._box.n += 1
+        self.y = self._box.n
+        target.x = self.id + 1
+
+
+def test_replay_is_skipped_when_private_state_cannot_be_restored():
+    class Model(RaceModel):
+        agent_class = OpaqueStateAgent
+
+        def setup(self):
+            self.add_agents(2, agent_class=self.agent_class, x=0, y=0)
+            for agent in self.agents:
+                agent._box = OpaqueCounter()
+
+    params = {**PARAMETERS, "steps": 2}
+    plain = Model(params).cpu(mode="oop")
+    checked = Model(params).cpu(mode="oop")
+    forward = plain.run(contract="off")
+    result = checked.run(contract="check")
+
+    races = [
+        violation
+        for cert in result["contract"]
+        for violation in cert.violations
+        if violation.kind == "activation_race"
+    ]
+    assert races and all(violation.divergence_witness is None for violation in races)
+    assert all(
+        "agent 0 attribute '_box' holds a OpaqueCounter object" in violation.divergence_reason
+        and "the swap was not run" in violation.divergence_reason
+        for violation in races
+    )
+    assert result["agents"].equals(forward["agents"])
+    assert [agent._box.n for agent in checked.agents] == [2, 2]
+
+
+def test_framework_private_model_attributes_are_not_replay_state():
+    class Reporting(RaceModel):
+        model_reporters = {"agents": lambda model: len(model.agents)}
+        agent_reporters = ["x"]
+        record_initial = True
+
+    models = [
+        Reporting(PARAMETERS).cpu(mode="oop"),
+        Reporting(PARAMETERS).cpu(mode="vectorized"),
+        RingModel({**PARAMETERS, "state": "none", "rule": "copy"}).cpu(mode="oop"),
+    ]
+    for model in models:
+        model.run(contract="check")
+        model.run(steps=1, auto_batch=True)
+    for model in models:
+        user = {
+            name for name in vars(model)
+            if name.startswith("_") and model._is_replay_model_attr(name)
+        }
+        assert user <= {"_steps"}
