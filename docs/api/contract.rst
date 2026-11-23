@@ -46,12 +46,20 @@ optionally under one local or keyed draw condition, or calls ``scatter_add``
 or ``scatter_max`` with a constant integer and a single fixed target shared
 by the agents. AMBER checks unique IDs, committed inputs, non-null ``Int64``
 arithmetic, safe bounds, and agreement between the predicted and observed
-cell effects and draw values. The step must be that sweep alone: a column
-commit or agent-frame replacement outside the sweep, or a change to model
-attributes or private agent attributes between step entry and step end,
-withholds the verdict. When that state holds an object the replay snapshot
-cannot represent (see below), the change cannot be ruled out and the verdict
-is also withheld.
+cell effects and draw values. The step must be that sweep alone. The verdict
+is withheld when, outside the sweep, the step commits or reduces a column,
+replaces the agent frame, queues a write with ``update_agent_data()``,
+changes the agent frame by any other path (for example an in-place
+``agents_df.replace_column(...)`` or a ``Population`` method), draws from a
+model random stream, records a value with ``record_model()``, changes the
+agent roster or an agent's ID binding, or changes model attributes or
+private agent attributes between step entry and step end. The frame and the
+streams are compared at step entry, at the sweep's entry and exit, and at
+step end, so these checks do not depend on the write path. When model or
+private agent state holds an object the replay snapshot cannot represent
+(see below), a change cannot be ruled out and the verdict is also withheld.
+The verdict covers ``step()`` only: model reporters and ``update()`` run
+after the certificate is issued.
 ``cert.certification`` records the scope and premises in the saved results.
 
 For other methods and execution paths, the verdict is ``not_established``

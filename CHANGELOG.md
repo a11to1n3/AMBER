@@ -42,8 +42,15 @@
   column or replaces the agent frame outside the verified sweep, or changes
   model or private agent state (for example `self.agents.other = ...` or
   `self.total = ...` after `self.agents.step()`), and when that state cannot
-  be compared with step entry. A step that is only a supported sweep is
-  certified as before.
+  be compared with step entry. It is also withheld for a write through
+  `update_agent_data()`, an in-place edit of the agent frame or a
+  `Population` write (found by comparing the frame at step entry, sweep entry,
+  sweep exit, and step end), a draw from a model random stream before or after
+  the sweep, a `record_model()` value, and a changed agent ID binding. A step
+  that is only a supported sweep is certified as before.
+- `update_agent_data()` inside an activation is attributed to that
+  activation, so a same-sweep read of the written cell is an
+  `activation_race`.
 - `activation_race` violations list their activation IDs in sorted order, and
   the order of reported races does not depend on `PYTHONHASHSEED`.
 

@@ -94,6 +94,16 @@ def activate(
     override = getattr(model, "_activation_override_order", None)
     if mon is not None and mon._in_replay and (override is None or mode == "simultaneous"):
         raise ValueError("replay requires one sequential or random activation sweep")
+    entry_rng = None
+    if (
+        mon is not None
+        and mon.active
+        and mon._current_activation is None
+        and mode == "random"
+    ):
+        # The shuffle belongs to the sweep: the certificate compares the
+        # streams before it with the step-entry streams.
+        entry_rng = model._capture_rng_state()
     if mode == "random":
         execution = getattr(model, "_execution", None)
         r = _rng_for(agents, rng)
@@ -108,7 +118,12 @@ def activate(
     if override is not None:
         ordered = _replay_order(ordered, model, override)
     if mon is not None and mon.active:
-        mon.begin_sweep(agents, method, single_phase=mode != "simultaneous")
+        if entry_rng is None:
+            mon.begin_sweep(agents, method, single_phase=mode != "simultaneous")
+        else:
+            mon.begin_sweep(
+                agents, method, single_phase=mode != "simultaneous", entry_rng=entry_rng
+            )
 
     def call(agent: Any, name: str) -> None:
         aid = getattr(agent, "id", None)

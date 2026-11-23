@@ -49,8 +49,10 @@ warns; prefer ``agents.col = ...`` / ``agents.set`` / ``agents.commit``).
 ``clean`` means no observed violation. The separate conditional guarantee is
 established only when the runtime verifies a supported deterministic activation
 sweep, its observed cell effects agree with the proof, and the step changed
-nothing else: no column commit or frame replacement outside the sweep, and
-model and private agent state equal to step entry.
+nothing else: no column write or frame change outside the sweep (the frame is
+compared at step entry, sweep entry, sweep exit, and step end), no draw from a
+model random stream or ``record_model()`` value outside it, the same agent
+roster, and model and private agent state equal to step entry.
 
 A conflict closed while a stage is still open is reported as
 ``activation_race`` with ``divergence_witness is None``. Automatic replay
@@ -285,6 +287,10 @@ class ContractMonitor:
         self._trace_gaps: Set[str] = set()
         self._sweep_proof = None
         self._sweep_reason: Optional[str] = None
+        # Model state at the entry and exit of a verified sweep, so the
+        # certificate can check that nothing else changed the step.
+        self._sweep_entry: Any = None
+        self._sweep_exit: Any = None
         self._activation_reads: Dict[Any, Set[Tuple[str, Any]]] = {}
         self._activation_column_reads: Dict[Any, Set[str]] = {}
         self._activation_writes: Dict[Any, Set[Tuple[str, Any]]] = {}
@@ -338,6 +344,8 @@ class ContractMonitor:
         self._trace_gaps = set()
         self._sweep_proof = None
         self._sweep_reason = None
+        self._sweep_entry = None
+        self._sweep_exit = None
         self._activation_order = []
         self._activation_reads = {}
         self._activation_column_reads = {}
@@ -396,6 +404,8 @@ class ContractMonitor:
             ))
         cert.certification_reason = self._certify_step(cert, model)
         self._sweep_proof = None
+        self._sweep_entry = None
+        self._sweep_exit = None
         self.certificates.append(cert)
         return cert
 
@@ -418,6 +428,12 @@ class ContractMonitor:
             return self._sweep_reason or "No supported activation sweep was verified."
         if self._activation_count != len(proof.ids) or not proof.matches(self):
             return "The recorded activation effects did not match the verified sweep."
+        outside = getattr(model, "_step_effects_outside_sweep", None)
+        if not callable(outside):
+            return "Effects outside the verified activation sweep could not be checked."
+        reason = outside(self._sweep_entry, self._sweep_exit)
+        if reason is not None:
+            return reason
         changed = getattr(model, "_step_changed_replay_state", None)
         changed = changed() if callable(changed) else None
         if changed is None:
@@ -443,6 +459,19 @@ class ContractMonitor:
         self._buffered_cols.add(column)
         if column in self._committed or column in self._reduced_cols:
             self._cross_path_cols.add(column)
+
+    def record_model_buffered_write(self, column: str, agent_id: Any, value: Any) -> None:
+        """Attribute a buffered write made through a model method.
+
+        Inside an activation it is that activation's write, as for an agent
+        attribute assignment. Outside one it is a write outside the sweep.
+        """
+        if not self.active or self._in_replay:
+            return
+        if self._current_activation is None:
+            self._unswept_writes.add(f"column {column!r}")
+        else:
+            self.record_activation_write(column, agent_id, value)
 
     def record_commit(self, columns: Iterable[str], target_ids: Optional[Iterable[Any]] = None) -> None:
         """Record a lane/view commit and any known activation targets."""
@@ -546,7 +575,14 @@ class ContractMonitor:
 
     # --- activation trace ---------------------------------------------------
 
-    def begin_sweep(self, agents, method: str, single_phase: bool) -> None:
+    def begin_sweep(
+        self, agents, method: str, single_phase: bool, entry_rng: Any = _UNSEEN_VALUE
+    ) -> None:
+        """Start an activation sweep.
+
+        ``entry_rng`` is the random stream state before the scheduler drew
+        the activation order, when the caller drew one.
+        """
         if self._current_activation is None:
             self._trace_committed = set()
         self._activation_sweeps += 1
@@ -556,8 +592,27 @@ class ContractMonitor:
             from ._certify import verify_sweep
 
             self._sweep_proof, self._sweep_reason = verify_sweep(agents, method)
+            if self._sweep_proof is not None:
+                boundary = getattr(getattr(agents, "model", None), "_sweep_boundary", None)
+                if callable(boundary):
+                    self._sweep_entry = (
+                        boundary() if entry_rng is _UNSEEN_VALUE
+                        else boundary(entry_rng, capture_rng=False)
+                    )
         else:
             self._sweep_reason = "Certification requires a single-phase sweep with no method arguments."
+
+    def end_sweep(self, model: Any, rng_state: Any) -> None:
+        """Record the state at the exit of the verified sweep."""
+        if (
+            not self.active
+            or self._in_replay
+            or self._sweep_entry is None
+            or self._sweep_exit is not None
+            or self._activation_sweeps != 1
+        ):
+            return
+        self._sweep_exit = model._sweep_boundary(rng_state, capture_rng=False)
 
     def record_sweep_rng_check(self, unchanged: Optional[bool]) -> None:
         """Keep replay inconclusive if the sweep changed a stream or could not be checked."""

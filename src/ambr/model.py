@@ -1916,9 +1916,26 @@ class Model(BaseModel):
             and entry.bindings == post.bindings
         )
 
+    def _rng_states_equal(
+        self, before: Optional[_RngSnapshot], after: Optional[_RngSnapshot]
+    ) -> Optional[bool]:
+        """Whether two stream snapshots hold the same states. None if unknown."""
+        if before is None or after is None or not self._rng_same_stream_ids(before, after):
+            return None
+        try:
+            return all(
+                self._replay_values_equal(left[3], right[3])
+                for left, right in zip(before.streams, after.streams)
+            )
+        except Exception:
+            return None
+
     @contextmanager
     def _watch_sweep_rng(self):
-        """Check model-owned streams around agent calls, excluding scheduler draws."""
+        """Check model-owned streams around agent calls, excluding scheduler draws.
+
+        Also records the state at the sweep's exit for the certificate.
+        """
         monitor = self._contract
         if not (monitor.active or monitor._in_replay) or monitor._current_activation is not None:
             yield
@@ -1928,16 +1945,92 @@ class Model(BaseModel):
             yield
         finally:
             after = self._capture_rng_state()
-            unchanged = None
-            if before is not None and after is not None and self._rng_same_stream_ids(before, after):
-                try:
-                    unchanged = all(
-                        self._replay_values_equal(left[3], right[3])
-                        for left, right in zip(before.streams, after.streams)
-                    )
-                except Exception:
-                    pass
-            monitor.record_sweep_rng_check(unchanged)
+            monitor.record_sweep_rng_check(self._rng_states_equal(before, after))
+            monitor.end_sweep(self, after)
+
+    def _sweep_boundary(self, rng_state: Any = None, *, capture_rng: bool = True) -> Any:
+        """The committed frame, pending writes, and streams at a sweep boundary."""
+        try:
+            frame = self.population.data.clone()
+            pending = {
+                column: dict(values) for column, values in self._pending_writes.items()
+            }
+        except Exception:
+            return None
+        if rng_state is None and capture_rng:
+            rng_state = self._capture_rng_state()
+        return frame, pending, rng_state
+
+    @staticmethod
+    def _frame_with_pending(frame: Any, pending: Dict[str, Dict[Any, Any]]) -> Any:
+        """``frame`` with buffered writes applied, as a flush would apply them.
+
+        None when a write targets a column or ID the frame does not have.
+        """
+        if not pending:
+            return frame
+        if "id" not in frame.columns:
+            return None
+        rows = {aid: index for index, aid in enumerate(frame["id"].to_list())}
+        columns = []
+        for column, values in pending.items():
+            if column not in frame.columns:
+                return None
+            cells = frame[column].to_list()
+            for aid, value in values.items():
+                row = rows.get(aid)
+                if row is None:
+                    return None
+                cells[row] = value
+            columns.append(pl.Series(column, cells, strict=False))
+        return frame.with_columns(columns)
+
+    @staticmethod
+    def _frames_equal(left: Any, right: Any) -> bool:
+        try:
+            return (
+                left is not None
+                and right is not None
+                and left.schema == right.schema
+                and bool(left.equals(right))
+            )
+        except Exception:
+            return False
+
+    def _step_effects_outside_sweep(self, entry: Any, exit: Any) -> Optional[str]:
+        """Why the step did more than its verified sweep, or None.
+
+        Compares the agent frame and the random streams at step entry with
+        the sweep's entry, and at the sweep's exit with step end, so an
+        in-place frame edit, a ``Population`` write, or a draw before or after
+        the sweep is found whichever path made it. Also checks the agent
+        roster and the values recorded with :meth:`record_model`.
+        """
+        if entry is None or exit is None:
+            return "The state at the verified sweep's entry or exit was not recorded."
+        if not self._replay_roster_matches(getattr(self, "_pre_step_roster", None)):
+            return "The agent roster or an agent's ID binding changed during the step."
+        recorded = sorted(str(key) for key in (self._current_step_data or {}) if key != "t")
+        if recorded:
+            return (
+                f"The step recorded model output ({', '.join(recorded)}) outside the "
+                f"verified activation sweep."
+            )
+        entry_frame, entry_pending, entry_rng = entry
+        exit_frame, exit_pending, exit_rng = exit
+        final = self._frame_with_pending(self.population.data, self._pending_writes)
+        if (
+            entry_pending
+            or not self._frames_equal(entry_frame, getattr(self, "_pre_step_state", None))
+            or not self._frames_equal(self._frame_with_pending(exit_frame, exit_pending), final)
+        ):
+            return "The agent frame changed outside the verified activation sweep."
+        if not (
+            self._rng_states_equal(getattr(self, "_pre_step_rng", None), entry_rng)
+            and self._rng_states_equal(exit_rng, self._capture_rng_state())
+        ):
+            return "A shared random stream changed outside the verified activation sweep."
+        return None
 
     def _rng_bound(self, place: str, name: str) -> Any:
         if place == "model":
@@ -2359,8 +2452,11 @@ class Model(BaseModel):
             "Model.update_agent_data(...)",
             "agent.<col> = value or agents.at[id].set(**cols)",
         )
+        monitor = self._contract
         for key, value in data.items():
             self._queue_write(key, agent_id, value)
+            if monitor.active:
+                monitor.record_model_buffered_write(key, agent_id, value)
 
     def batch_update_agents(self, agent_ids: list, data: dict):
         """Deprecated: use ``agents.at[ids].set(**data)`` (or column assign).

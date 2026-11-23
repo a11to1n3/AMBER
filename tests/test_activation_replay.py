@@ -1080,3 +1080,26 @@ def test_replay_withholds_witness_when_only_the_swapped_branch_uses_a_cached_dra
     races = _races(cert)
     assert races and all(v.divergence_witness is None for v in races)
     assert all("shared random stream state changed" in v.divergence_reason for v in races)
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_a_legacy_model_write_inside_an_activation_is_attributed():
+    class Agent(am.Agent):
+        def step(self):
+            if self.id == 0:
+                self.model.update_agent_data(0, {"x": 1})
+            else:
+                self.seen = int(self.model.agents_df["x"][0])
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, x=0, seen=-1)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    result = Model(_params()).run(contract="check")
+    assert result.agents.sort("id")["seen"].to_list() == [-1, 1]
+    race, = _races(result["contract"][0])
+    assert race.ids == [0, 1] and race.columns == ["x"]
+    assert race.divergence_witness is True

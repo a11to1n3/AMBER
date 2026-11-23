@@ -769,3 +769,83 @@ def test_column_write_before_the_sweep_also_withholds_the_certificate(monkeypatc
     assert cert.clean
     assert cert.conditional_guarantee == "not_established"
     assert "column 'other'" in cert.certification_reason
+
+
+class _SlotEarner(_Earner):
+    __slots__ = ("_marker",)
+
+
+def _effects_model(extra, activation="broadcast"):
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(50, agent_class=_SlotEarner, wealth=1, other=0)
+            for agent in self.agents:
+                agent._marker = 0
+
+        def step(self):
+            if extra == "draw_before":
+                self.rng.integers(0, 10)
+            if activation == "random":
+                self.activate_agents("random")
+            else:
+                self.agents.step()
+            if extra == "legacy_write":
+                self.update_agent_data(0, {"other": self.t + 8})
+            elif extra == "in_place_frame":
+                frame = self.agents_df
+                frame.replace_column(
+                    frame.get_column_index("other"),
+                    pl.Series("other", [self.t + 8] * frame.height),
+                )
+            elif extra == "population_write":
+                self.population.set_agent_value(0, "other", self.t + 8)
+            elif extra == "record":
+                self.record_model("extra", 42)
+            elif extra == "draw_after":
+                self.rng.integers(0, 10)
+            elif extra == "agent_slot":
+                self.agents.by_id(0)._marker += 1
+
+    return Model
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+@pytest.mark.parametrize("extra, activation, reason", [
+    ("none", "broadcast", None),
+    # The scheduler's shuffle is part of the sweep.
+    ("none", "random", None),
+    ("legacy_write", "broadcast", "wrote column 'other' outside the verified activation sweep"),
+    ("in_place_frame", "broadcast", "agent frame changed outside the verified activation sweep"),
+    ("population_write", "broadcast", "agent frame changed outside the verified activation sweep"),
+    ("record", "broadcast", "recorded model output (extra) outside the verified activation sweep"),
+    ("draw_before", "random", "random stream changed outside the verified activation sweep"),
+    ("draw_after", "broadcast", "random stream changed outside the verified activation sweep"),
+    ("agent_slot", "broadcast", "changed model or private agent state outside"),
+])
+def test_certificate_is_withheld_for_effects_outside_the_sweep(extra, activation, reason, monkeypatch):
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+    params = {"steps": 2, "seed": 7, "show_progress": False}
+    certs = _effects_model(extra, activation)(params).run(contract="check")["contract"]
+    for cert in certs:
+        assert cert.clean
+        if reason is None:
+            assert cert.conditional_guarantee == "established"
+        else:
+            assert cert.conditional_guarantee == "not_established"
+            assert reason in cert.certification_reason
+
+
+def test_certificate_is_withheld_when_an_agent_id_binding_changes(monkeypatch):
+    monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
+
+    class Model(_effects_model("none")):
+        def step(self):
+            super().step()
+            agent = self.agents.by_id(0)
+            agent.id = 999
+            agent.id = 0
+            object.__setattr__(self.agents.by_id(1), "id", 998)
+
+    cert = Model({"steps": 1, "seed": 7, "show_progress": False}).run(contract="check")["contract"][0]
+    assert cert.conditional_guarantee == "not_established"
+    assert "ID binding changed" in cert.certification_reason

@@ -640,8 +640,9 @@ print(cert.certification)
 violation. `raise` stops on the first error. Mode `off` disables the monitor.
 The proof covers supported integer updates and exact, fixed-target integer
 reductions for one sequential or shuffled CPU sweep at its observed entry
-state. A step that also commits columns, replaces the agent frame, or changes
-model or private agent state outside that sweep is not certified.
+state. A step that also writes or edits the agent frame, draws from a model
+random stream, records model output, or changes model or private agent state
+outside that sweep is not certified.
 `self.draw("earn")` gives a uniform value in `[0, 1)` keyed by the model
 seed, step, agent ID, event, and draw index. Reusing the key repeats the value.
 Use distinct events or indices for separate draws.
