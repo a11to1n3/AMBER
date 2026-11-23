@@ -1153,7 +1153,7 @@ def test_replay_pair_selection_is_linear_in_the_writers_of_a_cell():
     n = 20_000
     monitor._activation_write_values = {act: {cell: (int, act)} for act in range(n)}
     start = perf_counter()
-    chosen, distinct = monitor._last_writer_swaps(list(range(n)), cell, 5)
+    chosen, distinct, *_ = monitor._last_writer_swaps(list(range(n)), cell, 5)
     elapsed = perf_counter() - start
     assert distinct == n
     assert chosen == list(range(n - 6, n - 1))
@@ -1195,3 +1195,70 @@ def test_a_race_inside_an_earlier_sweep_is_still_reported():
     assert race.ids == [0, 1] and race.columns == ["x"]
     assert race.divergence_witness is None
     assert race.divergence_reason == "replay requires a single recorded activation sweep"
+
+
+def _lane_writer_model(values, wrap):
+    class Agent(am.Agent):
+        def step(self):
+            self.model.agents.at[[0]].set(x=wrap(values[self.id]))
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(len(values), agent_class=Agent, x=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    return Model
+
+
+@pytest.mark.parametrize("recorded", [True, False])
+def test_lane_writes_cover_an_early_writer_whose_value_differs(recorded):
+    # Only swapping the first writer with the last changes the final x.
+    values = [2, 1, 1, 1, 1, 1, 1]
+    wrap = (lambda v: v) if recorded else (lambda v: np.array([v]))
+    result = _lane_writer_model(values, wrap)(_params()).run(contract="check")
+    races = _races(result["contract"][0])
+    assert result.agents.sort("id")["x"].to_list()[0] == 1
+    by_pair = {tuple(race.ids): race for race in races}
+    assert by_pair[(0, 6)].divergence_witness is True
+    if recorded:
+        assert set(by_pair) == {(0, 6)}
+        assert "with 2 distinct value(s)" in by_pair[(0, 6)].detail
+    else:
+        # Six earlier writers, five replays: the report says so.
+        assert len(by_pair) == 5
+        assert "7 unrecorded value(s)" in by_pair[(0, 6)].detail
+        assert "swaps 5 of the 6 earlier writers" in by_pair[(0, 6)].detail
+        unconfirmed = [race for race in races if race.divergence_witness is False]
+        assert unconfirmed and all(
+            "Only 5 of the 6 candidate pairs" in race.divergence_reason for race in unconfirmed
+        )
+
+
+def test_equal_mixed_reducers_are_paired_by_their_operands():
+    class Agent(am.Agent):
+        def step(self):
+            add, top = (1, 10) if self.id < 2 else (5, 2)
+            self.model.agents.at[[0]].scatter_add(x=add)
+            self.model.agents.at[[0]].scatter_max(x=top)
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(3, agent_class=Agent, x=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    result = Model(_params()).run(contract="check")
+    cross = {tuple(race.ids): race.divergence_witness for race in _races(result["contract"][0])
+             if len(race.ids) == 2}
+    # Agents 0 and 1 reduce identically; agent 2 does not.
+    assert cross == {(0, 1): False, (0, 2): True}
+
+
+def test_all_equal_writes_say_which_pair_is_replayed():
+    result = _write_race_model((4, 4, 4))(_params()).run(contract="check")
+    race, = _races(result["contract"][0])
+    assert race.ids == [0, 1]
+    assert "all with the same value; the replay swaps the first two writers" in race.detail

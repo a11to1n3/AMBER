@@ -86,13 +86,22 @@ Python agent methods under ``model.gpu()``; those methods currently compute
 the keyed draws on the host.
 
 A step runs at most five swapped-order replays, each swapping two
-activations of its single recorded sweep. When three or more activations
-write one cell, AMBER swaps the last writer with one earlier writer per
-distinct written value, so each value is tried as the final one. When
-activations reduce into one cell with different operators, or with the same
-mix of operators, one pair per operator combination is replayed. These pairs
-run before the other reported pairs. A reported pair that was not replayed
-because the five replays were used says so in ``divergence_reason``.
+activations of its single recorded sweep. The pairs are chosen by priority
+within that budget, so many reported pairs may not be replayed. When three or
+more activations write one cell, AMBER prefers to swap the last writer with
+one earlier writer per distinct recorded value, nearest first. Values are
+recorded for agent attribute writes and for ``agents.at[ids].set(...)`` with
+scalar or list values on up to 64 agents; a writer whose value was not
+recorded could hold any value, so such writers are sampled across the sweep,
+earliest first. When activations reduce into one cell with different
+operators, one pair per operator combination is preferred. When they use the
+same mix of operators, the first two are paired, and each later reducer
+whose recorded operators and scalar operands differ is paired with the
+first. These pairs run before the other reported pairs. A reported pair that
+was not replayed because the five replays were used says so in
+``divergence_reason``. When a cell has more candidate pairs than were
+replayed and the replayed pair shows no divergence, ``divergence_reason``
+gives the number of candidates and the number replayed.
 
 For swapped-order replay, AMBER compares the model-owned random streams
 immediately before and after the sweep. A stream change can reveal draws

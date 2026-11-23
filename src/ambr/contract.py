@@ -313,6 +313,9 @@ class ContractMonitor:
         # Last value each activation wrote to a cell, as a _value_key.
         self._activation_write_values: Dict[Any, Dict[Tuple[str, Any], Any]] = {}
         self._activation_reductions: Dict[Any, Set[Tuple[str, Any, str]]] = {}
+        # Each activation's reductions per cell, in order, as
+        # (operator, operand key) pairs. Used to choose replay pairs.
+        self._activation_reduction_ops: Dict[Any, Dict[Tuple[str, Any], List[Tuple[str, Any]]]] = {}
         self._activation_draws: Dict[Any, List[Tuple[int, int, Any, str, int, float]]] = {}
         self._in_replay: bool = False
         self._used_shared_rng = False
@@ -369,6 +372,7 @@ class ContractMonitor:
         self._activation_writes = {}
         self._activation_write_values = {}
         self._activation_reductions = {}
+        self._activation_reduction_ops = {}
         self._activation_draws = {}
         self._used_shared_rng = False
         self._sweep_rng_reason = None
@@ -509,8 +513,35 @@ class ContractMonitor:
             if target_ids is None:
                 self._trace_gaps.add("column commit without target IDs")
             else:
-                writes = self._activation_writes.setdefault(self._current_activation, set())
-                writes.update((column, aid) for aid in target_ids for column in columns)
+                act = self._current_activation
+                cells = [(column, aid) for aid in target_ids for column in columns]
+                self._activation_writes.setdefault(act, set()).update(cells)
+                # The committed values are unknown here. record_commit_values
+                # replaces them when the caller knows them.
+                values = self._activation_write_values.setdefault(act, {})
+                for cell in cells:
+                    values[cell] = object()
+
+    def record_commit_values(
+        self, columns: Dict[str, Any], target_ids: List[Any], limit: int = 64
+    ) -> None:
+        """Record the values a lane commit by the current activation wrote.
+
+        A scalar is the value of every target. A sequence gives one value
+        per target. Commits to more than ``limit`` targets stay unknown.
+        """
+        act = self._current_activation
+        if not self.active or self._in_replay or act is None or len(target_ids) > limit:
+            return
+        values = self._activation_write_values.setdefault(act, {})
+        for column, value in columns.items():
+            key = _value_key(value)
+            if type(key) is tuple:
+                for aid in target_ids:
+                    values[(column, aid)] = key
+            elif type(value) in (list, tuple) and len(value) == len(target_ids):
+                for aid, item in zip(target_ids, value):
+                    values[(column, aid)] = _value_key(item)
 
     def record_frame_replacement(self) -> None:
         """Mark a frame replacement whose cell effects are outside the trace."""
@@ -643,6 +674,7 @@ class ContractMonitor:
         self._activation_writes = {}
         self._activation_write_values = {}
         self._activation_reductions = {}
+        self._activation_reduction_ops = {}
         self._activation_draws = {}
 
     def end_sweep(self, model: Any, rng_state: Any) -> None:
@@ -708,6 +740,7 @@ class ContractMonitor:
         self._activation_writes = {}
         self._activation_write_values = {}
         self._activation_reductions = {}
+        self._activation_reduction_ops = {}
         self._activation_draws = {}
 
     def begin_activation(self, agent_id: Any) -> None:
@@ -761,15 +794,27 @@ class ContractMonitor:
         values[(column, agent_id)] = _value_key(value)
 
     def record_activation_reductions(self, columns, ids, operator: str) -> None:
-        """Attribute reduction targets to the activation that issued them."""
+        """Attribute reduction targets to the activation that issued them.
+
+        ``columns`` may map each column to its operand. A scalar operand is
+        recorded with the operator so replay pairs can be chosen by the
+        reductions' effect; other operands are unknown.
+        """
         if not self.active or self._in_replay:
             return
         if self._current_activation is None:
             if ids:
                 self._unattributed_columns.update(columns)
             return
-        reductions = self._activation_reductions.setdefault(self._current_activation, set())
+        act = self._current_activation
+        reductions = self._activation_reductions.setdefault(act, set())
         reductions.update((column, aid, operator) for column in columns for aid in ids)
+        operands = columns if isinstance(columns, dict) else {}
+        ops = self._activation_reduction_ops.setdefault(act, {})
+        for column in columns:
+            key = _value_key(operands[column]) if column in operands else object()
+            for aid in ids:
+                ops.setdefault((column, aid), []).append((operator, key))
 
     # --- internal checks ----------------------------------------------------
 
@@ -936,35 +981,90 @@ class ContractMonitor:
 
     def _last_writer_swaps(
         self, writers: List[Any], cell: Tuple[str, Any], limit: int
-    ) -> Tuple[List[Any], int]:
+    ) -> Tuple[List[Any], int, int, int]:
         """Pick writers to swap with the last writer of ``cell``.
 
         Swapping a writer with the last one makes its value the final one,
-        so one writer per value that differs from the last writer's is
-        enough to cover every written value. Writers nearest the last one
-        are preferred. Returns at most ``limit`` writers, in activation
-        order, and the number of distinct values written.
+        so one writer per recorded value that differs from the last
+        writer's covers every recorded value; the writer nearest the last
+        one is taken for each. A writer whose value was not recorded could
+        hold any value, so each is a candidate too; they fill the remaining
+        slots spread over the sweep, earliest first. Returns at most
+        ``limit`` writers in activation order, the number of distinct
+        recorded values, the number of unrecorded values, and the number of
+        candidates. Runs in one pass and compares no user values.
         """
         values = self._activation_write_values
         empty: Dict[Tuple[str, Any], Any] = {}
         keys = [values.get(act, empty).get(cell) for act in writers]
-        # Known values are tuples of built-in scalars, so set membership is
-        # exact and runs no user code. Every other value is unknown and
-        # counts as distinct. One pass each: no pairwise comparison.
-        distinct = len({key for key in keys if type(key) is tuple}) + sum(
-            1 for key in keys if type(key) is not tuple
-        )
-        chosen: List[Any] = []
+        # Recorded values are tuples of built-in scalars, so set membership
+        # is exact.
+        known = {key for key in keys if type(key) is tuple}
+        unknown = sum(1 for key in keys if type(key) is not tuple)
+        by_value: List[int] = []
         seen = {keys[-1]} if type(keys[-1]) is tuple else set()
-        for act, key in zip(reversed(writers[:-1]), reversed(keys[:-1])):
-            if len(chosen) >= limit:
-                break
-            if type(key) is tuple:
-                if key in seen:
-                    continue
+        for index in range(len(writers) - 2, -1, -1):
+            key = keys[index]
+            if type(key) is tuple and key not in seen:
                 seen.add(key)
-            chosen.append(act)
-        return chosen[::-1], distinct
+                by_value.append(index)
+        unseen = [index for index in range(len(writers) - 1) if type(keys[index]) is not tuple]
+        candidates = len(by_value) + len(unseen)
+        picked = by_value[:limit]
+        room = limit - len(picked)
+        if room >= len(unseen):
+            picked.extend(unseen)
+        elif room > 0:
+            last = len(unseen) - 1
+            spread = {round(i * last / max(room - 1, 1)) for i in range(room)}
+            picked.extend(unseen[i] for i in sorted(spread))
+        return [writers[i] for i in sorted(picked)], len(known), unknown, candidates
+
+    def _reducer_swaps(
+        self, members: List[Any], cell: Tuple[str, Any], limit: int
+    ) -> Tuple[List[Tuple[Any, Any]], int]:
+        """Pick pairs of reducers with the same mixed operators on ``cell``.
+
+        The first two reducers are always paired. Each later reducer whose
+        recorded reduction sequence differs from those already paired is
+        paired with the first reducer, the nearest first; reducers whose
+        operands were not recorded are candidates too and fill the remaining
+        slots spread over the sweep. Returns at most ``limit`` pairs and the
+        number of candidate pairs. Runs in one pass.
+        """
+        ops = self._activation_reduction_ops
+        empty: Dict[Tuple[str, Any], List[Tuple[str, Any]]] = {}
+
+        def signature(act: Any) -> Any:
+            sequence = ops.get(act, empty).get(cell, ())
+            if sequence and all(type(key) is tuple for _, key in sequence):
+                return tuple(sequence)
+            return None
+
+        first = members[0]
+        pairs = [(first, members[1])]
+        signatures = [signature(act) for act in members]
+        seen = {sig for sig in signatures[:2] if sig is not None}
+        by_sequence: List[int] = []
+        unseen: List[int] = []
+        for index in range(2, len(members)):
+            sig = signatures[index]
+            if sig is None:
+                unseen.append(index)
+            elif sig not in seen:
+                seen.add(sig)
+                by_sequence.append(index)
+        candidates = 1 + len(by_sequence) + len(unseen)
+        picked = by_sequence[:limit - 1]
+        room = limit - 1 - len(picked)
+        if room >= len(unseen):
+            picked.extend(unseen)
+        elif room > 0:
+            last = len(unseen) - 1
+            spread = {round(i * last / max(room - 1, 1)) for i in range(room)}
+            picked.extend(unseen[i] for i in sorted(spread))
+        pairs.extend((first, members[i]) for i in sorted(picked))
+        return pairs, candidates
 
     def _check_activation_races(
         self,
@@ -1007,9 +1107,11 @@ class ContractMonitor:
         # Pairs replayed before the others, so each distinct written value
         # and each combination of reduction operators gets a swap.
         priority: List[Tuple[Any, Any]] = []
-        # Cells with three or more writers: (writer count, distinct values).
-        write_groups: Dict[Tuple[str, Any], Tuple[int, int]] = {}
-        sampled_operators: Dict[Tuple[str, Any], Set[Any]] = {}
+        # Cells with three or more writers: (writer count, distinct recorded
+        # values, unrecorded values, candidate writers, writers swapped).
+        write_groups: Dict[Tuple[str, Any], Tuple[int, int, int, int, int]] = {}
+        # Candidate pairs left out of a cell's coverage, by cell and kind.
+        uncovered: Dict[Tuple[Tuple[str, Any], str], Tuple[int, int]] = {}
 
         def add_hazard(first: Any, second: Any, cell: Tuple[str, Any], kind: str) -> None:
             key = (first, second, cell, kind)
@@ -1024,8 +1126,12 @@ class ContractMonitor:
             if len(writers) == 2:
                 add_hazard(writers[0], writers[1], cell, "write")
             elif len(writers) > 2:
-                chosen, distinct = self._last_writer_swaps(writers, cell, max_replays)
-                write_groups[cell] = (len(writers), distinct)
+                chosen, distinct, unknown, candidates = self._last_writer_swaps(
+                    writers, cell, max_replays
+                )
+                write_groups[cell] = (len(writers), distinct, unknown, candidates, len(chosen))
+                if len(chosen) < candidates:
+                    uncovered[(cell, "write")] = (len(chosen), candidates)
                 for first in chosen:
                     add_hazard(first, writers[-1], cell, "write")
                     priority.append((first, writers[-1]))
@@ -1036,24 +1142,41 @@ class ContractMonitor:
                     add_hazard(writer, reducer, cell, "set_reduce")
             if reducers and len(set.union(*reducers.values())) > 1:
                 reducer_order = list(reducers)
-                sampled = sampled_operators.setdefault(cell, set())
-                for index, first in enumerate(reducer_order):
-                    if len(reducers[first]) > 1:
-                        add_hazard(first, first, cell, "mixed_reductions")
-                    for second in reducer_order[index + 1:]:
-                        if len(reducers[first] | reducers[second]) < 2:
-                            continue
-                        operators = frozenset((
-                            frozenset(reducers[first]), frozenset(reducers[second])
-                        ))
-                        # Equal mixed operator sets do not commute either.
-                        # One pair per operator combination is enough to
-                        # replay; differing sets keep every pair.
-                        if reducers[first] != reducers[second] or operators not in sampled:
+                operator_sets = {act: frozenset(reducers[act]) for act in reducer_order}
+                for act in reducer_order:
+                    if len(operator_sets[act]) > 1:
+                        add_hazard(act, act, cell, "mixed_reductions")
+                if len(set(operator_sets.values())) > 1:
+                    # Differing operator sets: every pair is reported, and
+                    # one pair per combination is replayed first.
+                    sampled: Set[Any] = set()
+                    for index, first in enumerate(reducer_order):
+                        for second in reducer_order[index + 1:]:
+                            pair_sets = (operator_sets[first], operator_sets[second])
+                            if pair_sets[0] == pair_sets[1] or len(pair_sets[0] | pair_sets[1]) < 2:
+                                continue
                             add_hazard(first, second, cell, "mixed_reductions")
-                        if operators not in sampled:
-                            sampled.add(operators)
-                            priority.append((first, second))
+                            operators = frozenset(pair_sets)
+                            if operators not in sampled:
+                                sampled.add(operators)
+                                priority.append((first, second))
+                # Equal mixed operator sets do not commute either. Pairs are
+                # chosen by the recorded reduction sequences (operators and
+                # operands), so reducers with the same effect are not
+                # spent on each other.
+                groups: Dict[frozenset, List[Any]] = {}
+                for act in reducer_order:
+                    if len(operator_sets[act]) > 1:
+                        groups.setdefault(operator_sets[act], []).append(act)
+                for members in groups.values():
+                    if len(members) < 2:
+                        continue
+                    pairs, candidates = self._reducer_swaps(members, cell, max_replays)
+                    if len(pairs) < candidates:
+                        uncovered[(cell, "mixed_reductions")] = (len(pairs), candidates)
+                    for pair in pairs:
+                        add_hazard(pair[0], pair[1], cell, "mixed_reductions")
+                        priority.append(pair)
             readers = (*readers_by_cell.get(cell, ()), *readers_by_column.get(cell[0], ()))
             if readers:
                 for modifier in dict.fromkeys((*writers, *reducers)):
@@ -1099,6 +1222,13 @@ class ContractMonitor:
         for first, second, cell, kind in hazards:
             col, _aid = cell
             witness, reason = witness_for(first, second)
+            gap = uncovered.get((cell, kind))
+            if gap is not None and witness is False:
+                swapped, candidates = gap
+                reason = (
+                    f"Only {swapped} of the {candidates} candidate pairs for this cell "
+                    f"were replayed; orders from the other pairs were not checked."
+                )
             if witness is True:
                 note = (
                     " Witness replay under swapped order confirmed "
@@ -1122,12 +1252,26 @@ class ContractMonitor:
                     f"same cell {cell}."
                 )
                 if cell in write_groups:
-                    count, distinct = write_groups[cell]
-                    detail += (
-                        f" {count} activations wrote this cell with {distinct} "
-                        f"distinct value(s); the replay swaps one writer per "
-                        f"value with the last writer {second}."
-                    )
+                    count, distinct, unknown, candidates, swapped = write_groups[cell]
+                    if not candidates:
+                        detail += (
+                            f" {count} activations wrote this cell, all with the "
+                            f"same value; the replay swaps the first two writers."
+                        )
+                    elif unknown or swapped < candidates:
+                        detail += (
+                            f" {count} activations wrote this cell: {distinct} "
+                            f"distinct recorded value(s) and {unknown} unrecorded "
+                            f"value(s). The replay swaps {swapped} of the "
+                            f"{candidates} earlier writers that could change the "
+                            f"final value with the last writer."
+                        )
+                    else:
+                        detail += (
+                            f" {count} activations wrote this cell with {distinct} "
+                            f"distinct value(s); the replay swaps one writer per "
+                            f"value with the last writer {second}."
+                        )
                 detail += note
             elif kind == "read":
                 direction = "read-after-write" if position[first] < position[second] else "write-after-read"

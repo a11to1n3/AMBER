@@ -40,7 +40,12 @@
   that use the same mix of reduction operators on a cell now get a
   cross-activation replay. These pairs use the five-replay budget first, and
   a reported pair left out by the budget says so in `divergence_reason`.
-  Two-writer reports are unchanged. Written values are compared only when
+  Two-writer reports are unchanged. Values written with
+  `agents.at[ids].set(...)` (scalars or lists, up to 64 agents) and scalar
+  reduction operands are recorded, so a lane writer or a reducer whose effect
+  differs gets a replay; writers whose values were not recorded are sampled
+  across the sweep, and an unconfirmed pair says in `divergence_reason` how
+  many of the cell's candidate pairs were replayed. Written values are compared only when
   they are built-in or NumPy scalars, so the monitor never calls a user
   `__hash__` or `__eq__`; other values count as unknown.
 - The order-independence certificate is withheld when the step also commits a

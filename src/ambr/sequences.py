@@ -621,19 +621,22 @@ class _BaseView:
                 written_columns=names,
                 target_ids=ids,
             )
-            return
-
-        # Subset: ensure columns exist, then hash-join update.
-        df = _ensure_columns(df, names)
-        update_df = pl.DataFrame(
-            [ids.rename("id")]
-            + [s.rename(name) for name, s in series_by_name.items()]
-        )
-        model._set_frame(
-            df.update(update_df, on="id", how="left"),
-            written_columns=names,
-            target_ids=ids,
-        )
+        else:
+            # Subset: ensure columns exist, then hash-join update.
+            df = _ensure_columns(df, names)
+            update_df = pl.DataFrame(
+                [ids.rename("id")]
+                + [s.rename(name) for name, s in series_by_name.items()]
+            )
+            model._set_frame(
+                df.update(update_df, on="id", how="left"),
+                written_columns=names,
+                target_ids=ids,
+            )
+        monitor = model._contract
+        if monitor.active and monitor._current_activation is not None and n <= 64:
+            # Lets the race check choose replays by the written values.
+            monitor.record_commit_values(columns, ids.to_list())
 
     def update_where(self, predicate, **columns: Any) -> None:
         """Filter then write — one-liner sugar for the vectorized lane.
