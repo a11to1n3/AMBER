@@ -120,7 +120,7 @@ def _ordered(items: Iterable[Any]) -> List[Any]:
 _UNSEEN_VALUE = object()
 
 #: Swapped-order replays run per step.
-MAX_REPLAYS_PER_STEP = 5
+_MAX_REPLAYS_PER_STEP = 5
 
 
 #: Exact built-in scalar types whose values can key a write as they are.
@@ -519,7 +519,7 @@ class ContractMonitor:
         if column in self._committed or column in self._reduced_cols:
             self._cross_path_cols.add(column)
 
-    def record_model_buffered_write(self, column: str, agent_id: Any, value: Any) -> None:
+    def _record_model_buffered_write(self, column: str, agent_id: Any, value: Any) -> None:
         """Attribute a buffered write made through a model method.
 
         Inside an activation it is that activation's write, as for an agent
@@ -552,13 +552,13 @@ class ContractMonitor:
                 act = self._current_activation
                 cells = [(column, aid) for aid in target_ids for column in columns]
                 self._activation_writes.setdefault(act, set()).update(cells)
-                # The committed values are unknown here. record_commit_values
+                # The committed values are unknown here. _record_commit_values
                 # replaces them when the caller knows them.
                 values = self._activation_write_values.setdefault(act, {})
                 for cell in cells:
                     values[cell] = object()
 
-    def record_commit_values(
+    def _record_commit_values(
         self, columns: Dict[str, Any], target_ids: List[Any], limit: int = 64
     ) -> None:
         """Record the values a lane commit by the current activation wrote.
@@ -741,7 +741,7 @@ class ContractMonitor:
         self._activation_reduction_ops = {}
         self._activation_draws = {}
 
-    def end_sweep(self, model: Any, rng_state: Any) -> None:
+    def _end_sweep(self, model: Any, rng_state: Any) -> None:
         """Record the state at the exit of the verified sweep."""
         if (
             not self.active
@@ -1170,7 +1170,7 @@ class ContractMonitor:
         # (first activation, second activation, target cell, conflict kind).
         hazards: List[Tuple[Any, Any, Tuple[str, Any], str]] = []
         seen_hazards: Set[Tuple[Any, Any, Tuple[str, Any], str]] = set()
-        max_replays = MAX_REPLAYS_PER_STEP
+        max_replays = _MAX_REPLAYS_PER_STEP
         # Reports that are not the first pair of their cell's coverage
         # (extra last-writer pairs and same-mix reducer pairs). Every other
         # report is replayed first, in report order, as before coverage

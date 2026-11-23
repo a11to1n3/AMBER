@@ -636,7 +636,7 @@ class _BaseView:
         monitor = model._contract
         if monitor.active and monitor._current_activation is not None and n <= 64:
             # Lets the race check choose replays by the written values.
-            monitor.record_commit_values(columns, ids.to_list())
+            monitor._record_commit_values(columns, ids.to_list())
 
     def update_where(self, predicate, **columns: Any) -> None:
         """Filter then write — one-liner sugar for the vectorized lane.

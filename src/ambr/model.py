@@ -2138,7 +2138,7 @@ class Model(BaseModel):
         finally:
             after = self._capture_rng_state()
             monitor.record_sweep_rng_check(self._rng_states_equal(before, after))
-            monitor.end_sweep(self, after)
+            monitor._end_sweep(self, after)
 
     def _sweep_boundary(self, rng_state: Any = None, *, capture_rng: bool = True) -> Any:
         """The committed frame, pending writes, and streams at a sweep boundary."""
@@ -2648,7 +2648,7 @@ class Model(BaseModel):
         for key, value in data.items():
             self._queue_write(key, agent_id, value)
             if monitor.active:
-                monitor.record_model_buffered_write(key, agent_id, value)
+                monitor._record_model_buffered_write(key, agent_id, value)
 
     def batch_update_agents(self, agent_ids: list, data: dict):
         """Deprecated: use ``agents.at[ids].set(**data)`` (or column assign).
