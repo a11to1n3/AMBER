@@ -9,10 +9,13 @@ reproduce it bit for bit.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+from ambr import Model
+from ambr import gpu as gpu_backend
 from ambr.gpu import (
     EVT_INIT,
     EVT_PRIORITY,
@@ -212,17 +215,60 @@ def test_2d_draws_are_keyed_by_flat_index():
     np.testing.assert_array_equal(grid.ravel(), host().random(12))
 
 
-def test_snapshot_restore_replays_draws():
-    rng = host()
+def test_snapshot_restore_replays_draws(xp):
+    rng = make_keyed_device_rng(SEED, xp=xp)
+    model = Model({"seed": SEED})
+    model._execution = SimpleNamespace(device_rng=rng)
     rng.begin_step(2, 1)
-    rng.set_agent_keys([5, 6, 7])
+    keys = xp.array([5, 6, 7], dtype=xp.int64)
+    rng.set_agent_keys(keys)
     rng.random(3)
-    snap = rng._snapshot_state()
-    first = rng.random(3)
+    snapshot = model._capture_rng_state()
+    saved = next(state for kind, _, _, state in snapshot.streams if kind == "device_rng")
+    assert isinstance(saved[-1], np.ndarray)
+    assert model._replay_values_equal(saved, rng._snapshot_state())
+    first = rng.random(3).tolist()
+    keys[:] = -1
     rng.set_agent_keys(None)
-    rng.random(9)
-    rng._restore_state(snap)
-    np.testing.assert_array_equal(rng.random(3), first)
+    rng.random()
+    assert model._restore_rng_state(snapshot)
+    assert isinstance(rng._keys, xp.ndarray)
+    assert rng.random(3).tolist() == first
+    rng._keys[:] = -2
+    assert model._restore_rng_state(snapshot)
+    assert rng.random(3).tolist() == first
+
+
+def test_replay_compares_device_arrays_by_shape_dtype_and_value(xp, monkeypatch):
+    model = Model({})
+    asarray = xp.asarray
+    if xp is np:
+        class SimulatedCuPyArray:
+            def __init__(self, values):
+                self.values = values
+
+            def __array__(self, *args, **kwargs):
+                raise TypeError("implicit host conversion is unsupported")
+
+            def __eq__(self, other):
+                return SimulatedCuPyArray(self.values == other.values)
+
+            def __bool__(self):
+                raise ValueError("array truth value is ambiguous")
+
+        fake_cupy = SimpleNamespace(ndarray=SimulatedCuPyArray, asnumpy=lambda a: a.values.copy())
+        monkeypatch.setattr(gpu_backend, "_cp", fake_cupy)
+        monkeypatch.setattr(gpu_backend, "GPU_AVAILABLE", True)
+
+        def asarray(values):
+            return SimulatedCuPyArray(np.asarray(values))
+
+    values = np.array([1.0, np.nan])
+    original = {"state": (0, asarray(values))}
+    assert model._replay_values_equal(original, {"state": (0, asarray(values.copy()))})
+    assert model._replay_values_equal(original, {"state": (0, values)})
+    for other in (values.astype(np.float32), values.reshape(1, 2), [0.0, np.nan]):
+        assert not model._replay_values_equal(original, {"state": (0, asarray(other))})
 
 
 def test_is_a_device_rng_and_rejects_unknown_attributes():

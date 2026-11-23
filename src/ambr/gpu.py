@@ -45,9 +45,13 @@ def to_device(array):
     return _cp.asarray(array) if GPU_AVAILABLE else _np.asarray(array)
 
 
+def _is_cupy_array(array) -> bool:
+    return GPU_AVAILABLE and isinstance(array, _cp.ndarray)
+
+
 def to_host(array):
     """Move a device array back to host as a NumPy array."""
-    if GPU_AVAILABLE and isinstance(array, _cp.ndarray):
+    if _is_cupy_array(array):
         return _cp.asnumpy(array)
     return _np.asarray(array)
 
@@ -455,12 +459,16 @@ class KeyedDeviceRNG(DeviceRNG):
     # --- replay hooks used by Model ----------------------------------------
 
     def _snapshot_state(self):
-        keys = None if self._keys is None else self._keys.copy()
+        keys = self._keys
+        if keys is not None:
+            keys = to_host(keys) if self._on_device() else keys.copy()
         return (self.step, self._event, self._stream, self._scalar_stream, self._cursor, keys)
 
     def _restore_state(self, snapshot):
-        self.step, self._event, self._stream, self._scalar_stream, self._cursor, keys = snapshot
-        self._keys = None if keys is None else keys.copy()
+        step, event, stream, scalar_stream, cursor, keys = snapshot
+        restored_keys = None if keys is None else self._xp.array(keys, copy=True)
+        self.step, self._event, self._stream = step, event, stream
+        self._scalar_stream, self._cursor, self._keys = scalar_stream, cursor, restored_keys
 
 
 def make_keyed_device_rng(seed=None, xp=None) -> KeyedDeviceRNG:
