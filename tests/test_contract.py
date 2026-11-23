@@ -715,8 +715,12 @@ def _scoped_model(extra):
         def setup(self):
             self.add_agents(50, agent_class=_Earner, wealth=1, other=0)
             self.history = []
-            if extra == "opaque_attribute":
+            if extra in ("opaque_attribute", "opaque_changed"):
                 self.box = _OpaqueBox()
+            elif extra == "opaque_lock":
+                import threading
+
+                self.lock = threading.Lock()
 
         def step(self):
             self.agents.step()
@@ -730,6 +734,8 @@ def _scoped_model(extra):
                 self.history.append(int(self.agents.wealth.sum()))
             elif extra == "agent_private":
                 self.agents.by_id(0)._last_step = self.t
+            elif extra == "opaque_changed":
+                self.box.n = self.t
 
     return Model
 
@@ -738,10 +744,14 @@ def _scoped_model(extra):
     ("none", None),
     ("column", "wrote column 'other' outside the verified activation sweep"),
     ("frame", "wrote the agent frame outside the verified activation sweep"),
-    ("model_attribute", "changed model or private agent state outside"),
-    ("model_in_place", "changed model or private agent state outside"),
+    ("model_attribute", "changed model or private agent state outside the verified activation sweep (model attribute 'total')"),
+    ("model_in_place", "changed model or private agent state outside the verified activation sweep (model attribute 'history')"),
     ("agent_private", "changed model or private agent state outside"),
-    ("opaque_attribute", "could not be compared with step entry"),
+    # An object kept by identity does not withhold the certificate; a change
+    # to its own attributes does, and the reason names the attribute.
+    ("opaque_attribute", None),
+    ("opaque_lock", None),
+    ("opaque_changed", "outside the verified activation sweep (model attribute 'box')"),
 ])
 def test_certificate_covers_only_a_step_that_is_the_verified_sweep(extra, reason, monkeypatch):
     monkeypatch.setattr("ambr._certify._interpreter_instrumented", lambda: False)
@@ -751,6 +761,16 @@ def test_certificate_covers_only_a_step_that_is_the_verified_sweep(extra, reason
         if reason is None:
             assert cert.conditional_guarantee == "established"
             assert cert.certification_reason is None
+            if extra == "opaque_attribute":
+                assert any(
+                    "Model attribute 'box' holds a _OpaqueBox kept by identity" in note
+                    for note in cert.assumptions
+                )
+            elif extra == "opaque_lock":
+                assert any(
+                    "Model attribute 'lock'" in note and "internal state" in note
+                    for note in cert.assumptions
+                )
         else:
             assert cert.conditional_guarantee == "not_established"
             assert cert.certification is None

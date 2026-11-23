@@ -18,8 +18,15 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, NamedTuple, Type, Optional, Tuple, TYPE_CHECKING
 from collections import Counter, OrderedDict, defaultdict, deque
 from contextlib import contextmanager
-from functools import lru_cache
+import abc
 import copy
+import datetime as _datetime
+import decimal
+import enum
+import fractions
+import logging
+import math
+import pathlib
 import random
 import types
 from secrets import randbits
@@ -96,6 +103,115 @@ def _replay_failure_reason(exc: BaseException) -> str:
     if len(text) > 240:
         return text[:237] + "..."
     return text
+
+
+try:  # Python 3.9+
+    from zoneinfo import ZoneInfo as _ZoneInfo
+except ImportError:  # pragma: no cover
+    _ZoneInfo = None
+
+# Time zones whose comparison runs no user code.
+_REPLAY_TZ_TYPES = tuple(t for t in (_datetime.timezone, _ZoneInfo) if t is not None)
+
+
+def _replay_tz_ok(value: Any) -> bool:
+    tz = value.tzinfo
+    return tz is None or type(tz) in _REPLAY_TZ_TYPES
+
+
+# Immutable standard-library value types, matched by exact type. Each maps to
+# a function giving an exact, comparable key that runs no user code. They
+# need no restore: the snapshot rebinds the same object.
+_REPLAY_VALUE_KEYS = {
+    _datetime.date: lambda v: v.__reduce__()[1],
+    _datetime.datetime: lambda v: v.__reduce__()[1],
+    _datetime.time: lambda v: v.__reduce__()[1],
+    _datetime.timedelta: lambda v: (v.days, v.seconds, v.microseconds),
+    _datetime.timezone: lambda v: v.__reduce__()[1],
+    decimal.Decimal: lambda v: v.as_tuple(),
+    fractions.Fraction: lambda v: (v.numerator, v.denominator),
+    range: lambda v: (v.start, v.stop, v.step),
+    pathlib.PurePosixPath: str,
+    pathlib.PureWindowsPath: str,
+    pathlib.PosixPath: str,
+    pathlib.WindowsPath: str,
+}
+
+# Objects kept by identity only. Logging objects reach process-wide logging
+# state, so their attributes are not snapshotted either.
+_REPLAY_OPAQUE_TYPES = (
+    logging.Logger,
+    logging.LoggerAdapter,
+    logging.Handler,
+    logging.Manager,
+    logging.PlaceHolder,
+)
+
+# Metaclasses whose classes the snapshot treats as plain classes.
+_REPLAY_PLAIN_METACLASSES = (type, abc.ABCMeta)
+
+
+def _replay_float_same(left: float, right: float) -> bool:
+    """Exact float identity: NaN matches NaN, and ``-0.0`` differs from ``0.0``."""
+    if left != left:
+        return right != right
+    return left == right and math.copysign(1.0, left) == math.copysign(1.0, right)
+
+
+def _replay_numpy_scalar_same(left: Any, right: Any) -> bool:
+    """Compare two NumPy scalars of the same type.
+
+    NaN matches NaN in each real and imaginary part, ``-0.0`` differs from
+    ``0.0``, and NaT matches NaT.
+    """
+    if left.dtype != right.dtype:
+        return False
+    kind = left.dtype.kind
+    if kind == "c":
+        return (
+            _replay_numpy_scalar_same(left.real, right.real)
+            and _replay_numpy_scalar_same(left.imag, right.imag)
+        )
+    if kind == "f":
+        if np.isnan(left):
+            return bool(np.isnan(right))
+        return bool(left == right) and bool(np.signbit(left) == np.signbit(right))
+    if kind in "mM":
+        if np.isnat(left) or np.isnat(right):
+            return bool(np.isnat(left) and np.isnat(right))
+        return bool(left == right)
+    return bool(left == right)
+
+
+def _replay_typed_set(items: Any) -> set:
+    """Set items paired with their types, so ``{1}`` and ``{True}`` differ."""
+    return {(type(item), item) for item in items}
+
+
+def _replay_frames_same(left: Any, right: Any) -> bool:
+    """Exact equality of two Polars frames or series (null and NaN match)."""
+    if type(left) is not type(right):
+        return False
+    if type(left) is pl.DataFrame:
+        return left.schema == right.schema and bool(left.equals(right))
+    return (
+        left.name == right.name
+        and left.dtype == right.dtype
+        and bool(left.equals(right, check_dtypes=True, check_names=True))
+    )
+
+
+def _replay_arrays_same(left: np.ndarray, right: np.ndarray) -> bool:
+    """Element-wise equality with NaN matching NaN and NaT matching NaT."""
+    if left.shape != right.shape or left.dtype != right.dtype:
+        return False
+    kind = left.dtype.kind
+    if kind in "fc":
+        return bool(np.array_equal(left, right, equal_nan=True))
+    if kind in "mM":
+        # NaT is one bit pattern, so equal bits are equal values.
+        return bool(np.array_equal(left.view(np.int64), right.view(np.int64)))
+    return bool(np.array_equal(left, right))
 
 
 class Model(BaseModel):
@@ -847,16 +963,15 @@ class Model(BaseModel):
         entry_world = getattr(self, "_pre_step_world", None)
         reasons: List[str] = []
         post_world = self._capture_replay_world(
-            self._replay_world_objects(entry_world), reasons
+            self._replay_world_objects(entry_world), reasons, entry_world
         )
         if entry_world is None:
             reasons.insert(0, getattr(self, "_pre_step_world_reason", None))
         if entry_world is None or post_world is None:
             reason = next((text for text in reasons if text), None)
-            return _ReplayOutcome(None, reason or (
-                "step-entry model or agent state could not be captured; "
-                "the swap was not run"
-            ))
+            return _ReplayOutcome(None, (
+                reason or "step-entry model or agent state could not be captured"
+            ) + "; the swap was not run")
         entry_globals = getattr(self, "_pre_step_globals", None)
         forward_globals = self._capture_global_random()
 
@@ -892,14 +1007,17 @@ class Model(BaseModel):
         reason: Optional[str] = None
         try:
             entry_rng_ok = self._restore_rng_state(entry_rng)
-            entry_world_ok = self._restore_replay_world(entry_world)
+            failures: List[str] = []
+            entry_world_ok = self._restore_replay_world(entry_world, failures)
             # The global ``random`` and legacy ``numpy.random`` streams are
             # not model state, but agent code often draws from them.
             entry_globals_ok = self._restore_global_random(entry_globals)
             if not entry_rng_ok:
                 reason = "step-entry random streams could not be restored"
             elif not entry_world_ok:
-                reason = "step-entry model or agent state could not be restored"
+                reason = "step-entry model or agent state could not be restored" + (
+                    f" ({failures[0]})" if failures else ""
+                )
             elif not entry_globals_ok:
                 reason = "the step-entry global random states could not be restored"
             else:
@@ -936,14 +1054,17 @@ class Model(BaseModel):
         finally:
             self._current_step_data = forward_step_data
             post_rng_ok = self._restore_rng_state(post_rng)
-            post_world_ok = self._restore_replay_world(post_world)
+            post_failures: List[str] = []
+            post_world_ok = self._restore_replay_world(post_world, post_failures)
             post_globals_ok = self._restore_global_random(forward_globals)
             if not post_rng_ok:
                 witness = None
                 reason = "forward random streams could not be restored"
             elif not post_world_ok:
                 witness = None
-                reason = "forward model state could not be restored"
+                reason = "forward model state could not be restored" + (
+                    f" ({post_failures[0]})" if post_failures else ""
+                )
             elif not post_globals_ok:
                 witness = None
                 reason = "the forward global random states could not be restored"
@@ -996,22 +1117,128 @@ class Model(BaseModel):
     def _step_changed_replay_state(self) -> Optional[bool]:
         """Whether model or private agent state differs from step entry.
 
-        Compares the state graph a replay restores with its step-entry
-        snapshot. None when either cannot be captured or compared.
+        None when either state cannot be captured or compared.
+        """
+        status, _where = self._step_replay_state_check()
+        if status == "unknown":
+            return None
+        return status == "changed"
+
+    def _step_replay_state_check(self) -> Tuple[str, Optional[str]]:
+        """Compare model and private agent state with its step-entry snapshot.
+
+        Returns ``("same", None)``, ``("changed", where)``, or
+        ``("unknown", where)``. ``where`` names the attribute that differs or
+        could not be represented, when one is known.
         """
         entry = getattr(self, "_pre_step_world", None)
         if entry is None:
-            return None
+            return "unknown", getattr(self, "_pre_step_world_reason", None)
         if self._replay_world_matches_live(entry):
-            return False
-        current = self._capture_replay_world(self._replay_world_objects(entry))
+            return "same", None
+        reasons: List[str] = []
+        current = self._capture_replay_world(self._replay_world_objects(entry), reasons, entry)
         if current is None:
-            return None
+            return "unknown", reasons[0] if reasons else None
+        differs: List[str] = []
         try:
-            same = self._replay_worlds_equal(entry, current)
-        except _ReplayAliasMismatch:
-            return True
-        return None if same is None else not same
+            same = self._replay_worlds_equal(entry, current, differs)
+        except _ReplayAliasMismatch as exc:
+            return "changed", str(exc) or None
+        if same is None:
+            return "unknown", differs[0] if differs else None
+        if same:
+            return "same", None
+        return "changed", differs[0] if differs else None
+
+    def _replay_identity_notes(self) -> Tuple[str, ...]:
+        """Describe step-entry state that is compared by identity only.
+
+        These objects do not withhold the certificate; their notes are added
+        to its assumptions.
+        """
+        world = getattr(self, "_pre_step_world", None)
+        if world is None or len(world) < 4 or not world[3]:
+            return ()
+        owners = world[2]
+        notes: List[str] = []
+        items = list(world[3].items())
+        for (on_model, name, type_name, mode), (count, index) in items[:8]:
+            if on_model:
+                where = f"Model attribute {name!r}"
+            else:
+                where = f"Private attribute {name!r} of agent {self._replay_owner_id(owners, index)!r}"
+                if count > 1:
+                    where += f" (and {count - 1} other agent(s))"
+            if mode == "attributes":
+                notes.append(
+                    f"{where} holds a {type_name} kept by identity: its own attributes "
+                    f"are compared with step entry and restored for replay, but the "
+                    f"objects it refers to are compared by identity only."
+                )
+            else:
+                notes.append(
+                    f"{where} holds a {type_name} kept by identity: its internal state "
+                    f"is not compared with step entry or restored for replay."
+                )
+        if len(items) > 8:
+            notes.append(f"{len(items) - 8} more attribute(s) hold objects kept by identity.")
+        return tuple(notes)
+
+    @staticmethod
+    def _replay_owner_id(owners: Tuple[Any, ...], index: int) -> Any:
+        try:
+            return object.__getattribute__(owners[index], "__dict__").get("id")
+        except Exception:
+            return index
+
+    def _replay_binding_label(self, world: Any, key: Tuple[int, str, str]) -> str:
+        index, _where, name = key
+        if index < 0:
+            return f"model attribute {name!r}"
+        return f"attribute {name!r} of agent {self._replay_owner_id(world[2], index)!r}"
+
+    @staticmethod
+    def _replay_children(node: Tuple[str, Any, Any]) -> List[Tuple[str, Any]]:
+        """The references held by one snapshot node."""
+        kind, _obj, payload = node
+        if kind in ("list", "tuple", "function", "method", "wrapper"):
+            return list(payload)
+        if kind == "dict":
+            pairs, factory = payload
+            refs = [ref for _key, ref in pairs]
+            if factory is not None:
+                refs.append(factory)
+            return refs
+        if kind == "view":
+            return [payload[0]]
+        if kind == "cell":
+            return [] if payload is None else [payload]
+        if kind == "class":
+            namespace, bases, _name, _qualname = payload
+            return [ref for _name, ref in namespace] + [bases]
+        if kind == "object":
+            return [ref for _key, ref in payload[0]]
+        return []
+
+    def _replay_node_label(self, world: Any, oid: int) -> Optional[str]:
+        """Name the attribute through which ``world`` reaches node ``oid``."""
+        try:
+            bindings, nodes = world[0], world[1]
+            for key, ref in bindings:
+                stack = [ref]
+                seen = set()
+                while stack:
+                    kind, payload = stack.pop()
+                    if kind != "node" or payload in seen:
+                        continue
+                    if payload == oid:
+                        return self._replay_binding_label(world, key)
+                    seen.add(payload)
+                    stack.extend(self._replay_children(nodes[payload]))
+        except Exception:
+            return None
+        return None
 
     def _replay_world_matches_live(self, world: Any) -> bool:
         """True when the live state still matches ``world`` exactly.
@@ -1024,7 +1251,7 @@ class Model(BaseModel):
         objects.
         """
         try:
-            bindings, nodes, owners = world
+            bindings, nodes, owners = world[0], world[1], world[2]
             live_owners = self._agent_objects()
             if len(live_owners) != len(owners) or any(
                 a is not b for a, b in zip(live_owners, owners)
@@ -1037,7 +1264,7 @@ class Model(BaseModel):
                 kind = ref[0]
                 if kind == "node":
                     return value is nodes[ref[1]][1]
-                if kind == "anchor":
+                if kind == "anchor" or kind == "external":
                     return value is ref[1]
                 recorded = ref[1]
                 if type(value) is not type(recorded):
@@ -1048,7 +1275,7 @@ class Model(BaseModel):
 
             refs = dict(bindings)
             found = 0
-            slots_of = Model._replay_slots
+            slots_cache: Dict[int, Tuple[Tuple[str, Any], ...]] = {}
             for index, owner in enumerate((self, *owners), start=-1):
                 attrs = object.__getattribute__(owner, "__dict__")
                 owned = self._is_replay_model_attr if index < 0 else Model._is_replay_agent_attr
@@ -1058,7 +1285,7 @@ class Model(BaseModel):
                         if ref is None or not matches(value, ref):
                             return False
                         found += 1
-                for name, descriptor in slots_of(type(owner)):
+                for name, descriptor in Model._replay_slots(type(owner), slots_cache):
                     if owned(name):
                         try:
                             value = descriptor.__get__(owner, type(owner))
@@ -1088,9 +1315,7 @@ class Model(BaseModel):
                     if factory is not None and not matches(obj.default_factory, factory):
                         return False
                 elif kind == "set":
-                    if len(obj) != len(payload) or {(type(x), x) for x in obj} != {
-                        (type(x), x) for x in payload
-                    }:
+                    if len(obj) != len(payload) or _replay_typed_set(obj) != _replay_typed_set(payload):
                         return False
                 elif kind == "ndarray":
                     if (
@@ -1099,7 +1324,11 @@ class Model(BaseModel):
                     ):
                         return False
                 elif kind == "view":
-                    if obj.flags.writeable != payload[1]:
+                    if (
+                        obj.flags.writeable != payload[1]
+                        or obj.shape != payload[2]
+                        or obj.strides != payload[3]
+                    ):
                         return False
                 elif kind == "function":
                     if not all(
@@ -1129,6 +1358,22 @@ class Model(BaseModel):
                             for (key, value), (recorded, ref) in zip(current, namespace)
                         )
                     ):
+                        return False
+                elif kind == "object":
+                    attrs, _external = payload
+                    live = self._replay_instance_items(obj)
+                    if live is None or len(live) != len(attrs) or any(
+                        key != recorded or not matches(value, ref)
+                        for (key, value), (recorded, ref) in zip(live, attrs)
+                    ):
+                        return False
+                elif kind == "stream":
+                    if not self._replay_values_equal(
+                        self._replay_stream_state(obj, payload[0]), payload[1]
+                    ):
+                        return False
+                elif kind == "frame":
+                    if not _replay_frames_same(obj, payload):
                         return False
                 # Tuples, methods, and descriptor wrappers cannot change;
                 # their mutable children are nodes of their own.
@@ -1276,13 +1521,20 @@ class Model(BaseModel):
     )
 
     @staticmethod
-    @lru_cache(maxsize=256)
-    def _replay_slots(cls: type) -> Tuple[Tuple[str, Any], ...]:
+    def _replay_slots(
+        cls: type, cache: Optional[Dict[int, Tuple[Tuple[str, Any], ...]]] = None
+    ) -> Tuple[Tuple[str, Any], ...]:
         """``(name, member descriptor)`` for each ``__slots__`` entry of ``cls``.
 
         Slot values are not in the instance ``__dict__``, so the snapshot
-        reads and writes them through their descriptors.
+        reads and writes them through their descriptors. ``cache`` holds the
+        results of one snapshot pass, keyed by class ID; no global cache
+        keeps classes alive.
         """
+        if cache is not None:
+            found_before = cache.get(id(cls))
+            if found_before is not None:
+                return found_before
         found: List[Tuple[str, Any]] = []
         seen = set()
         for klass in cls.__mro__:
@@ -1299,8 +1551,10 @@ class Model(BaseModel):
                 if isinstance(descriptor, types.MemberDescriptorType) and name not in seen:
                     seen.add(name)
                     found.append((name, descriptor))
-        return tuple(found)
-
+        result = tuple(found)
+        if cache is not None:
+            cache[id(cls)] = result
+        return result
 
     # Immutable built-in scalars. Only these exact types are restored by
     # rebinding: a subclass can carry instance state or override comparison.
@@ -1312,6 +1566,13 @@ class Model(BaseModel):
     # default_factory). Exact types only, so restoring them runs no user code.
     _REPLAY_DICT_TYPES = frozenset({dict, OrderedDict, Counter, defaultdict, AttrDict})
 
+    # Mutable built-in containers whose contents the snapshot cannot restore
+    # without running a subclass's methods, or at all. State that reaches one
+    # (other than the exact types handled above) is not snapshotted.
+    _REPLAY_UNSUPPORTED_CONTAINERS = (
+        list, dict, set, frozenset, deque, bytearray, memoryview, np.ndarray,
+    )
+
     @staticmethod
     def _is_numpy_scalar(value: Any) -> bool:
         return (
@@ -1322,17 +1583,24 @@ class Model(BaseModel):
 
     @staticmethod
     def _is_replay_leaf(value: Any) -> bool:
-        """True when ``value`` can be restored by rebinding, not by mutation.
+        """True when ``value`` is immutable and compared by value.
 
         Covers exact built-in scalars, NumPy scalars other than void and
-        object scalars, and tuples and frozensets made only of such values.
+        object scalars, enum members, the immutable standard-library values
+        in ``_REPLAY_VALUE_KEYS`` (dates and times with a standard time
+        zone, ``Decimal``, ``Fraction``, ``range``, and paths), and tuples
+        and frozensets made only of such values. Leaves need no restore.
         """
         kind = type(value)
         if kind in Model._REPLAY_SCALAR_TYPES:
             return True
         if kind is tuple or kind is frozenset:
             return all(Model._is_replay_leaf(item) for item in value)
-        return Model._is_numpy_scalar(value)
+        if Model._is_numpy_scalar(value):
+            return True
+        if kind in _REPLAY_VALUE_KEYS:
+            return kind not in (_datetime.datetime, _datetime.time) or _replay_tz_ok(value)
+        return isinstance(kind, enum.EnumMeta)
 
     @staticmethod
     def _is_replay_tuple(value: Any) -> bool:
@@ -1349,11 +1617,7 @@ class Model(BaseModel):
     @staticmethod
     def _ndarray_replay_supported(value: np.ndarray) -> bool:
         dtype = value.dtype
-        if dtype.hasobject:
-            return False
-        return bool(
-            np.issubdtype(dtype, np.number) or np.issubdtype(dtype, np.bool_)
-        )
+        return not dtype.hasobject and dtype.kind in "biufcmMUS"
 
     @classmethod
     def _replay_array_root(cls, value: np.ndarray) -> np.ndarray:
@@ -1375,85 +1639,313 @@ class Model(BaseModel):
             raise _ReplayUnsupported(f"a {root.dtype} array")
         return root
 
+    @staticmethod
+    def _is_replay_record(kind: type) -> bool:
+        """A ``SimpleNamespace`` or a dataclass instance's type."""
+        if kind is types.SimpleNamespace:
+            return True
+        return any("__dataclass_fields__" in klass.__dict__ for klass in kind.__mro__)
+
+    @staticmethod
+    def _replay_instance_state(
+        value: Any, cache: Optional[Dict[int, Any]] = None
+    ) -> Optional[Tuple[Optional[Dict[str, Any]], Tuple[Tuple[str, Any], ...]]]:
+        """The instance ``__dict__`` and slots of a plain Python object.
+
+        A plain object is a ``SimpleNamespace`` or an instance of a class
+        whose bases are all Python classes (no built-in base other than
+        ``object``) with an ordinary metaclass, so its whole state is its
+        ``__dict__`` and slots. Reads them through the built-in descriptors
+        only, so no user code runs. None for any other object.
+        """
+        kind = type(value)
+        if kind is types.SimpleNamespace:
+            return object.__getattribute__(value, "__dict__"), ()
+        if type(kind) not in _REPLAY_PLAIN_METACLASSES:
+            return None
+        mro = kind.__mro__
+        if mro[-1] is not object:
+            return None
+        for klass in mro[:-1]:
+            if not Model._is_python_class(klass, cache):
+                return None
+        instance_dict = None
+        for klass in mro:
+            descriptor = klass.__dict__.get("__dict__")
+            if descriptor is not None:
+                if type(descriptor) is not types.GetSetDescriptorType:
+                    return None
+                instance_dict = descriptor.__get__(value, kind)
+                if type(instance_dict) is not dict:
+                    return None
+                break
+        return instance_dict, Model._replay_slots(kind, cache)
+
+    # Class-dict entries that only a class implemented in C has.
+    _REPLAY_C_CLASS_ENTRIES = (
+        types.WrapperDescriptorType,
+        types.MethodDescriptorType,
+        types.ClassMethodDescriptorType,
+        types.BuiltinFunctionType,
+    )
+
+    @staticmethod
+    def _is_python_class(klass: type, cache: Optional[Dict[Any, Any]] = None) -> bool:
+        """Whether ``klass`` was written in Python, so it adds no C-level state.
+
+        Extension types can be heap types too, so the class dict is checked:
+        C methods, C slots, and C members exist only on extension types.
+        """
+        key = ("python", id(klass))
+        if cache is not None and key in cache:
+            return cache[key]
+        found = bool(klass.__flags__ & _TPFLAGS_HEAPTYPE)
+        if found:
+            slots = klass.__dict__.get("__slots__", ())
+            if isinstance(slots, str):
+                slots = (slots,)
+            try:
+                declared = set(slots)
+            except TypeError:
+                declared = set()
+            for name, entry in klass.__dict__.items():
+                kind = type(entry)
+                if issubclass(kind, Model._REPLAY_C_CLASS_ENTRIES):
+                    found = False
+                elif kind is types.GetSetDescriptorType:
+                    found = name in ("__dict__", "__weakref__")
+                elif kind is types.MemberDescriptorType:
+                    found = name in declared or any(
+                        name.endswith(slot) for slot in declared if slot.startswith("__")
+                    )
+                if not found:
+                    break
+        if cache is not None:
+            cache[key] = found
+        return found
+
+    @staticmethod
+    def _replay_instance_items(
+        value: Any, cache: Optional[Dict[int, Any]] = None
+    ) -> Optional[List[Tuple[Tuple[str, str], Any]]]:
+        """``((place, name), value)`` for each attribute of a plain object."""
+        state = Model._replay_instance_state(value, cache)
+        if state is None:
+            return None
+        instance_dict, slots = state
+        items: List[Tuple[Tuple[str, str], Any]] = []
+        if instance_dict is not None:
+            for name, item in instance_dict.items():
+                if type(name) is not str:
+                    return None
+                items.append((("dict", name), item))
+        kind = type(value)
+        for name, descriptor in slots:
+            try:
+                item = descriptor.__get__(value, kind)
+            except AttributeError:
+                continue
+            items.append((("slot", name), item))
+        return items
+
+    @staticmethod
+    def _restore_instance_items(
+        obj: Any, items: List[Tuple[Tuple[str, str], Any]], cache: Dict[int, Any]
+    ) -> None:
+        """Put back the attributes :meth:`_replay_instance_items` returned."""
+        state = Model._replay_instance_state(obj, cache)
+        if state is None:
+            raise ValueError("the object is no longer a plain object")
+        instance_dict, slots = state
+        desired = [(name, value) for (place, name), value in items if place == "dict"]
+        if instance_dict is None:
+            if desired:
+                raise ValueError("the object lost its __dict__")
+        else:
+            current = list(instance_dict.items())
+            if len(current) != len(desired) or any(
+                key != name or value is not wanted
+                for (key, value), (name, wanted) in zip(current, desired)
+            ):
+                dict.clear(instance_dict)
+                dict.update(instance_dict, desired)
+        wanted_slots = {name: value for (place, name), value in items if place == "slot"}
+        kind = type(obj)
+        for name, descriptor in slots:
+            if name in wanted_slots:
+                try:
+                    present = descriptor.__get__(obj, kind) is wanted_slots[name]
+                except AttributeError:
+                    present = False
+                if not present:
+                    descriptor.__set__(obj, wanted_slots[name])
+            else:
+                try:
+                    descriptor.__delete__(obj)
+                except AttributeError:
+                    pass
+
+    @staticmethod
+    def _replay_stream_kind(value: Any) -> Optional[str]:
+        """The kind of a random stream whose state can be saved, or None."""
+        kind = type(value)
+        if kind is random.Random:
+            return "random"
+        if kind is np.random.RandomState:
+            return "randomstate"
+        if kind is np.random.Generator and type(value.bit_generator).__module__.startswith("numpy.random"):
+            return "generator"
+        return None
+
+    @staticmethod
+    def _replay_stream_state(obj: Any, kind: str) -> Any:
+        if kind == "random":
+            return obj.getstate()
+        if kind == "generator":
+            return copy.deepcopy(obj.bit_generator.state)
+        return obj.get_state()
+
+    def _replay_stream_same(self, kind: str, left: Any, right: Any) -> bool:
+        if kind == "random":
+            return left == right
+        return self._replay_values_equal(left, right)
+
+    @staticmethod
+    def _replay_set_stream_state(obj: Any, kind: str, state: Any) -> None:
+        if kind == "random":
+            obj.setstate(state)
+        elif kind == "generator":
+            obj.bit_generator.state = copy.deepcopy(state)
+        else:
+            obj.set_state(state)
+
     def _capture_replay_world(
         self,
         remembered: Optional[Dict[int, Any]] = None,
         reasons: Optional[List[str]] = None,
-    ) -> Optional[Tuple[Tuple[Tuple[Tuple[int, str], Tuple[str, Any]], ...], Dict[int, Any], Tuple[Any, ...]]]:
+        remembered_from: Any = None,
+    ) -> Optional[Tuple[Any, Dict[int, Any], Tuple[Any, ...], Dict[Any, List[int]]]]:
         """Snapshot the user state a swapped replay can change.
 
         The snapshot covers the model's public and user-owned private
         attributes and the private attributes of every tracked agent (public
-        agent attributes live in the frame), with the supported objects they
-        reach. Containers are recorded as the live objects plus their child
-        structure, so a later restore can mutate them in place and keep
-        aliases. The model, its agents, and its random streams are kept by
-        identity. Returns None when any reachable value cannot be put back
-        safely, and appends the cause to ``reasons``.
+        agent attributes live in the frame), with the objects they reach.
+        Containers, dataclass instances, namespaces, random streams, and
+        Polars frames are recorded as the live objects plus their state, so
+        a later restore can update them in place and keep aliases. Immutable
+        values are kept as they are. The model, its agents, and its random
+        streams are kept by identity.
+
+        Any other object is kept by identity too. When it is a plain Python
+        object, its own attributes are recorded one level deep (containers
+        it holds are followed, other objects it refers to are kept by
+        identity); otherwise its internal state is not recorded. These
+        objects are listed in the fourth item of the result, so the
+        certificate can name them.
+
+        Returns None when the state reaches a mutable container the replay
+        cannot restore (a container or array subclass, a ``bytearray``, an
+        array that does not own its memory, a set or dict key that is not an
+        immutable value) or a module, and appends the cause, naming the
+        attribute, to ``reasons``. ``remembered`` holds the objects of an
+        earlier snapshot ``remembered_from``, which are captured even when
+        no attribute reaches them any more.
         """
         nodes: Dict[int, Any] = {}
         anchors = self._replay_anchors()
         # Locals, not attribute lookups: this runs for every private value of
         # every agent, and the model's __getattribute__ is not free.
         scalar_types = Model._REPLAY_SCALAR_TYPES
+        dict_types = Model._REPLAY_DICT_TYPES
         is_leaf = Model._is_replay_leaf
         is_code = Model._is_replay_code
+        slots_cache: Dict[int, Any] = {}
+        # (on the model, attribute, type name, mode) -> [count, first owner].
+        identity_notes: Dict[Tuple[bool, str, str, str], List[int]] = {}
+        current: List[Any] = [None]
 
-        def capture(value: Any) -> Tuple[str, Any]:
+        def note(value: Any, mode: str) -> None:
+            key = current[0]
+            if key is None:
+                return
+            index, _place, name = key
+            entry = identity_notes.setdefault(
+                (index < 0, name, type(value).__name__, mode), [0, index]
+            )
+            entry[0] += 1
+
+        def capture_child(child: Any) -> Tuple[str, Any]:
+            """Capture an attribute of an object kept by identity."""
+            mark = len(nodes)
+            try:
+                return capture(child, True)
+            except (_ReplayUnsupported, RecursionError):
+                if len(nodes) > mark:
+                    for oid in list(nodes)[mark:]:
+                        del nodes[oid]
+                return ("external", child)
+
+        def capture(value: Any, opaque: bool = False) -> Tuple[str, Any]:
             kind = type(value)
-            if kind in scalar_types or is_leaf(value) or is_code(value):
+            if kind in scalar_types:
                 return ("leaf", value)
             oid = id(value)
-            if oid in anchors:
-                return ("anchor", value)
             if oid in nodes:
                 return ("node", oid)
+            if oid in anchors:
+                return ("anchor", value)
             # Containers are matched by exact type: a subclass can hold state
             # outside its items or override the methods a restore would call.
             if kind is list or kind is deque:
                 nodes[oid] = ("list", value, ())
                 nodes[oid] = ("list", value, tuple([
-                    ("leaf", item) if type(item) in scalar_types else capture(item)
+                    ("leaf", item) if type(item) in scalar_types else capture(item, opaque)
                     for item in value
                 ]))
-            elif Model._is_replay_tuple(value):
-                nodes[oid] = ("tuple", value, ())
-                nodes[oid] = ("tuple", value, tuple(capture(item) for item in value))
-            elif kind in self._REPLAY_DICT_TYPES:
-                if kind is AttrDict and object.__getattribute__(value, "__dict__"):
-                    raise _ReplayUnsupported("an AttrDict with instance attributes")
+            elif kind in dict_types:
+                if kind is AttrDict or kind is Counter or kind is OrderedDict:
+                    if object.__getattribute__(value, "__dict__"):
+                        raise _ReplayUnsupported(f"a {kind.__name__} with instance attributes")
                 nodes[oid] = ("dict", value, ((), None))
                 pairs = []
                 for key, item in value.items():
-                    if not self._is_replay_leaf(key):
-                        raise _ReplayUnsupported("a dict key that is not a scalar")
-                    pairs.append((key, capture(item)))
+                    if not is_leaf(key):
+                        raise _ReplayUnsupported("a dict key that is not an immutable value")
+                    pairs.append((key, capture(item, opaque)))
                 factory = None
                 if kind is defaultdict:
                     try:
-                        factory = capture(value.default_factory)
+                        factory = capture(value.default_factory, opaque)
                     except _ReplayUnsupported as exc:
                         raise _ReplayUnsupported(
                             f"a defaultdict whose default_factory is {exc}"
                         ) from None
                 nodes[oid] = ("dict", value, (tuple(pairs), factory))
             elif kind is set:
-                if not all(self._is_replay_leaf(item) for item in value):
-                    raise _ReplayUnsupported("a set with an item that is not a scalar")
+                if not all(is_leaf(item) for item in value):
+                    raise _ReplayUnsupported("a set with an item that is not an immutable value")
                 nodes[oid] = ("set", value, frozenset(value))
+            elif is_leaf(value) or is_code(value):
+                return ("leaf", value)
+            elif Model._is_replay_tuple(value):
+                nodes[oid] = ("tuple", value, ())
+                nodes[oid] = ("tuple", value, tuple(capture(item, opaque) for item in value))
             elif isinstance(value, np.ndarray):
                 root = self._replay_array_root(value)
                 if root is value:
                     nodes[oid] = ("ndarray", value, self._array_snapshot(value))
                 else:
-                    nodes[oid] = ("view", value, (capture(root), value.flags.writeable))
+                    nodes[oid] = ("view", value, (
+                        capture(root, opaque), value.flags.writeable, value.shape, value.strides
+                    ))
             elif kind is types.FunctionType:
                 # A function's own state: code, defaults, attributes, closure
                 # cells, and names. The module globals it reaches are not
                 # part of the snapshot.
                 nodes[oid] = ("function", value, ())
                 nodes[oid] = ("function", value, tuple(
-                    capture(getattr(value, name)) for name in self._REPLAY_FUNCTION_FIELDS
+                    capture(getattr(value, name), opaque)
+                    for name in self._REPLAY_FUNCTION_FIELDS
                 ))
             elif kind is types.CellType:
                 nodes[oid] = ("cell", value, None)
@@ -1462,94 +1954,148 @@ class Model(BaseModel):
                 except ValueError:
                     nodes[oid] = ("cell", value, None)
                 else:
-                    nodes[oid] = ("cell", value, capture(contents))
+                    nodes[oid] = ("cell", value, capture(contents, opaque))
             elif kind is types.MethodType or kind is types.BuiltinMethodType:
                 owner = value.__self__
                 func = value.__func__ if kind is types.MethodType else ("leaf", value.__name__)
                 nodes[oid] = ("method", value, ())
                 nodes[oid] = ("method", value, (
-                    capture(owner), capture(func) if kind is types.MethodType else func
+                    capture(owner, opaque),
+                    capture(func, opaque) if kind is types.MethodType else func,
                 ))
             elif kind is staticmethod or kind is classmethod:
                 nodes[oid] = ("wrapper", value, ())
                 nodes[oid] = ("wrapper", value, (
-                    capture(value.__func__), capture(object.__getattribute__(value, "__dict__"))
+                    capture(value.__func__, opaque),
+                    capture(object.__getattribute__(value, "__dict__"), opaque),
                 ))
             elif kind is property:
                 nodes[oid] = ("wrapper", value, ())
                 nodes[oid] = ("wrapper", value, (
-                    capture(value.fget), capture(value.fset), capture(value.fdel)
+                    capture(value.fget, opaque),
+                    capture(value.fset, opaque),
+                    capture(value.fdel, opaque),
                 ))
             elif isinstance(value, type):
                 # A class's own state: its namespace, bases, and names. Only
                 # plain classes: a metaclass can keep state elsewhere or
-                # intercept the restore.
+                # intercept the restore, so such a class is kept by identity.
                 if type(value) is not type:
-                    raise _ReplayUnsupported("a class with a custom metaclass")
+                    if not opaque:
+                        note(value, "identity")
+                    return ("external", value)
                 nodes[oid] = ("class", value, ((), ("leaf", ()), "", ""))
                 namespace = tuple(
-                    (name, capture(item)) for name, item in list(value.__dict__.items())
+                    (name, capture(item, opaque)) for name, item in list(value.__dict__.items())
                 )
                 nodes[oid] = ("class", value, (
-                    namespace, capture(value.__bases__), value.__name__, value.__qualname__
+                    namespace, capture(value.__bases__, opaque), value.__name__, value.__qualname__
                 ))
             elif isinstance(value, types.ModuleType):
                 raise _ReplayUnsupported("a module")
+            elif issubclass(kind, Model._REPLAY_UNSUPPORTED_CONTAINERS):
+                raise _ReplayUnsupported(f"a {kind.__name__} object")
             else:
-                raise _ReplayUnsupported(f"a {type(value).__name__} object")
+                stream = Model._replay_stream_kind(value)
+                if stream is not None:
+                    nodes[oid] = ("stream", value, (stream, Model._replay_stream_state(value, stream)))
+                elif kind is pl.DataFrame or kind is pl.Series:
+                    nodes[oid] = ("frame", value, value.clone())
+                elif opaque:
+                    return ("external", value)
+                else:
+                    items = (
+                        None if issubclass(kind, _REPLAY_OPAQUE_TYPES)
+                        else Model._replay_instance_items(value, slots_cache)
+                    )
+                    if items is None:
+                        note(value, "identity")
+                        return ("external", value)
+                    if Model._is_replay_record(kind):
+                        # Dataclasses and namespaces are values: their fields
+                        # are snapshotted like the fields of any container.
+                        nodes[oid] = ("object", value, ((), False))
+                        nodes[oid] = ("object", value, (
+                            tuple((key, capture(item)) for key, item in items), False
+                        ))
+                    else:
+                        note(value, "attributes")
+                        nodes[oid] = ("object", value, ((), True))
+                        nodes[oid] = ("object", value, (
+                            tuple((key, capture_child(item)) for key, item in items), True
+                        ))
             return ("node", oid)
 
         bindings: List[Tuple[Tuple[int, str, str], Tuple[str, Any]]] = []
+        owners = tuple(self._agent_objects())
 
-        def bind(key: Tuple[int, str, str], where: str, value: Any) -> None:
+        def label(key: Tuple[int, str, str]) -> str:
+            index, _place, name = key
+            if index < 0:
+                return f"model attribute {name!r}"
+            return f"agent {self._replay_owner_id(owners, index)!r} attribute {name!r}"
+
+        def bind(key: Tuple[int, str, str], value: Any) -> None:
             if type(value) in scalar_types:
                 bindings.append((key, ("leaf", value)))
                 return
+            current[0] = key
             try:
                 bindings.append((key, capture(value)))
             except _ReplayUnsupported as exc:
-                raise _ReplayUnsupported(f"{where} attribute {key[2]!r} holds {exc}") from None
+                raise _ReplayUnsupported(f"{label(key)} holds {exc}") from None
+            except RecursionError:
+                raise _ReplayUnsupported(
+                    f"{label(key)} is nested too deeply to snapshot"
+                ) from None
+            except Exception as exc:
+                raise _ReplayUnsupported(
+                    f"{label(key)} could not be snapshotted ({type(exc).__name__})"
+                ) from None
 
-        owners = tuple(self._agent_objects())
-        slots_of = Model._replay_slots
         try:
             for index, owner in enumerate((self, *owners), start=-1):
                 attrs = object.__getattribute__(owner, "__dict__")
-                if index < 0:
-                    owned = self._is_replay_model_attr
-                    where = "model"
-                else:
-                    owned = Model._is_replay_agent_attr
-                    where = None
+                owned = self._is_replay_model_attr if index < 0 else Model._is_replay_agent_attr
                 for name, value in list(attrs.items()):
                     if owned(name):
-                        bind((index, "dict", name), where or f"agent {attrs.get('id')!r}", value)
-                for name, descriptor in slots_of(type(owner)):
+                        bind((index, "dict", name), value)
+                for name, descriptor in Model._replay_slots(type(owner), slots_cache):
                     if owned(name):
                         try:
                             value = descriptor.__get__(owner, type(owner))
                         except AttributeError:
                             continue
-                        bind((index, "slot", name), where, value)
+                        bind((index, "slot", name), value)
+            current[0] = None
             if remembered:
                 for oid, obj in remembered.items():
                     if oid not in nodes:
                         try:
                             capture(obj)
-                        except _ReplayUnsupported as exc:
-                            raise _ReplayUnsupported(f"a step-entry value holds {exc}") from None
-            return (tuple(sorted(bindings, key=lambda item: item[0])), nodes, owners)
+                        except (_ReplayUnsupported, RecursionError) as exc:
+                            where = (
+                                self._replay_node_label(remembered_from, oid)
+                                if remembered_from is not None else None
+                            )
+                            raise _ReplayUnsupported(
+                                f"{where or 'model or agent state'} held an object at "
+                                f"step entry that now holds {exc or 'state nested too deeply'}"
+                            ) from None
+            return (
+                tuple(sorted(bindings, key=lambda item: item[0])), nodes, owners, identity_notes
+            )
         except _ReplayUnsupported as exc:
             if reasons is not None:
-                reasons.append(f"{exc}, which replay cannot restore; the swap was not run")
+                reasons.append(f"{exc}, which the replay snapshot cannot represent")
             return None
         except RecursionError:
             if reasons is not None:
-                reasons.append(
-                    "model or agent state is nested too deeply to snapshot; the swap was not run"
-                )
+                reasons.append("model or agent state is nested too deeply to snapshot")
             return None
-        except Exception:
+        except Exception as exc:
+            if reasons is not None:
+                reasons.append(f"model or agent state could not be snapshotted ({type(exc).__name__})")
             return None
 
     @staticmethod
@@ -1561,18 +2107,27 @@ class Model(BaseModel):
     @staticmethod
     def _replay_resolve(ref: Tuple[str, Any], nodes: Dict[int, Any]) -> Any:
         kind, payload = ref
-        if kind in ("leaf", "anchor"):
+        if kind in ("leaf", "anchor", "external"):
             return payload
         return nodes[payload][1]
 
-    def _restore_replay_world(self, world: Any) -> bool:
-        """Rebind attributes and mutate supported objects in place.
+    def _restore_replay_world(self, world: Any, failures: Optional[List[str]] = None) -> bool:
+        """Rebind attributes and update supported objects in place.
 
         In-place updates keep aliases, including objects stored in tuples.
+        Objects kept by identity are rebound, not restored, except for the
+        own attributes of a plain object. On failure, the first attribute
+        that could not be restored is appended to ``failures``.
         """
         if world is None:
             return False
-        bindings, nodes, owners = world
+        bindings, nodes, owners = world[0], world[1], world[2]
+
+        def fail(oid: Optional[int]) -> None:
+            if failures is not None and not failures:
+                found = self._replay_node_label(world, oid) if oid is not None else None
+                failures.append(found or "model or agent attribute bindings")
+
         resolved: Dict[int, Any] = {}
         try:
             for oid, node in nodes.items():
@@ -1597,10 +2152,16 @@ class Model(BaseModel):
                         {name: self._replay_resolve(ref, nodes) for name, ref in namespace},
                         self._replay_resolve(bases, nodes),
                     )
+                elif kind == "object":
+                    resolved[oid] = [
+                        (key, self._replay_resolve(ref, nodes)) for key, ref in payload[0]
+                    ]
         except Exception:
+            fail(None)
             return False
 
         ok = True
+        slots_cache: Dict[int, Any] = {}
         # Views go last: their contents come back with the owning array, and
         # a view's write flag can only be set once its owner is writable.
         ordered = sorted(nodes.items(), key=lambda item: item[1][0] == "view")
@@ -1629,9 +2190,17 @@ class Model(BaseModel):
                 elif kind == "ndarray":
                     if not self._restore_array_in_place(obj, payload):
                         ok = False
+                        fail(oid)
                 elif kind == "view":
-                    if obj.flags.writeable != payload[1]:
-                        obj.setflags(write=payload[1])
+                    _root, writeable, shape, strides = payload
+                    if obj.shape != shape:
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore", DeprecationWarning)
+                            obj.shape = shape
+                    if obj.strides != strides:
+                        raise ValueError("a view's strides cannot be restored")
+                    if obj.flags.writeable != writeable:
+                        obj.setflags(write=writeable)
                 elif kind == "function":
                     for name, value in zip(self._REPLAY_FUNCTION_FIELDS, resolved[oid]):
                         if name != "__closure__" and getattr(obj, name) is not value:
@@ -1659,10 +2228,24 @@ class Model(BaseModel):
                         obj.__name__ = name
                     if obj.__qualname__ != qualname:
                         obj.__qualname__ = qualname
+                elif kind == "object":
+                    self._restore_instance_items(obj, resolved[oid], slots_cache)
+                elif kind == "stream":
+                    stream, state = payload
+                    if not self._replay_stream_same(
+                        stream, self._replay_stream_state(obj, stream), state
+                    ):
+                        self._replay_set_stream_state(obj, stream, state)
+                elif kind == "frame":
+                    if not _replay_frames_same(obj, payload):
+                        inner = "_df" if type(obj) is pl.DataFrame else "_s"
+                        object.__setattr__(obj, inner, getattr(payload.clone(), inner))
                 elif kind not in ("tuple", "method", "wrapper"):
                     ok = False
+                    fail(oid)
             except Exception:
                 ok = False
+                fail(oid)
         try:
             desired = {
                 key: self._replay_resolve(ref, nodes) for key, ref in bindings
@@ -1676,7 +2259,7 @@ class Model(BaseModel):
                     if owned(name) and (index, "dict", name) not in desired
                 ]:
                     del live[name]
-                for name, descriptor in self._replay_slots(type(owner)):
+                for name, descriptor in self._replay_slots(type(owner), slots_cache):
                     if owned(name) and (index, "slot", name) not in desired:
                         try:
                             descriptor.__delete__(owner)
@@ -1685,10 +2268,11 @@ class Model(BaseModel):
             for (index, where, name), value in desired.items():
                 owner = targets[index + 1]
                 if where == "slot":
-                    dict(self._replay_slots(type(owner)))[name].__set__(owner, value)
+                    dict(self._replay_slots(type(owner), slots_cache))[name].__set__(owner, value)
                 else:
                     object.__getattribute__(owner, "__dict__")[name] = value
         except Exception:
+            fail(None)
             return False
         return ok
 
@@ -1718,13 +2302,18 @@ class Model(BaseModel):
         return True
 
     def _replay_values_equal(self, left: Any, right: Any) -> bool:
-        """Compare leaves and containers without using an array's truth value."""
+        """Compare leaves and containers without using an array's truth value.
+
+        Values of different types differ, so ``1 -> True`` is a change. A
+        NaN equals a NaN (also in each part of a complex number), NaT equals
+        NaT, and ``-0.0`` differs from ``0.0``, so an untouched value is
+        never a change. Enum members compare by identity, and the immutable
+        standard-library values by an exact key, so no user ``__eq__`` runs.
+        """
         if isinstance(left, np.ndarray) or isinstance(right, np.ndarray):
             if not isinstance(left, np.ndarray) or not isinstance(right, np.ndarray):
                 return False
-            if left.shape != right.shape or left.dtype != right.dtype:
-                return False
-            return bool(np.array_equal(left, right, equal_nan=True))
+            return _replay_arrays_same(left, right)
         if isinstance(left, dict) or isinstance(right, dict):
             if not isinstance(left, dict) or not isinstance(right, dict):
                 return False
@@ -1740,15 +2329,27 @@ class Model(BaseModel):
                 self._replay_values_equal(item, other)
                 for item, other in zip(left, right)
             )
-        # Scalars are equal only with the same type, so 1 -> True is a
-        # change, and a NaN equals a NaN, so an untouched NaN is not.
-        if type(left) is not type(right):
+        kind = type(left)
+        if kind is not type(right):
             return False
-        if type(left) is float or type(left) is complex or self._is_numpy_scalar(left):
-            return bool(np.array_equal(
-                np.asarray(left), np.asarray(right),
-                equal_nan=np.issubdtype(np.asarray(left).dtype, np.inexact),
-            ))
+        if kind in _REPLAY_EXACT_EQUAL:
+            return left == right
+        if kind is float:
+            return _replay_float_same(left, right)
+        if kind is complex:
+            return (
+                _replay_float_same(left.real, right.real)
+                and _replay_float_same(left.imag, right.imag)
+            )
+        if self._is_numpy_scalar(left):
+            return _replay_numpy_scalar_same(left, right)
+        value_key = _REPLAY_VALUE_KEYS.get(kind)
+        if value_key is not None:
+            return value_key(left) == value_key(right)
+        if isinstance(kind, enum.EnumMeta):
+            return left is right
+        if kind is frozenset:
+            return len(left) == len(right) and _replay_typed_set(left) == _replay_typed_set(right)
         compared = left == right
         if isinstance(compared, np.ndarray):
             return bool(np.array_equal(left, right, equal_nan=True))
@@ -1765,17 +2366,26 @@ class Model(BaseModel):
             frame_differs = not bool(original_post.equals(self._agents_frame()))
         except Exception as exc:
             return None, _replay_failure_reason(exc)
+        reasons: List[str] = []
         replay_world = self._capture_replay_world(
-            self._replay_world_objects(entry_world)
+            self._replay_world_objects(entry_world), reasons, entry_world
         )
         if replay_world is None:
-            return None, "replay state could not be captured"
+            return None, "replay state could not be captured" + (
+                f" ({reasons[0]})" if reasons else ""
+            )
+        differs: List[str] = []
         try:
-            same_world = self._replay_worlds_equal(post_world, replay_world)
-        except _ReplayAliasMismatch:
-            return None, "alias relationships are not one-to-one"
+            same_world = self._replay_worlds_equal(post_world, replay_world, differs)
+        except _ReplayAliasMismatch as exc:
+            where = str(exc)
+            return None, "alias relationships are not one-to-one" + (
+                f" ({where})" if where else ""
+            )
         if same_world is None:
-            return None, "replay state could not be compared"
+            return None, "replay state could not be compared" + (
+                f" ({differs[0]})" if differs else ""
+            )
         if frame_differs or not same_world:
             return True, None
         if recorded is None:
@@ -1794,7 +2404,7 @@ class Model(BaseModel):
         forward: Dict[int, int],
         inverse: Dict[int, int],
     ) -> bool:
-        if left[0] == "anchor" or right[0] == "anchor":
+        if left[0] in ("anchor", "external") or right[0] in ("anchor", "external"):
             return left[0] == right[0] and left[1] is right[1]
         if left[0] == "leaf" and right[0] == "leaf":
             left_value, right_value = left[1], right[1]
@@ -1825,9 +2435,9 @@ class Model(BaseModel):
             return (left_array.flags.writeable == right_array.flags.writeable
                     and self._replay_values_equal(left_array, right_array))
         if kind == "set":
-            return left_node[2] == right_node[2]
+            return _replay_typed_set(left_node[2]) == _replay_typed_set(right_node[2])
         if kind == "view":
-            return left_node[2][1] == right_node[2][1] and self._replay_refs_equal(
+            return left_node[2][1:] == right_node[2][1:] and self._replay_refs_equal(
                 left_node[2][0], left_nodes, right_node[2][0], right_nodes, forward, inverse
             )
         if kind == "cell":
@@ -1851,6 +2461,23 @@ class Model(BaseModel):
                     for (_, ref), (_, other) in zip(left_space, right_space)
                 )
             )
+        if kind == "object":
+            (left_items, left_kept), (right_items, right_kept) = left_node[2], right_node[2]
+            return (
+                left_kept == right_kept
+                and [key for key, _ in left_items] == [key for key, _ in right_items]
+                and all(
+                    self._replay_refs_equal(ref, left_nodes, other, right_nodes, forward, inverse)
+                    for (_, ref), (_, other) in zip(left_items, right_items)
+                )
+            )
+        if kind == "stream":
+            (left_kind, left_state), (right_kind, right_state) = left_node[2], right_node[2]
+            return left_kind == right_kind and self._replay_stream_same(
+                left_kind, left_state, right_state
+            )
+        if kind == "frame":
+            return _replay_frames_same(left_node[2], right_node[2])
         if kind in ("list", "tuple", "method", "function", "wrapper"):
             left_children = left_node[2]
             right_children = right_node[2]
@@ -1877,7 +2504,14 @@ class Model(BaseModel):
             )
         return False
 
-    def _replay_worlds_equal(self, left: Any, right: Any) -> Optional[bool]:
+    def _replay_worlds_equal(
+        self, left: Any, right: Any, differs: Optional[List[str]] = None
+    ) -> Optional[bool]:
+        """Compare two snapshots. None when they cannot be compared.
+
+        ``differs`` receives the attribute where they first differ. An alias
+        mismatch raises :class:`_ReplayAliasMismatch` naming the attribute.
+        """
         try:
             if len(left[2]) != len(right[2]) or any(
                 a is not b for a, b in zip(left[2], right[2])
@@ -1886,29 +2520,49 @@ class Model(BaseModel):
             left_bindings = dict(left[0])
             right_bindings = dict(right[0])
             if set(left_bindings) != set(right_bindings):
+                if differs is not None:
+                    key = min(set(left_bindings) ^ set(right_bindings))
+                    differs.append(self._replay_binding_label(left, key))
                 return False
             forward: Dict[int, int] = {}
             inverse: Dict[int, int] = {}
             for name in left_bindings:
-                if not self._replay_refs_equal(
-                    left_bindings[name],
-                    left[1],
-                    right_bindings[name],
-                    right[1],
-                    forward,
-                    inverse,
-                ):
+                try:
+                    same = self._replay_refs_equal(
+                        left_bindings[name],
+                        left[1],
+                        right_bindings[name],
+                        right[1],
+                        forward,
+                        inverse,
+                    )
+                except _ReplayAliasMismatch:
+                    raise _ReplayAliasMismatch(self._replay_binding_label(left, name)) from None
+                if not same:
+                    if differs is not None:
+                        differs.append(self._replay_binding_label(left, name))
                     return False
             shared = set(left[1]) & set(right[1])
             for oid in shared:
-                if not self._replay_refs_equal(
-                    ("node", oid),
-                    left[1],
-                    ("node", oid),
-                    right[1],
-                    forward,
-                    inverse,
-                ):
+                try:
+                    same = self._replay_refs_equal(
+                        ("node", oid),
+                        left[1],
+                        ("node", oid),
+                        right[1],
+                        forward,
+                        inverse,
+                    )
+                except _ReplayAliasMismatch:
+                    raise _ReplayAliasMismatch(
+                        self._replay_node_label(left, oid) or ""
+                    ) from None
+                if not same:
+                    if differs is not None:
+                        differs.append(
+                            self._replay_node_label(left, oid)
+                            or "an object the state held at step entry"
+                        )
                     return False
             return True
         except _ReplayAliasMismatch:

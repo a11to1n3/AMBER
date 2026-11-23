@@ -473,7 +473,7 @@ class OpaqueStateAgent(am.Agent):
         target.x = self.id + 1
 
 
-def test_replay_is_skipped_when_private_state_cannot_be_restored():
+def test_an_object_kept_by_identity_has_its_attributes_restored_around_the_replay():
     class Model(RaceModel):
         agent_class = OpaqueStateAgent
 
@@ -494,12 +494,49 @@ def test_replay_is_skipped_when_private_state_cannot_be_restored():
         for violation in cert.violations
         if violation.kind == "activation_race"
     ]
+    assert races and all(violation.divergence_witness is True for violation in races)
+    assert result["agents"].equals(forward["agents"])
+    assert [agent._box.n for agent in checked.agents] == [2, 2]
+
+
+class _ClearCountingList(list):
+    """A list subclass whose methods a restore must not call."""
+
+    calls = 0
+
+    def clear(self):
+        type(self).calls += 1
+        super().clear()
+
+
+def test_replay_is_skipped_when_private_state_cannot_be_restored():
+    class Model(RaceModel):
+        agent_class = OpaqueStateAgent
+
+        def setup(self):
+            self.add_agents(2, agent_class=self.agent_class, x=0, y=0)
+            for agent in self.agents:
+                agent._box = OpaqueCounter()
+                agent._held = _ClearCountingList([0])
+
+    _ClearCountingList.calls = 0
+    params = {**PARAMETERS, "steps": 2}
+    forward = Model(params).cpu(mode="oop").run(contract="off")
+    checked = Model(params).cpu(mode="oop")
+    result = checked.run(contract="check")
+    races = [
+        violation
+        for cert in result["contract"]
+        for violation in cert.violations
+        if violation.kind == "activation_race"
+    ]
     assert races and all(violation.divergence_witness is None for violation in races)
     assert all(
-        "agent 0 attribute '_box' holds a OpaqueCounter object" in violation.divergence_reason
+        "agent 0 attribute '_held' holds a _ClearCountingList object" in violation.divergence_reason
         and "the swap was not run" in violation.divergence_reason
         for violation in races
     )
+    assert _ClearCountingList.calls == 0
     assert result["agents"].equals(forward["agents"])
     assert [agent._box.n for agent in checked.agents] == [2, 2]
 
@@ -717,6 +754,23 @@ def test_replay_restores_state_held_in_code_and_slots_or_skips(state, witness, r
 
 
 def test_entry_side_skip_reason_names_the_attribute():
+    class Model(_CodeStateModel):
+        def setup(self):
+            super().setup()
+            self._held = _ClearCountingList([1])
+
+        def step_oop(self):
+            del self._held
+            super().step_oop()
+
+    result = Model({**PARAMETERS, "state": "model_slot"}).cpu(mode="oop").run(contract="check")
+    race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
+    assert race.divergence_witness is None
+    assert "model attribute '_held' holds a _ClearCountingList object" in race.divergence_reason
+    assert "the swap was not run" in race.divergence_reason
+
+
+def test_a_lock_in_model_state_is_kept_by_identity_and_the_swap_runs():
     import threading
 
     class Model(_CodeStateModel):
@@ -724,14 +778,18 @@ def test_entry_side_skip_reason_names_the_attribute():
             super().setup()
             self._lock = threading.Lock()
 
-        def step_oop(self):
-            del self._lock
-            super().step_oop()
-
-    result = Model({**PARAMETERS, "state": "model_slot"}).cpu(mode="oop").run(contract="check")
+    params = {**PARAMETERS, "state": "model_slot"}
+    plain = Model(params).cpu(mode="oop")
+    plain.run(contract="off")
+    checked = Model(params).cpu(mode="oop")
+    lock = None
+    checked._ensure_setup()
+    lock = checked._lock
+    result = checked.run(contract="check")
     race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
-    assert race.divergence_witness is None
-    assert "model attribute '_lock' holds a lock object" in race.divergence_reason
+    assert race.divergence_witness is False
+    assert checked._lock is lock
+    assert checked.observed() == plain.observed()
 
 
 def test_an_untouched_nan_in_private_state_is_not_a_divergence():

@@ -856,14 +856,15 @@ def test_external_list_alias_keeps_identity_and_forward_contents():
     assert res["agents"].sort("id")["wealth"].to_list() == [1, 0]
 
 
-def test_custom_model_object_skips_the_swap():
+def test_custom_model_object_is_kept_by_identity_with_its_attributes_restored():
     model = _BoxModel(_params())
     model._ensure_setup()
     box = model.box
     res = model.run(contract="check")
     races = _races(res["contract"][0])
     assert len(races) == 1
-    assert races[0].divergence_witness is None
+    # The box's own attribute is restored around the replay, so the swap runs.
+    assert races[0].divergence_witness is True
     assert model.box is box
     assert model.box.n == 2
     assert res["agents"].sort("id")["wealth"].to_list() == [1, 0]

@@ -493,15 +493,23 @@ class ContractMonitor:
         reason = outside(self._sweep_entry, self._sweep_exit)
         if reason is not None:
             return reason
-        changed = getattr(model, "_step_changed_replay_state", None)
-        changed = changed() if callable(changed) else None
-        if changed is None:
+        check = getattr(model, "_step_replay_state_check", None)
+        status, where = check() if callable(check) else ("unknown", None)
+        if status == "unknown":
             return (
                 "Model and private agent state could not be compared with step "
-                "entry, so changes outside the verified sweep cannot be ruled out."
+                "entry" + (f" ({where})" if where else "") + ", so changes "
+                "outside the verified sweep cannot be ruled out."
             )
-        if changed:
-            return "The step changed model or private agent state outside the verified activation sweep."
+        if status != "same":
+            return (
+                "The step changed model or private agent state outside the "
+                "verified activation sweep" + (f" ({where})" if where else "") + "."
+            )
+        notes = getattr(model, "_replay_identity_notes", None)
+        notes = notes() if callable(notes) else ()
+        if notes:
+            cert.assumptions = tuple(cert.assumptions) + tuple(notes)
         cert.conditional_guarantee = CONDITIONAL_GUARANTEE_ESTABLISHED
         cert.certification = proof.evidence()
         return None
