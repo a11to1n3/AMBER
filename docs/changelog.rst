@@ -9,6 +9,15 @@ and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0
 [Unreleased]
 -------------
 
+* Column writes, ``set()``, view writes, ``commit()`` and ``add_agents()`` accept
+  CuPy arrays and write one value per agent; Boolean device arrays and
+  ``set()`` previously stored the whole array in every row. ``commit()`` repeats
+  a scalar or 0-d value for every row and casts it to an existing column's
+  dtype, as for arrays; a new column's dtype is inferred from the value.
+  ``TensorLane.commit`` and ``write_result`` accept device arrays. A 0-d device
+  value assigned to a column or written through an agent object gives the same
+  column dtype as the NumPy value under ``cpu()``.
+
 [0.6.0] - 2026-11-18
 --------------------
 

@@ -30,6 +30,7 @@ from .agent import Agent
 from .model import Model
 from ._auto_batch import try_batch
 from .performance import apply_scatter_add, apply_scatter_write
+from .gpu import host_value
 
 
 # Names that must live on the Python instance, not as DataFrame columns.
@@ -83,6 +84,7 @@ def _normalize_delta(name: str, value: Any, n: int, xp=np) -> Any:
 
 def _value_to_series(name: str, value: Any, n: int) -> pl.Series:
     """Coerce assignment value to a Polars Series of length ``n``."""
+    value = host_value(value)
     if isinstance(value, pl.Series):
         series = value
     else:
@@ -1079,7 +1081,10 @@ class AgentList(_BaseView):
         """Atomically write back derived columns (the tensor-lane commit path).
 
         ``agents.commit(x=nx, y=ny)``. Routes through ``commit_columns`` so the
-        snapshot-view contract observes the writes.
+        snapshot-view contract observes the writes. Each value is an array,
+        list or Series with one value per agent, or a scalar or 0-d value that
+        is repeated for every agent. Values written to an existing column are
+        cast to that column's dtype.
         """
         from .tensor_lane import commit_columns
         commit_columns(self.model, **columns)
