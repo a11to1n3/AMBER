@@ -97,9 +97,13 @@ and values recorded with ``record_model()`` during the step. Framework-owned
 model attributes are excluded. The swapped replay starts from that state as
 it was at step entry, and the forward state is put back afterwards, so a
 monitored run gives the same results as ``contract="off"``. Restoration
-follows nested lists, deques, dicts (including ``defaultdict``, ``Counter``,
-and ``OrderedDict``), sets, tuples, numeric NumPy arrays, and bound methods,
-mutating them in place so aliases are kept. The model, its agents, and its
+follows nested lists, deques, dicts (including ``defaultdict`` with its
+``default_factory``, ``Counter``, and ``OrderedDict``), sets, tuples, numeric
+NumPy arrays, and bound methods, mutating them in place so aliases are kept.
+Containers are matched by exact type: a subclass can hold state outside its
+items or override the methods a restore calls, so it is not snapshotted.
+A NumPy view is restored through the array that owns its memory, so writes
+through another view of that memory are undone too. The model, its agents, and its
 random streams are kept by identity. When this state reaches any other
 object, for example a custom class instance, a generator other than the
 model's streams, or a Polars frame, the swap is not run: the witness is

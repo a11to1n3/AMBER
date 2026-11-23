@@ -16,7 +16,7 @@ but filled by :mod:`ambr._id_index`; :meth:`_bump_id_version` invalidates them.
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, NamedTuple, Type, Optional, Tuple, TYPE_CHECKING
-from collections import Counter, deque
+from collections import Counter, OrderedDict, defaultdict, deque
 from contextlib import contextmanager
 import copy
 import random
@@ -27,7 +27,7 @@ import warnings
 import numpy as np
 import time
 from datetime import timedelta
-from .base import BaseModel
+from .base import AttrDict, BaseModel
 from .population import Population
 from ._deprecation import warn_deprecated
 from ._id_index import resolve_positions
@@ -1069,18 +1069,49 @@ class Model(BaseModel):
             return owner is None or isinstance(owner, types.ModuleType)
         return False
 
+    # Immutable built-in scalars. Only these exact types are restored by
+    # rebinding: a subclass can carry instance state or override comparison.
+    _REPLAY_SCALAR_TYPES = frozenset({
+        type(None), bool, int, float, complex, str, bytes,
+    })
+
+    # Dicts whose whole state is their items (plus a defaultdict's
+    # default_factory). Exact types only, so restoring them runs no user code.
+    _REPLAY_DICT_TYPES = frozenset({dict, OrderedDict, Counter, defaultdict, AttrDict})
+
+    @staticmethod
+    def _is_numpy_scalar(value: Any) -> bool:
+        return (
+            isinstance(value, np.generic)
+            and type(value).__module__ == "numpy"
+            and not isinstance(value, (np.void, np.object_))
+        )
+
     @staticmethod
     def _is_replay_leaf(value: Any) -> bool:
-        """True when ``value`` can be restored by rebinding, not by mutation."""
-        if value is None or isinstance(
-            value, (bool, int, float, str, bytes, complex, frozenset)
-        ):
+        """True when ``value`` can be restored by rebinding, not by mutation.
+
+        Covers exact built-in scalars, NumPy scalars other than void and
+        object scalars, and tuples and frozensets made only of such values.
+        """
+        kind = type(value)
+        if kind in Model._REPLAY_SCALAR_TYPES:
             return True
-        if isinstance(value, np.generic):
-            return True
-        if isinstance(value, tuple):
+        if kind is tuple or kind is frozenset:
             return all(Model._is_replay_leaf(item) for item in value)
-        return False
+        return Model._is_numpy_scalar(value)
+
+    @staticmethod
+    def _is_replay_tuple(value: Any) -> bool:
+        """A tuple or a named tuple without per-instance attributes."""
+        kind = type(value)
+        if kind is tuple:
+            return True
+        return (
+            isinstance(value, tuple)
+            and hasattr(kind, "_fields")
+            and getattr(value, "__dict__", None) is None
+        )
 
     @staticmethod
     def _ndarray_replay_supported(value: np.ndarray) -> bool:
@@ -1090,6 +1121,26 @@ class Model(BaseModel):
         return bool(
             np.issubdtype(dtype, np.number) or np.issubdtype(dtype, np.bool_)
         )
+
+    @classmethod
+    def _replay_array_root(cls, value: np.ndarray) -> np.ndarray:
+        """Return the array that owns ``value``'s memory.
+
+        A view is restored through the array that owns its memory, because
+        a write through another view of the same memory changes it too.
+        Raises :class:`_ReplayUnsupported` when the owner is not a plain
+        numeric array that owns its data.
+        """
+        if type(value) is not np.ndarray:
+            raise _ReplayUnsupported(f"a {type(value).__name__} array subclass")
+        root = value
+        while isinstance(root.base, np.ndarray):
+            root = root.base
+        if type(root) is not np.ndarray or root.base is not None or not root.flags.owndata:
+            raise _ReplayUnsupported("a NumPy array whose memory is owned by another object")
+        if not cls._ndarray_replay_supported(root):
+            raise _ReplayUnsupported(f"a {root.dtype} array")
+        return root
 
     def _capture_replay_world(
         self,
@@ -1118,28 +1169,43 @@ class Model(BaseModel):
                 return ("anchor", value)
             if oid in nodes:
                 return ("node", oid)
-            if isinstance(value, tuple):
+            kind = type(value)
+            # Containers are matched by exact type: a subclass can hold state
+            # outside its items or override the methods a restore would call.
+            if self._is_replay_tuple(value):
                 nodes[oid] = ("tuple", value, ())
                 nodes[oid] = ("tuple", value, tuple(capture(item) for item in value))
-            elif isinstance(value, (list, deque)):
+            elif kind is list or kind is deque:
                 nodes[oid] = ("list", value, ())
                 nodes[oid] = ("list", value, tuple(capture(item) for item in value))
-            elif isinstance(value, dict):
-                nodes[oid] = ("dict", value, ())
+            elif kind in self._REPLAY_DICT_TYPES:
+                if kind is AttrDict and object.__getattribute__(value, "__dict__"):
+                    raise _ReplayUnsupported("an AttrDict with instance attributes")
+                nodes[oid] = ("dict", value, ((), None))
                 pairs = []
                 for key, item in value.items():
                     if not self._is_replay_leaf(key):
                         raise _ReplayUnsupported("a dict key that is not a scalar")
                     pairs.append((key, capture(item)))
-                nodes[oid] = ("dict", value, tuple(pairs))
-            elif isinstance(value, set):
+                factory = None
+                if kind is defaultdict:
+                    try:
+                        factory = capture(value.default_factory)
+                    except _ReplayUnsupported as exc:
+                        raise _ReplayUnsupported(
+                            f"a defaultdict whose default_factory is {exc}"
+                        ) from None
+                nodes[oid] = ("dict", value, (tuple(pairs), factory))
+            elif kind is set:
+                if not all(self._is_replay_leaf(item) for item in value):
+                    raise _ReplayUnsupported("a set with an item that is not a scalar")
                 nodes[oid] = ("set", value, frozenset(value))
-                for item in value:
-                    capture(item)
             elif isinstance(value, np.ndarray):
-                if not self._ndarray_replay_supported(value):
-                    raise _ReplayUnsupported(f"a {value.dtype} array")
-                nodes[oid] = ("ndarray", value, self._array_snapshot(value))
+                root = self._replay_array_root(value)
+                if root is value:
+                    nodes[oid] = ("ndarray", value, self._array_snapshot(value))
+                else:
+                    nodes[oid] = ("view", value, (capture(root), value.flags.writeable))
             elif isinstance(value, (types.MethodType, types.BuiltinMethodType)):
                 func = getattr(value, "__func__", None)
                 key = func if func is not None else (type(value.__self__), value.__name__)
@@ -1212,33 +1278,46 @@ class Model(BaseModel):
                         self._replay_resolve(ref, nodes) for ref in payload
                     ]
                 elif kind == "dict":
-                    resolved[oid] = [
-                        (key, self._replay_resolve(ref, nodes))
-                        for key, ref in payload
-                    ]
+                    pairs, factory = payload
+                    resolved[oid] = (
+                        [(key, self._replay_resolve(ref, nodes)) for key, ref in pairs],
+                        None if factory is None else self._replay_resolve(factory, nodes),
+                    )
         except Exception:
             return False
 
         ok = True
-        for oid, node in nodes.items():
+        # Views go last: their contents come back with the owning array, and
+        # a view's write flag can only be set once its owner is writable.
+        ordered = sorted(nodes.items(), key=lambda item: item[1][0] == "view")
+        for oid, node in ordered:
             kind, obj, payload = node
             try:
+                # Every container here has an exact built-in type, so these
+                # calls run no user code.
                 if kind == "list":
                     obj.clear()
                     obj.extend(resolved[oid])
                 elif kind == "dict":
-                    obj.clear()
-                    if isinstance(obj, Counter):
-                        # Counter.update adds counts instead of replacing them.
-                        dict.update(obj, resolved[oid])
+                    items, factory = resolved[oid]
+                    if type(obj) is OrderedDict:
+                        obj.clear()
+                        obj.update(items)
                     else:
-                        obj.update(resolved[oid])
+                        # Counter.update would add counts instead of replacing them.
+                        dict.clear(obj)
+                        dict.update(obj, items)
+                    if payload[1] is not None:
+                        obj.default_factory = factory
                 elif kind == "set":
                     obj.clear()
                     obj.update(payload)
                 elif kind == "ndarray":
                     if not self._restore_array_in_place(obj, payload):
                         ok = False
+                elif kind == "view":
+                    if obj.flags.writeable != payload[1]:
+                        obj.setflags(write=payload[1])
                 elif kind not in ("tuple", "method"):
                     ok = False
             except Exception:
@@ -1385,6 +1464,10 @@ class Model(BaseModel):
                     and self._replay_values_equal(left_array, right_array))
         if kind == "set":
             return left_node[2] == right_node[2]
+        if kind == "view":
+            return left_node[2][1] == right_node[2][1] and self._replay_refs_equal(
+                left_node[2][0], left_nodes, right_node[2][0], right_nodes, forward, inverse
+            )
         if kind in ("list", "tuple", "method"):
             left_children = left_node[2]
             right_children = right_node[2]
@@ -1397,7 +1480,13 @@ class Model(BaseModel):
                 for item, other in zip(left_children, right_children)
             )
         if kind == "dict":
-            left_pairs, right_pairs = left_node[2], right_node[2]
+            (left_pairs, left_factory), (right_pairs, right_factory) = left_node[2], right_node[2]
+            if (left_factory is None) != (right_factory is None):
+                return False
+            if left_factory is not None and not self._replay_refs_equal(
+                left_factory, left_nodes, right_factory, right_nodes, forward, inverse
+            ):
+                return False
             return len(left_pairs) == len(right_pairs) and all(
                 self._replay_values_equal(key, other_key)
                 and self._replay_refs_equal(ref, left_nodes, other_ref, right_nodes, forward, inverse)

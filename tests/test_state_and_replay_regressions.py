@@ -524,3 +524,84 @@ def test_framework_private_model_attributes_are_not_replay_state():
             if name.startswith("_") and model._is_replay_model_attr(name)
         }
         assert user <= {"_steps"}
+
+
+class _CountingList(list):
+    """A list subclass whose override changes its own state."""
+
+    def __init__(self):
+        super().__init__([1])
+        self.clears = 0
+
+    def clear(self):
+        self.clears += 1
+        super().clear()
+
+
+class _TaggedArray(np.ndarray):
+    pass
+
+
+class _SameValueRace(am.Agent):
+    """Both activations write 1 to agent 0's x and touch model state."""
+
+    def step(self):
+        self.model.agents.by_id(0).x = 1
+        state = self.model.p.state
+        if state == "factory":
+            self.model._lookup.default_factory = list if self.id == 0 else dict
+        elif state in ("view", "subclass_array"):
+            self.model._array.base[1] += 1
+
+
+class _SameValueModel(am.Model):
+    def setup(self):
+        state = self.p.state
+        if state == "factory":
+            self._lookup = defaultdict(None)
+        elif state == "subclass_list":
+            self._held = _CountingList()
+        elif state == "view":
+            self._array = np.zeros(2, dtype=np.int64)[:1]
+        elif state == "subclass_array":
+            self._array = np.zeros(2, dtype=np.int64).view(_TaggedArray)[:1]
+        self.add_agents(2, agent_class=_SameValueRace, x=0)
+
+    def step_oop(self):
+        self.activate_agents("sequential")
+
+    def observed(self):
+        state = self.p.state
+        if state == "factory":
+            return self._lookup.default_factory
+        if state == "subclass_list":
+            return self._held.clears
+        return self._array.base.tolist()
+
+
+@pytest.mark.parametrize("state, witness, reason", [
+    # The factory is part of a defaultdict's state: the swapped order
+    # leaves the other factory installed, so the forward one must return.
+    ("factory", True, None),
+    # A list subclass can change its own state when the restore calls its
+    # methods, so it is not snapshotted and the swap is not run.
+    ("subclass_list", None, "model attribute '_held' holds a _CountingList object"),
+    # A view is restored through the array that owns its memory.
+    ("view", False, None),
+    ("subclass_array", None, "model attribute '_array' holds a _TaggedArray array subclass"),
+])
+def test_replay_restores_the_full_state_of_supported_containers(state, witness, reason):
+    params = {**PARAMETERS, "state": state}
+    plain = _SameValueModel(params).cpu(mode="oop")
+    plain.run(contract="off")
+    checked = _SameValueModel(params).cpu(mode="oop")
+    result = checked.run(contract="check")
+
+    assert checked.observed() == plain.observed()
+    race, = [v for v in result["contract"][0].violations if v.kind == "activation_race"]
+    assert race.divergence_witness is witness
+    if reason is None:
+        assert race.divergence_reason is None
+    else:
+        assert reason in race.divergence_reason
+        assert "the swap was not run" in race.divergence_reason

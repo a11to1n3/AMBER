@@ -23,6 +23,11 @@
   cannot restore is not run and reports the attribute in
   `divergence_reason`. Private state is now part of the swapped-order
   comparison, so a swap that changes only private state is a witness.
+  Containers are matched by exact type, so a subclass (for example a `list`
+  subclass or an `ndarray` subclass) skips the swap instead of running user
+  methods during the restore. A `defaultdict`'s `default_factory` is restored
+  with its items, and a NumPy view is restored through the array that owns its
+  memory.
 - The race check chooses swapped-order replays by coverage. With three or more
   writers to one cell, it swaps the last writer with one earlier writer per
   distinct written value (previously only the first two writers). Activations
