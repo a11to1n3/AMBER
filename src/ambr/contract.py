@@ -102,6 +102,34 @@ def _ordered(items: Iterable[Any]) -> List[Any]:
         return sorted(items, key=repr)
 
 
+#: Placeholder for a write whose value the monitor did not see.
+_UNSEEN_VALUE = object()
+
+#: Swapped-order replays run per step.
+MAX_REPLAYS_PER_STEP = 5
+
+
+def _value_key(value: Any) -> Any:
+    """Return a key that is equal for equal written scalars.
+
+    Unhashable or unseen values get a fresh token, so they never match.
+    """
+    if value is _UNSEEN_VALUE:
+        return object()
+    try:
+        hash(value)
+    except TypeError:
+        return object()
+    return (type(value), value)
+
+
+def _same_key(left: Any, right: Any) -> bool:
+    try:
+        return bool(left == right)
+    except Exception:
+        return False
+
+
 def _ieee_float_domain(domain: str) -> bool:
     """Return whether ``domain`` names an IEEE floating-point dtype."""
     text = str(domain).strip().lower()
@@ -256,6 +284,8 @@ class ContractMonitor:
         self._activation_reads: Dict[Any, Set[Tuple[str, Any]]] = {}
         self._activation_column_reads: Dict[Any, Set[str]] = {}
         self._activation_writes: Dict[Any, Set[Tuple[str, Any]]] = {}
+        # Last value each activation wrote to a cell, as a _value_key.
+        self._activation_write_values: Dict[Any, Dict[Tuple[str, Any], Any]] = {}
         self._activation_reductions: Dict[Any, Set[Tuple[str, Any, str]]] = {}
         self._activation_draws: Dict[Any, List[Tuple[int, int, Any, str, int, float]]] = {}
         self._in_replay: bool = False
@@ -307,6 +337,7 @@ class ContractMonitor:
         self._activation_reads = {}
         self._activation_column_reads = {}
         self._activation_writes = {}
+        self._activation_write_values = {}
         self._activation_reductions = {}
         self._activation_draws = {}
         self._used_shared_rng = False
@@ -550,6 +581,7 @@ class ContractMonitor:
         self._activation_reads = {}
         self._activation_column_reads = {}
         self._activation_writes = {}
+        self._activation_write_values = {}
         self._activation_reductions = {}
         self._activation_draws = {}
 
@@ -585,8 +617,14 @@ class ContractMonitor:
         draws = self._activation_draws.setdefault(self._current_activation, [])
         draws.append((seed, step, agent_id, event, index, value))
 
-    def record_activation_write(self, column: str, agent_id: Any) -> None:
-        """Record an ordinary attribute write by the active activation."""
+    def record_activation_write(
+        self, column: str, agent_id: Any, value: Any = _UNSEEN_VALUE
+    ) -> None:
+        """Record an ordinary attribute write by the active activation.
+
+        ``value`` lets the race check choose one swap per distinct value
+        when three or more activations write the same cell.
+        """
         if not self.active or self._in_replay:
             return
         if self._current_activation is None:
@@ -594,6 +632,8 @@ class ContractMonitor:
             return
         act = self._current_activation
         self._activation_writes.setdefault(act, set()).add((column, agent_id))
+        values = self._activation_write_values.setdefault(act, {})
+        values[(column, agent_id)] = _value_key(value)
 
     def record_activation_reductions(self, columns, ids, operator: str) -> None:
         """Attribute reduction targets to the activation that issued them."""
@@ -769,6 +809,33 @@ class ContractMonitor:
                 ids=sorted(born | died),
             ))
 
+    def _last_writer_swaps(
+        self, writers: List[Any], cell: Tuple[str, Any], limit: int
+    ) -> Tuple[List[Any], int]:
+        """Pick writers to swap with the last writer of ``cell``.
+
+        Swapping a writer with the last one makes its value the final one,
+        so one writer per value that differs from the last writer's is
+        enough to cover every written value. Writers nearest the last one
+        are preferred. Returns at most ``limit`` writers, in activation
+        order, and the number of distinct values written.
+        """
+        values = self._activation_write_values
+        keys = [values.get(act, {}).get(cell, object()) for act in writers]
+        distinct: List[Any] = []
+        for key in keys:
+            if not any(_same_key(key, other) for other in distinct):
+                distinct.append(key)
+        chosen: List[Any] = []
+        seen = [keys[-1]]
+        for act, key in zip(reversed(writers[:-1]), reversed(keys[:-1])):
+            if any(_same_key(key, other) for other in seen):
+                continue
+            seen.append(key)
+            if len(chosen) < limit:
+                chosen.append(act)
+        return chosen[::-1], len(distinct)
+
     def _check_activation_races(
         self,
         cert: ContractCertificate,
@@ -803,6 +870,13 @@ class ContractMonitor:
         # (first activation, second activation, target cell, conflict kind).
         hazards: List[Tuple[Any, Any, Tuple[str, Any], str]] = []
         seen_hazards: Set[Tuple[Any, Any, Tuple[str, Any], str]] = set()
+        max_replays = MAX_REPLAYS_PER_STEP
+        # Pairs replayed before the others, so each distinct written value
+        # and each combination of reduction operators gets a swap.
+        priority: List[Tuple[Any, Any]] = []
+        # Cells with three or more writers: (writer count, distinct values).
+        write_groups: Dict[Tuple[str, Any], Tuple[int, int]] = {}
+        sampled_operators: Dict[Tuple[str, Any], Set[Any]] = {}
 
         def add_hazard(first: Any, second: Any, cell: Tuple[str, Any], kind: str) -> None:
             key = (first, second, cell, kind)
@@ -814,19 +888,39 @@ class ContractMonitor:
         for cell in dict.fromkeys((*writers_by_cell, *reducers_by_cell)):
             writers = writers_by_cell.get(cell, ())
             reducers = reducers_by_cell.get(cell, {})
-            if len(writers) >= 2:
+            if len(writers) == 2:
                 add_hazard(writers[0], writers[1], cell, "write")
+            elif len(writers) > 2:
+                chosen, distinct = self._last_writer_swaps(writers, cell, max_replays)
+                write_groups[cell] = (len(writers), distinct)
+                for first in chosen:
+                    add_hazard(first, writers[-1], cell, "write")
+                    priority.append((first, writers[-1]))
+                if not chosen:
+                    add_hazard(writers[0], writers[1], cell, "write")
             for writer in writers:
                 for reducer in reducers:
                     add_hazard(writer, reducer, cell, "set_reduce")
             if reducers and len(set.union(*reducers.values())) > 1:
                 reducer_order = list(reducers)
+                sampled = sampled_operators.setdefault(cell, set())
                 for index, first in enumerate(reducer_order):
                     if len(reducers[first]) > 1:
                         add_hazard(first, first, cell, "mixed_reductions")
                     for second in reducer_order[index + 1:]:
-                        if reducers[first] != reducers[second]:
+                        if len(reducers[first] | reducers[second]) < 2:
+                            continue
+                        operators = frozenset((
+                            frozenset(reducers[first]), frozenset(reducers[second])
+                        ))
+                        # Equal mixed operator sets do not commute either.
+                        # One pair per operator combination is enough to
+                        # replay; differing sets keep every pair.
+                        if reducers[first] != reducers[second] or operators not in sampled:
                             add_hazard(first, second, cell, "mixed_reductions")
+                        if operators not in sampled:
+                            sampled.add(operators)
+                            priority.append((first, second))
             readers = (*readers_by_cell.get(cell, ()), *readers_by_column.get(cell[0], ()))
             if readers:
                 for modifier in dict.fromkeys((*writers, *reducers)):
@@ -841,7 +935,6 @@ class ContractMonitor:
         )
         witnesses: Dict[Tuple[Any, Any], Tuple[Optional[bool], Optional[str]]] = {}
         replayed = 0
-        max_replays = 5
 
         def witness_for(first: Any, second: Any) -> Tuple[Optional[bool], Optional[str]]:
             nonlocal replayed
@@ -855,11 +948,20 @@ class ContractMonitor:
                 return witnesses[pair]
             witness = None
             reason = None
-            if allow_replay and callable(replay_fn) and replayed < max_replays:
-                witness, reason = replay_fn(left, right)
-                replayed += 1
+            if allow_replay and callable(replay_fn):
+                if replayed < max_replays:
+                    witness, reason = replay_fn(left, right)
+                    replayed += 1
+                else:
+                    reason = (
+                        f"This pair was not replayed: the step's {max_replays} "
+                        f"swapped-order replays were used by other pairs."
+                    )
             witnesses[pair] = (witness, reason)
             return witnesses[pair]
+
+        for first, second in priority:
+            witness_for(first, second)
 
         for first, second, cell, kind in hazards:
             col, _aid = cell
@@ -884,8 +986,16 @@ class ContractMonitor:
             if kind == "write":
                 detail = (
                     f"Distinct activations {first} and {second} wrote the "
-                    f"same cell {cell}.{note}"
+                    f"same cell {cell}."
                 )
+                if cell in write_groups:
+                    count, distinct = write_groups[cell]
+                    detail += (
+                        f" {count} activations wrote this cell with {distinct} "
+                        f"distinct value(s); the replay swaps one writer per "
+                        f"value with the last writer {second}."
+                    )
+                detail += note
             elif kind == "read":
                 direction = "read-after-write" if position[first] < position[second] else "write-after-read"
                 detail = (
@@ -894,8 +1004,13 @@ class ContractMonitor:
                 )
             elif kind == "set_reduce":
                 detail = f"Activation {first} wrote cell {cell} and activation {second} reduced into it.{note}"
+            elif first == second:
+                detail = f"Activation {first} used incompatible reduction operators on cell {cell}.{note}"
             else:
-                detail = f"Activations used incompatible reduction operators on cell {cell}.{note}"
+                detail = (
+                    f"Activations {first} and {second} used incompatible reduction "
+                    f"operators on cell {cell}.{note}"
+                )
             cert.add(ContractViolation(
                 "activation_race",
                 detail,

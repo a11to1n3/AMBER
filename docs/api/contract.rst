@@ -72,6 +72,15 @@ under ``cert.certification["keyed_randomness"]``. The same draw API works in
 Python agent methods under ``model.gpu()``; those methods currently compute
 the keyed draws on the host.
 
+A step runs at most five swapped-order replays, each swapping two
+activations of its single recorded sweep. When three or more activations
+write one cell, AMBER swaps the last writer with one earlier writer per
+distinct written value, so each value is tried as the final one. When
+activations reduce into one cell with different operators, or with the same
+mix of operators, one pair per operator combination is replayed. These pairs
+run before the other reported pairs. A reported pair that was not replayed
+because the five replays were used says so in ``divergence_reason``.
+
 For swapped-order replay, AMBER compares the model-owned random streams
 immediately before and after the sweep. A stream change can reveal draws
 through a cached method. Replay leaves the witness inconclusive when a

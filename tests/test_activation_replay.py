@@ -276,6 +276,104 @@ def test_mixed_reduction_operators_on_one_cell_report_a_divergent_witness():
     assert result.agents["x"].to_list() == [5, 0]
 
 
+def _write_race_model(values, n=None):
+    class Agent(am.Agent):
+        def step(self):
+            self.model.agents.by_id(0).x = values[self.id]
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(n or len(values), agent_class=Agent, x=-1)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    return Model
+
+
+@pytest.mark.parametrize(
+    "values, pairs, expected",
+    [
+        # Swapping 0 and 1 changes nothing; putting a 1 last does.
+        ((1, 1, 2), [[1, 2]], [True]),
+        # One swap per value that differs from the last writer's.
+        ((1, 2, 3, 3), [[0, 3], [1, 3]], [True, True]),
+        # All writers agree: the pair reported before stays, with no divergence.
+        ((4, 4, 4), [[0, 1]], [False]),
+    ],
+)
+def test_three_or_more_writers_replay_one_swap_per_written_value(values, pairs, expected):
+    result = _write_race_model(values)(_params()).run(contract="check")
+    races = _races(result["contract"][0])
+    assert [race.ids for race in races] == pairs
+    assert [race.divergence_witness for race in races] == expected
+    if len(set(values)) > 1:
+        assert f"{len(values)} activations wrote this cell" in races[0].detail
+    assert result.agents.sort("id")["x"].to_list()[0] == values[-1]
+
+
+def test_two_writer_race_report_is_unchanged():
+    for values, witness in (((1, 2), True), ((3, 3), False)):
+        result = _write_race_model(values)(_params()).run(contract="check")
+        race, = _races(result["contract"][0])
+        assert race.ids == [0, 1]
+        assert race.divergence_witness is witness
+        assert race.detail.startswith("Distinct activations 0 and 1 wrote the same cell ('x', 0).")
+        assert "activations wrote this cell" not in race.detail
+
+
+def test_equal_mixed_reduction_operator_sets_get_a_cross_activation_replay():
+    class Agent(am.Agent):
+        def step(self):
+            add, top = (1, 10) if self.id == 0 else (5, 2)
+            self.model.agents.at[[0]].scatter_add(x=add)
+            self.model.agents.at[[0]].scatter_max(x=top)
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(2, agent_class=Agent, x=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    result = Model(_params()).run(contract="check")
+    races = _races(result["contract"][0])
+    cross = [race for race in races if race.ids == [0, 1]]
+    assert len(cross) == 1 and cross[0].divergence_witness is True
+    assert {tuple(race.ids) for race in races} == {(0,), (1,), (0, 1)}
+    # Order (0, 1) gives max(1 + 0, 10) + 5 = 15, then max(15, 2) = 15.
+    assert result.agents.sort("id")["x"].to_list()[0] == 15
+
+
+def test_value_coverage_is_replayed_before_other_pairs_and_skips_are_reported():
+    n = 9
+
+    class Agent(am.Agent):
+        def step(self):
+            _ = self.model.agents.by_id((self.id + 1) % n).x
+            self.x = self.x
+            if self.id >= n - 3:
+                self.model.agents.by_id(0).y = 1 if self.id < n - 1 else 2
+
+    class Model(am.Model):
+        def setup(self):
+            self.add_agents(n, agent_class=Agent, x=0, y=0)
+
+        def step(self):
+            self.activate_agents("sequential")
+
+    result = Model(_params()).run(contract="check")
+    races = _races(result["contract"][0])
+    write, = [race for race in races if race.columns == ["y"]]
+    assert write.ids == [n - 2, n - 1]
+    assert write.divergence_witness is True
+    skipped = [race for race in races if race.divergence_witness is None]
+    assert skipped
+    assert all("not replayed" in race.divergence_reason for race in skipped)
+    replayed = {tuple(race.ids) for race in races if race.divergence_witness is not None}
+    assert len(replayed) == 5
+
+
 def test_staged_conflict_does_not_recurse_and_witness_is_inconclusive():
     model = _StagedRace(_params())
     res = model.run(contract="check")

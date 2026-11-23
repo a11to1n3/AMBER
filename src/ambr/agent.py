@@ -147,7 +147,7 @@ class Agent(BaseAgent):
             queue_write(name, agent_id, value)
             monitor = getattr(model, "_contract", None)
             if monitor is not None and monitor.active:
-                monitor.record_activation_write(name, agent_id)
+                monitor.record_activation_write(name, agent_id, value)
 
     def setup(self):
         """Override in subclasses to initialize agent attributes."""

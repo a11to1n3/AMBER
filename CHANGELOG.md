@@ -23,6 +23,13 @@
   cannot restore is not run and reports the attribute in
   `divergence_reason`. Private state is now part of the swapped-order
   comparison, so a swap that changes only private state is a witness.
+- The race check chooses swapped-order replays by coverage. With three or more
+  writers to one cell, it swaps the last writer with one earlier writer per
+  distinct written value (previously only the first two writers). Activations
+  that use the same mix of reduction operators on a cell now get a
+  cross-activation replay. These pairs use the five-replay budget first, and
+  a reported pair left out by the budget says so in `divergence_reason`.
+  Two-writer reports are unchanged.
 - `activation_race` violations list their activation IDs in sorted order, and
   the order of reported races does not depend on `PYTHONHASHSEED`.
 
