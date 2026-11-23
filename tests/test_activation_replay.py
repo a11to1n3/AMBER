@@ -1141,3 +1141,21 @@ def test_tracing_never_hashes_or_compares_written_user_values(value_type, target
         assert not races
     else:
         assert races and all(set(race.ids) <= {0, 1, 2} for race in races)
+
+
+def test_replay_pair_selection_is_linear_in_the_writers_of_a_cell():
+    from time import perf_counter
+
+    from ambr.contract import ContractMonitor
+
+    monitor = ContractMonitor()
+    cell = ("x", 0)
+    n = 20_000
+    monitor._activation_write_values = {act: {cell: (int, act)} for act in range(n)}
+    start = perf_counter()
+    chosen, distinct = monitor._last_writer_swaps(list(range(n)), cell, 5)
+    elapsed = perf_counter() - start
+    assert distinct == n
+    assert chosen == list(range(n - 6, n - 1))
+    # A pairwise scan takes about 20 s here; one pass takes milliseconds.
+    assert elapsed < 1.0

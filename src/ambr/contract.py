@@ -146,10 +146,6 @@ def _value_key(value: Any) -> Any:
     return object()
 
 
-def _same_key(left: Any, right: Any) -> bool:
-    return bool(left == right)
-
-
 def _ieee_float_domain(domain: str) -> bool:
     """Return whether ``domain`` names an IEEE floating-point dtype."""
     text = str(domain).strip().lower()
@@ -919,20 +915,25 @@ class ContractMonitor:
         order, and the number of distinct values written.
         """
         values = self._activation_write_values
-        keys = [values.get(act, {}).get(cell, object()) for act in writers]
-        distinct: List[Any] = []
-        for key in keys:
-            if not any(_same_key(key, other) for other in distinct):
-                distinct.append(key)
+        empty: Dict[Tuple[str, Any], Any] = {}
+        keys = [values.get(act, empty).get(cell) for act in writers]
+        # Known values are tuples of built-in scalars, so set membership is
+        # exact and runs no user code. Every other value is unknown and
+        # counts as distinct. One pass each: no pairwise comparison.
+        distinct = len({key for key in keys if type(key) is tuple}) + sum(
+            1 for key in keys if type(key) is not tuple
+        )
         chosen: List[Any] = []
-        seen = [keys[-1]]
+        seen = {keys[-1]} if type(keys[-1]) is tuple else set()
         for act, key in zip(reversed(writers[:-1]), reversed(keys[:-1])):
-            if any(_same_key(key, other) for other in seen):
-                continue
-            seen.append(key)
-            if len(chosen) < limit:
-                chosen.append(act)
-        return chosen[::-1], len(distinct)
+            if len(chosen) >= limit:
+                break
+            if type(key) is tuple:
+                if key in seen:
+                    continue
+                seen.add(key)
+            chosen.append(act)
+        return chosen[::-1], distinct
 
     def _check_activation_races(
         self,
