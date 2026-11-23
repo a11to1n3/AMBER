@@ -16,6 +16,17 @@ from ambr.tensor_lane import TensorLane
 
 ROUTES = ("assign", "set", "subview", "subview_half", "commit", "scalar", "commit0d", "lane_result")
 KINDS = ("bool", "int64", "float64")
+# Narrow dtypes: a 0-d value of these kinds must not widen to Int64/Float64.
+NARROW_KINDS = ("int32", "float32", "int16", "uint8")
+DTYPE_NAMES = {
+    "bool": "Boolean",
+    "int64": "Int64",
+    "float64": "Float64",
+    "int32": "Int32",
+    "float32": "Float32",
+    "int16": "Int16",
+    "uint8": "UInt8",
+}
 DEVICES = [
     "cpu",
     pytest.param("gpu", marks=pytest.mark.skipif(not GPU_AVAILABLE, reason="needs CuPy and a CUDA device")),
@@ -28,6 +39,11 @@ def _value(w, step, kind):
     if kind == "bool":
         return w > step + 1
     return (w * (step + 2)).astype(kind)
+
+
+def _reduce(v):
+    """A 0-d value of ``v``'s dtype (NumPy scalar on CPU, 0-d array on GPU)."""
+    return v.any() if v.dtype == bool else v.sum(dtype=v.dtype)
 
 
 class Writer(am.Model):
@@ -54,9 +70,9 @@ class Writer(am.Model):
         elif route == "commit":
             self.agents.commit(c=v)
         elif route == "scalar":
-            self.agents.c = v.any() if kind == "bool" else v.sum()
+            self.agents.c = _reduce(v)
         elif route == "commit0d":
-            self.agents.commit(c=v.any() if kind == "bool" else v.sum())
+            self.agents.commit(c=_reduce(v))
         elif route == "lane_result":
             TensorLane(self, ["c"], prefer_array=False).write_result("c", v)
 
@@ -65,7 +81,7 @@ def _expected(route, kind, step):
     w = np.arange(N, dtype=np.int64)
     v = _value(w, step, kind)
     if route in ("scalar", "commit0d"):
-        return np.full(N, v.any() if kind == "bool" else v.sum(), dtype=kind)
+        return np.full(N, _reduce(v), dtype=kind)
     if route == "subview_half":
         out = np.zeros(N, dtype=kind)  # rows outside the view keep their initial value
         out[3:] = v[3:]
@@ -73,15 +89,18 @@ def _expected(route, kind, step):
     return v
 
 
+ROUTE_KINDS = [(route, kind) for route in ROUTES for kind in KINDS] + [
+    (route, kind) for route in ("scalar", "commit0d") for kind in NARROW_KINDS
+]
+
+
 @pytest.mark.parametrize("device", DEVICES)
-@pytest.mark.parametrize("kind", KINDS)
-@pytest.mark.parametrize("route", ROUTES)
+@pytest.mark.parametrize(("route", "kind"), ROUTE_KINDS)
 def test_column_writes_keep_one_value_per_agent(route, kind, device):
     model = Writer({"seed": 1, "route": route, "kind": kind})
     (model.gpu() if device == "gpu" else model.cpu(mode="vectorized")).run(steps=2)
     frame = model.agents_df
-    expected_dtype = {"bool": "Boolean", "int64": "Int64", "float64": "Float64"}[kind]
-    assert str(frame.schema["c"]) == expected_dtype
+    assert str(frame.schema["c"]) == DTYPE_NAMES[kind]
     np.testing.assert_array_equal(frame["c"].to_numpy(), _expected(route, kind, 1))
     # The step-2 read sees the step-1 write on the device as well as on the host.
     np.testing.assert_array_equal(model.seen[1], _expected(route, kind, 0))
@@ -99,12 +118,12 @@ def test_add_agents_accepts_device_arrays(kind, device):
     model = Adder({"seed": 1})
     (model.gpu() if device == "gpu" else model.cpu(mode="vectorized")).run(steps=0)
     frame = model.agents_df
-    assert str(frame.schema["c"]) == {"bool": "Boolean", "int64": "Int64", "float64": "Float64"}[kind]
+    assert str(frame.schema["c"]) == DTYPE_NAMES[kind]
     np.testing.assert_array_equal(frame["c"].to_numpy(), np.arange(N).astype(kind))
 
 
 @pytest.mark.parametrize("device", DEVICES)
-@pytest.mark.parametrize("kind", KINDS)
+@pytest.mark.parametrize("kind", KINDS + NARROW_KINDS)
 def test_agent_object_scalar_write_keeps_column_dtype(kind, device):
     xp = get_array_module(prefer_gpu=(device == "gpu"))
 
@@ -113,17 +132,40 @@ def test_agent_object_scalar_write_keeps_column_dtype(kind, device):
             self.add_agents(N, agent_class=am.Agent, c=np.zeros(N, dtype=kind))
 
         def step(self):
-            v = xp.arange(N).astype(kind)
-            total = v.any() if kind == "bool" else v.sum()
+            total = _reduce(xp.arange(N).astype(kind))
             for agent in self.agents:
                 agent.c = total
 
     model = Obj({"seed": 1})
     (model.gpu() if device == "gpu" else model.cpu()).run(steps=1)
     frame = model.agents_df
-    assert str(frame.schema["c"]) == {"bool": "Boolean", "int64": "Int64", "float64": "Float64"}[kind]
-    expected = np.arange(N).astype(kind)
-    expected = expected.any() if kind == "bool" else expected.sum()
+    assert str(frame.schema["c"]) == DTYPE_NAMES[kind]
+    expected = _reduce(np.arange(N).astype(kind))
+    np.testing.assert_array_equal(frame["c"].to_numpy(), np.full(N, expected, dtype=kind))
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("kind", NARROW_KINDS)
+@pytest.mark.parametrize("route", ["assign", "commit"])
+def test_0d_value_to_new_column_keeps_dtype(route, kind, device):
+    xp = get_array_module(prefer_gpu=(device == "gpu"))
+
+    class NewColumn(am.Model):
+        def setup(self):
+            self.add_agents(N, w=np.arange(N))
+
+        def step_vectorized(self):
+            total = _reduce(xp.arange(N).astype(kind))
+            if route == "assign":
+                self.agents.c = total
+            else:
+                self.agents.commit(c=total)
+
+    model = NewColumn({"seed": 1})
+    (model.gpu() if device == "gpu" else model.cpu(mode="vectorized")).run(steps=1)
+    frame = model.agents_df
+    assert str(frame.schema["c"]) == DTYPE_NAMES[kind]
+    expected = _reduce(np.arange(N).astype(kind))
     np.testing.assert_array_equal(frame["c"].to_numpy(), np.full(N, expected, dtype=kind))
 
 
@@ -181,6 +223,8 @@ def test_host_value_copies_device_arrays():
 
     out = host_value(cp.arange(4))
     assert isinstance(out, np.ndarray) and out.tolist() == [0, 1, 2, 3]
-    scalar = host_value(cp.asarray(7))
-    assert scalar == 7 and not isinstance(scalar, np.ndarray)
-    assert host_value(cp.asarray(True)) is True
+    # A 0-d array becomes a NumPy scalar of the same dtype, as under cpu().
+    for kind, value in (("int64", 7), ("int32", 7), ("float32", 1.5), ("uint8", 3), ("bool", True)):
+        scalar = host_value(cp.asarray(value, dtype=kind))
+        assert isinstance(scalar, np.generic) and not isinstance(scalar, np.ndarray)
+        assert scalar.dtype == np.dtype(kind) and scalar == value
