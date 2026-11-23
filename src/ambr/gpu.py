@@ -255,6 +255,13 @@ def _size_tuple(size):
     return tuple(int(s) for s in size)
 
 
+def _keyed_draw_dtype(dtype):
+    dtype = _np.dtype(dtype)
+    if dtype.kind == "f" and dtype.type not in (_np.float32, _np.float64):
+        raise TypeError(f"keyed draws support float32 or float64, got {dtype.type.__name__}")
+    return dtype
+
+
 class KeyedDeviceRNG(DeviceRNG):
     """Counter-based random generator whose draws do not depend on the GPU.
 
@@ -265,6 +272,11 @@ class KeyedDeviceRNG(DeviceRNG):
     draws. Unkeyed scalar draws within a run use successive positions in
     their reserved stream. Integer and choice draws reduce the 64-bit value
     modulo the range, as the counter tape does.
+
+    The supported floating dtypes are ``float32`` and ``float64``. If a
+    ``float32`` result from :meth:`random` or :meth:`uniform` over a
+    positive-width interval ending at 1 would round to 1, the generator
+    returns the largest ``float32`` below 1.
 
     With ``xp=numpy`` the same draws are computed on the host; tests use that
     as the reference for the CUDA kernels.
@@ -382,7 +394,7 @@ class KeyedDeviceRNG(DeviceRNG):
     # --- generator surface -------------------------------------------------
 
     def random(self, size=None, dtype=None):
-        dtype = _np.dtype(_np.float64 if dtype is None else dtype)
+        dtype = _keyed_draw_dtype(dtype)
         clamp_float32 = dtype.type is _np.float32
         if size is None:
             key, stream = self._next_scalar_counter()
@@ -394,7 +406,7 @@ class KeyedDeviceRNG(DeviceRNG):
         return out
 
     def uniform(self, low=0.0, high=1.0, size=None, dtype=None):
-        dtype = _np.dtype(_np.float64 if dtype is None else dtype)
+        dtype = _keyed_draw_dtype(dtype)
         span = float(high - low)
         clamp_float32 = dtype.type is _np.float32 and high == 1.0 and span > 0.0
         if size is None:
@@ -409,6 +421,8 @@ class KeyedDeviceRNG(DeviceRNG):
         return out
 
     def integers(self, low, high=None, size=None, dtype=None, endpoint=False):
+        if dtype is not None:
+            dtype = _keyed_draw_dtype(dtype)
         if high is None:
             low, high = 0, low
         low, high = int(low), int(high) + (1 if endpoint else 0)

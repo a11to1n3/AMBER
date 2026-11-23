@@ -133,6 +133,15 @@ def test_float32_clamps_rounded_unit_endpoint(xp, size, method, args):
     np.testing.assert_array_equal(actual.tolist(), expected if size is None else [expected])
 
 
+@pytest.mark.parametrize("size", [None, 4])
+@pytest.mark.parametrize("dtype", ["float16", np.longdouble])
+@pytest.mark.parametrize("method, args", [("random", ()), ("uniform", ()), ("integers", (10,))])
+def test_draws_reject_unsupported_floating_dtypes(xp, size, dtype, method, args):
+    rng = make_keyed_device_rng(7, xp=xp)
+    with pytest.raises(TypeError, match="float32 or float64"):
+        getattr(rng, method)(*args, size=size, dtype=dtype)
+
+
 def test_float32_clamp_preserves_numpy_byte_order():
     dtype = np.dtype(np.float32).newbyteorder("S")
     actual = host(5042506492838628837).random(1, dtype=dtype)
