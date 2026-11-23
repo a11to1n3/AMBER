@@ -8,6 +8,7 @@ from ._deprecation import warn_deprecated
 from ._id_index import resolve_position
 from ._keyed_rng import keyed_uniform
 from .execution import sync_agent_writes, sync_device_column_to_frame
+from .gpu import host_value
 
 if TYPE_CHECKING:
     from .model import Model
@@ -144,7 +145,7 @@ class Agent(BaseAgent):
         queue_write = getattr(model, "_queue_write", None)
         if queue_write is not None:
             agent_id = self.id
-            queue_write(name, agent_id, value)
+            queue_write(name, agent_id, host_value(value))
             monitor = getattr(model, "_contract", None)
             if monitor is not None and monitor.active:
                 monitor.record_activation_write(name, agent_id)

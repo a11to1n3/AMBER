@@ -213,7 +213,7 @@ class TensorLane:
 
     def commit(self, arr: np.ndarray) -> None:
         """Write a full ``(N, F)`` result back into the model's DataFrame."""
-        arr = np.asarray(arr)
+        arr = np.asarray(host_value(arr))
         if arr.ndim != 2 or arr.shape[1] != self.F:
             raise ValueError(f"expected (N, {self.F}) array, got {arr.shape}")
         df = self._df()
@@ -237,7 +237,7 @@ class TensorLane:
     def write_result(self, name: str, values) -> None:
         """Attach a derived 1-D column (e.g. an interaction output)."""
         df = self._df()
-        series = _cast_to_existing(df, pl.Series(name, np.asarray(values)), name)
+        series = _cast_to_existing(df, pl.Series(name, np.asarray(host_value(values))), name)
         self.model._set_frame(df.with_columns(series), written_columns=[name])
 
 
@@ -247,6 +247,13 @@ def _cast_to_existing(df: pl.DataFrame, series: pl.Series, name: str) -> pl.Seri
     if name in df.columns:
         return series.cast(df.get_column(name).dtype)
     return series
+
+
+def _column_values(value, height: int) -> np.ndarray:
+    """Host array for a committed column; a scalar or 0-d value is repeated for
+    every row, as ``agents.col = scalar`` does."""
+    arr = np.asarray(host_value(value))
+    return np.full(height, arr[()]) if arr.ndim == 0 else arr
 
 
 def commit_columns(model, **columns) -> None:
@@ -264,7 +271,7 @@ def commit_columns(model, **columns) -> None:
     df = model._agents_frame()
     names = list(columns)
     series = [
-        _cast_to_existing(df, pl.Series(name, np.asarray(host_value(v))), name)
+        _cast_to_existing(df, pl.Series(name, _column_values(v, df.height)), name)
         for name, v in columns.items()
     ]
     model._set_frame(df.with_columns(series), written_columns=names)
